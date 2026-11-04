@@ -195,13 +195,14 @@ export class AccountService {
         })
     }
 
-    async withServiceSession<T>(work: (read: <R>(url: string, parse: (text: string) => R) => Promise<R>) => Promise<T>, parent?: BrowserWindow): Promise<T> {
+    async withServiceSession<T>(work: (read: <R>(url: string, parse: (text: string, link?: string) => R) => Promise<R>) => Promise<T>, parent?: BrowserWindow, interactive = true): Promise<T> {
         return this.exclusive(async () => {
             if (this.state.status !== 'signed-in' || !this.jar) throw new AuthError('请先登录账号。')
             let jar = CookieJar.deserializeSync(this.jar.serializeSync()!)
-            const result = await work(async <R>(url: string, parse: (text: string) => R): Promise<R> => {
+            const result = await work(async <R>(url: string, parse: (text: string, link?: string) => R): Promise<R> => {
                 let page = await new FudanTransport(jar).request(url)
                 if (isAuthUrl(page.url)) {
+                    if (!interactive) throw new AuthError('请点击同步 eLearning，在学校认证窗口完成登录。')
                     jar = await completeInteractiveAuthentication(new AdditionalAuthenticationRequired(page.url, url), jar, parent, async transport => {
                         const verified = await transport.request(url)
                         if (isAuthUrl(verified.url) || new URL(verified.url).origin !== new URL(url).origin) return false
@@ -213,7 +214,7 @@ export class AccountService {
                 if (isAuthUrl(page.url) || new URL(page.url).origin !== new URL(url).origin) {
                     throw new AuthError('学校服务会话已失效，请重试。')
                 }
-                return parse(page.text)
+                return parse(page.text, page.link)
             })
             this.db.saveAccount({
                 username: this.state.username!, target: this.target, last_login: this.state.lastLogin!,

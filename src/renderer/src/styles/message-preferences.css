@@ -66,6 +66,10 @@
     font-size: var(--font-size-sm);
 }
 
+.preference-field select:not(:disabled):is(:hover, :active) {
+    background-color: var(--color-bg-subtle);
+}
+
 .preference-field textarea {
     resize: vertical;
 }

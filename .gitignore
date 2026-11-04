@@ -148,7 +148,3 @@ release/
 
 # Claude Code
 .claude/
-
-# NarraFork
-.narrafork/
-.worktrees/
