@@ -1,4 +1,4 @@
-import {BrowserWindow, ipcMain, type IpcMainInvokeEvent} from 'electron'
+import {BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent} from 'electron'
 import type {AppDatabase} from './database'
 import type {AccountService} from './accounts'
 import {AuthError} from './fudan-auth.ts'
@@ -104,13 +104,27 @@ export function registerTimetableHandlers(db: AppDatabase, accounts: AccountServ
             if (!course) throw new AuthError('未找到这门课程，请刷新课表后重试。')
             const url = courseSyllabusUrl(course)
             if (!url) throw new AuthError('这门课程缺少教学班编号，暂时无法直接打开教学大纲。')
-            await accounts.openPageWithBrowser(url, BrowserWindow.fromWebContents(event.sender) ?? undefined)
+            await shell.openExternal(url)
             return {ok: true, data: undefined}
         } catch (error) {
             return {
                 ok: false,
                 error: error instanceof AuthError ? error.message : '无法打开教学大纲，请稍后重试。'
             }
+        }
+    })
+    ipcMain.handle('timetable:open-replay', async (event, courseId: unknown): Promise<Result<void>> => {
+        if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
+        try {
+            if (typeof courseId !== 'string' || !courseId || courseId.length > 500) throw new AuthError('课程编号无效。')
+            const {username, kind} = context()
+            const timetable = db.getTimetable(username, kind)
+            const course = timetable?.courses.find(item => item.id === courseId)
+            if (!course) throw new AuthError('未找到这门课程，请刷新课表后重试。')
+            await accounts.openCourseReplay(course, timetable?.startDate ?? null, BrowserWindow.fromWebContents(event.sender) ?? undefined)
+            return {ok: true, data: undefined}
+        } catch (error) {
+            return {ok: false, error: error instanceof AuthError ? error.message : '无法打开课程回放，请检查网络后重试。'}
         }
     })
     ipcMain.handle('timetable:set-start-date', (event, value: unknown): Result<Timetable> => {

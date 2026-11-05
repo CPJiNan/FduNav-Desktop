@@ -39,6 +39,7 @@ export function CalendarEventDialog({date, startMinute = 9 * 60, item, create, o
     })
     const [error, setError] = useState('')
     const [busy, setBusy] = useState(false)
+    const [openingCourseLink, setOpeningCourseLink] = useState<'syllabus' | 'replay' | null>(null)
     const [confirmDelete, setConfirmDelete] = useState(false)
     useEffect(() => {
         dialog.current?.showModal()
@@ -101,21 +102,24 @@ export function CalendarEventDialog({date, startMinute = 9 * 60, item, create, o
         }
     }
 
-    async function openSyllabus() {
+    async function openCourseLink(kind: 'syllabus' | 'replay') {
         if (busy || !item?.course) return
+        const label = kind === 'syllabus' ? '教学大纲' : '课程回放'
         if (!window.timetable) {
-            setError('教学大纲服务未加载，请重启应用后重试。')
+            setError(`${label}服务未加载，请重启应用后重试。`)
             return
         }
         setBusy(true)
+        setOpeningCourseLink(kind)
         setError('')
         try {
-            const result = await window.timetable.openSyllabus(item.course.id)
+            const result = await (kind === 'syllabus' ? window.timetable.openSyllabus(item.course.id) : window.timetable.openReplay(item.course.id))
             if (!result.ok) setError(result.error)
         } catch {
-            setError('无法打开教学大纲，请稍后重试。')
+            setError(`无法打开${label}，请稍后重试。`)
         } finally {
             setBusy(false)
+            setOpeningCourseLink(null)
         }
     }
 
@@ -222,10 +226,16 @@ export function CalendarEventDialog({date, startMinute = 9 * 60, item, create, o
                 <button type="button" className="secondary-button" onClick={() => setConfirmDelete(true)}>删除</button>
                 <button type="button" className="primary-button" onClick={() => setEditing(true)}>编辑</button>
             </>}</div>}
-            {item?.course && <button type="button" className="text-button" disabled={busy}
-                                     aria-busy={busy} onClick={() => void openSyllabus()}>
-                {busy ? '正在打开…' : '查看教学大纲'}<Icon name="external"/>
-            </button>}
+            {item?.course && <div className="calendar-course-links">
+                <button type="button" className="text-button" disabled={busy}
+                        aria-busy={openingCourseLink === 'syllabus'} onClick={() => void openCourseLink('syllabus')}>
+                    {openingCourseLink === 'syllabus' ? '正在打开…' : '查看教学大纲'}<Icon name="external"/>
+                </button>
+                <button type="button" className="text-button" disabled={busy}
+                        aria-busy={openingCourseLink === 'replay'} onClick={() => void openCourseLink('replay')}>
+                    {openingCourseLink === 'replay' ? '正在打开…' : '查看课程回放'}<Icon name="external"/>
+                </button>
+            </div>}
         </>}
     </dialog>
 }

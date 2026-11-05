@@ -1,4 +1,4 @@
-import {BrowserWindow, ipcMain, type IpcMainInvokeEvent} from 'electron'
+import {BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent} from 'electron'
 import {CookieJar} from 'tough-cookie'
 import type {AppDatabase} from './database'
 import {
@@ -19,8 +19,11 @@ import {
     readMyFudanPage as readMyFudanPageFromBrowser
 } from './authenticated-page'
 import type {AccountState, LoginInput, Result, Theme} from '../shared/accounts'
+import type {TimetableCourse} from '../shared/timetable'
 import {secureStorage} from './secure-storage'
 import {readCampusCardWithBrowser} from './campus-card-browser'
+import {resolveCourseReplay} from './course-replay-browser'
+import {courseReplayLoginUrl} from './course-replay-data'
 import {syncMyFudanPreferences} from './my-fudan-preferences'
 
 const signedOut = (): AccountState => ({username: null, status: 'signed-out', lastLogin: null, message: ''})
@@ -171,6 +174,21 @@ export class AccountService {
 
     async openPageWithBrowser(url: string, parent?: BrowserWindow): Promise<void> {
         await openAuthenticatedPage(url, this.jar, parent)
+    }
+
+    async openCourseReplay(course: TimetableCourse, startDate: string | null, parent?: BrowserWindow): Promise<void> {
+        return this.exclusive(async () => {
+            if (this.state.status !== 'signed-in' || !this.jar || !this.state.username) throw new AuthError('请先登录账号。')
+            const result = await resolveCourseReplay(course, startDate, this.state.username, this.jar, parent)
+            this.db.saveAccount({
+                username: this.state.username, target: this.target, last_login: this.state.lastLogin!,
+                cookies: await secureStorage.encrypt(JSON.stringify(result.jar.serializeSync())),
+            })
+            this.jar = result.jar
+            // External browsers own their login session. Let university SSO return
+            // to the matched course without putting app credentials in the URL.
+            await shell.openExternal(courseReplayLoginUrl(result.courseId))
+        })
     }
 
     async openCampusCardRecords(parent?: BrowserWindow): Promise<void> {
