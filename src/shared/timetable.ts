@@ -35,6 +35,7 @@ export interface TimetableAPI {
     setStartDate(date: string): Promise<Result<Timetable>>
 
     openSyllabus(courseId: string): Promise<Result<void>>
+    openReplay(courseId: string): Promise<Result<void>>
 }
 
 export function courseSyllabusUrl({lessonId}: Pick<TimetableCourse, 'lessonId'>): string | null {

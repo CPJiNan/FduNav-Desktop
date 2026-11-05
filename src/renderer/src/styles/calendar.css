@@ -909,3 +909,9 @@
         grid-template-columns: 1fr;
     }
 }
+.calendar-course-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+}
