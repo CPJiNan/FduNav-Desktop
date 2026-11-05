@@ -22,7 +22,6 @@ button, input, textarea, select {
     outline-offset: var(--focus-offset);
 }
 
-/* Shared select treatment: stable surface and border, with press feedback only. */
 select {
     min-height: var(--size-touch-target);
     max-width: 100%;

@@ -64,6 +64,11 @@ export class AppDatabase {
                 username TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL,
                 PRIMARY KEY (username, id)
             );
+            CREATE TABLE IF NOT EXISTS elearning_imports (
+                username TEXT NOT NULL, course_id TEXT NOT NULL, assignment_id TEXT NOT NULL,
+                imported_at TEXT NOT NULL,
+                PRIMARY KEY (username, course_id, assignment_id)
+            );
             CREATE TABLE IF NOT EXISTS todo_reminder_deliveries (
                 username TEXT NOT NULL, todo_id TEXT NOT NULL, remind_at INTEGER NOT NULL,
                 PRIMARY KEY (username, todo_id),
@@ -134,17 +139,6 @@ export class AppDatabase {
         return row ? JSON.parse(row.data as string) as Todo : null
     }
 
-    saveTodos(username: string, todos: Todo[]) {
-        this.db.exec('BEGIN')
-        try {
-            for (const todo of todos) this.saveTodo(username, todo)
-            this.db.exec('COMMIT')
-        } catch (error) {
-            this.db.exec('ROLLBACK')
-            throw error
-        }
-    }
-
     saveTodo(username: string, todo: Todo) {
         this.db.prepare(`INSERT INTO todos (username, id, data)
                          VALUES (?, ?, ?) ON CONFLICT(username, id) DO
@@ -153,6 +147,17 @@ export class AppDatabase {
 
     removeTodo(username: string, id: string) {
         this.db.prepare('DELETE FROM todos WHERE username = ? AND id = ?').run(username, id)
+    }
+
+    hasElearningImport(username: string, courseId: string, assignmentId: string): boolean {
+        return !!this.db.prepare('SELECT 1 FROM elearning_imports WHERE username = ? AND course_id = ? AND assignment_id = ?')
+            .get(username, courseId, assignmentId)
+    }
+
+    markElearningImport(username: string, courseId: string, assignmentId: string, importedAt: string) {
+        this.db.prepare(`INSERT INTO elearning_imports (username, course_id, assignment_id, imported_at)
+                         VALUES (?, ?, ?, ?) ON CONFLICT(username, course_id, assignment_id) DO NOTHING`)
+            .run(username, courseId, assignmentId, importedAt)
     }
 
     todoReminderDelivered(username: string, id: string, remindAt: number): boolean {

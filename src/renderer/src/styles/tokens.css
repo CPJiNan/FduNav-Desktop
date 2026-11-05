@@ -60,6 +60,7 @@
     --color-selection: light-dark(#dbe9ff, #3d3d3d);
     --color-on-selection: var(--color-text-primary);
     --color-success: light-dark(#226b48, #86d6ac);
+    --color-success-progress: light-dark(#55a87d, #86d6ac);
     --color-success-subtle: light-dark(#eaf5ee, #203c30);
     --color-warning: light-dark(#805510, #f0cb7e);
     --color-warning-subtle: light-dark(#fff5df, #40351f);

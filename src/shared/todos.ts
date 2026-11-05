@@ -29,8 +29,10 @@ export interface Todo extends TodoInput {
 }
 
 export interface TodosAPI {
-    syncElearning(interactive?: boolean): Promise<Result<{todos: Todo[]; total: number; syncedAt: string}>>
+    syncElearning(interactive?: boolean): Promise<Result<{ todos: Todo[]; total: number; syncedAt: string }>>
+
     openElearning(id: string): Promise<Result<null>>
+
     list(): Promise<Result<Todo[]>>
 
     save(input: TodoInput): Promise<Result<Todo>>

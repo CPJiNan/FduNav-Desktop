@@ -202,7 +202,7 @@ export class AccountService {
             const result = await work(async <R>(url: string, parse: (text: string, link?: string) => R): Promise<R> => {
                 let page = await new FudanTransport(jar).request(url)
                 if (isAuthUrl(page.url)) {
-                    if (!interactive) throw new AuthError('请点击同步 eLearning，在学校认证窗口完成登录。')
+                    if (!interactive) throw new AuthError('请点击刷新同步 eLearning，在学校认证窗口完成登录。')
                     jar = await completeInteractiveAuthentication(new AdditionalAuthenticationRequired(page.url, url), jar, parent, async transport => {
                         const verified = await transport.request(url)
                         if (isAuthUrl(verified.url) || new URL(verified.url).origin !== new URL(url).origin) return false

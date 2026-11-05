@@ -25,7 +25,6 @@ export function apiUrl(value: string): string {
 }
 
 function json(text: string): unknown {
-    // Canvas may prefix JSON responses to prevent JSON hijacking.
     return JSON.parse(text.replace(/^\s*while\(1\);\s*/, ''))
 }
 
@@ -36,7 +35,7 @@ export async function readPages(read: ServiceRead, path: string): Promise<Record
     while (url) {
         if (visited.has(url) || visited.size >= 200) throw new Error('eLearning 分页异常，请稍后重试。')
         visited.add(url)
-        const page: {items: RecordValue[]; next: string | undefined} = await read(url, (text, link) => {
+        const page: { items: RecordValue[]; next: string | undefined } = await read(url, (text, link) => {
             const data = json(text)
             if (!Array.isArray(data)) throw new Error('无法读取 eLearning 列表，请重新认证。')
             const next = link?.match(/<([^>]+)>\s*;\s*rel="next"/i)?.[1]
@@ -68,7 +67,6 @@ export function assignmentTodo(course: RecordValue, assignment: RecordValue, sub
     const completed = submission.excused === true || state !== 'unsubmitted'
     const status = submission.excused === true ? '免交' : state === 'graded' ? '已评分' :
         state === 'pending_review' ? '待批阅' : state === 'submitted' ? '已提交' : '未提交'
-    // cached_due_date is the effective student-specific deadline, including overrides.
     const due = timestamp(Object.hasOwn(submission, 'cached_due_date') ? submission.cached_due_date : assignment.due_at)
     let dueDate = '', dueTime = '23:59'
     if (due) {
@@ -92,18 +90,20 @@ export function assignmentTodo(course: RecordValue, assignment: RecordValue, sub
     }
 }
 
+export function isUnfinishedAssignment(submission: RecordValue): boolean {
+    return submission.excused !== true && submission.workflow_state === 'unsubmitted'
+}
+
 export async function fetchAssignments(read: ServiceRead) {
-    // Establish the service's CAS session before calling its JSON API.
     await read(`${ELEARNING}/dash`, () => null)
     const courses = await readPages(read, '/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100')
-    const result: {course: RecordValue; assignment: RecordValue; submission: RecordValue}[] = []
+    const result: { course: RecordValue; assignment: RecordValue; submission: RecordValue }[] = []
     for (const course of courses) {
         const courseId = identifier(course.id)
         const assignments = await readPages(read, `/api/v1/courses/${courseId}/assignments?include[]=submission&per_page=100`)
         for (const assignment of assignments) {
             if (assignment.published === false || (Array.isArray(assignment.submission_types) && assignment.submission_types.includes('not_graded'))) continue
             const assignmentId = identifier(assignment.id)
-            // The included submission belongs to the requesting student. Fetch explicitly if absent.
             const submission = assignment.submission ? record(assignment.submission) : await read(
                 `${ELEARNING}/api/v1/courses/${courseId}/assignments/${assignmentId}/submissions/self`, text => record(json(text)))
             result.push({course, assignment, submission})

@@ -4,7 +4,7 @@ import type {AccountService} from './accounts'
 import type {Result} from '../shared/accounts'
 import {TodoError, TodoService} from './todo-service'
 import {TodoReminderService} from './todo-reminders'
-import {assignmentTodo, fetchAssignments} from './elearning'
+import {assignmentTodo, fetchAssignments, isUnfinishedAssignment} from './elearning'
 import {AuthError} from './fudan-auth'
 
 export function registerTodoHandlers(db: AppDatabase, accounts: AccountService,
@@ -27,7 +27,7 @@ export function registerTodoHandlers(db: AppDatabase, accounts: AccountService,
 
     handle('todos:list', username => db.getTodos(username))
 
-    let syncing: Promise<{todos: import('../shared/todos').Todo[]; total: number; syncedAt: string}> | null = null
+    let syncing: Promise<{ todos: import('../shared/todos').Todo[]; total: number; syncedAt: string }> | null = null
     let syncingOwner = ''
     ipcMain.handle('todos:sync-elearning', async (event, interactive: unknown) => {
         if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
@@ -50,18 +50,33 @@ export function registerTodoHandlers(db: AppDatabase, accounts: AccountService,
                     const existing = db.getTodos(username)
                     const bySource = new Map(existing.filter(todo => todo.elearning).map(todo =>
                         [`${todo.elearning!.courseId}:${todo.elearning!.assignmentId}`, todo]))
-                    const todos = rows.map(({course, assignment, submission}) => assignmentTodo(course, assignment, submission,
-                        bySource.get(`${course.id}:${assignment.id}`), db.getTodoDefaultReminder(), syncedAt))
-                    // Fetch and validate the entire snapshot before making any changes.
-                    db.saveTodos(username, todos)
-                    for (const todo of todos) reminders.changed(username, todo.id)
-                    return {todos: db.getTodos(username), total: todos.length, syncedAt}
-                })().finally(() => { syncing = null })
+                    for (const {course, assignment, submission} of rows) {
+                        if (!isUnfinishedAssignment(submission)) continue
+                        const courseId = String(course.id), assignmentId = String(assignment.id)
+                        if (db.hasElearningImport(username, courseId, assignmentId)) continue
+                        const key = `${courseId}:${assignmentId}`
+                        const previous = bySource.get(key)
+                        if (previous) {
+                            db.markElearningImport(username, courseId, assignmentId, syncedAt)
+                            continue
+                        }
+                        const todo = assignmentTodo(course, assignment, submission, undefined, db.getTodoDefaultReminder(), syncedAt)
+                        db.saveTodo(username, todo)
+                        db.markElearningImport(username, courseId, assignmentId, syncedAt)
+                        reminders.changed(username, todo.id)
+                    }
+                    const todos = db.getTodos(username)
+                    return {todos, total: todos.length, syncedAt}
+                })().finally(() => {
+                    syncing = null
+                })
             }
             return {ok: true, data: await syncing}
         } catch (error) {
-            return {ok: false, error: error instanceof AuthError ? error.message :
-                '同步 eLearning 失败，已有待办已保留。请检查网络或重新认证后重试。'}
+            return {
+                ok: false, error: error instanceof AuthError ? error.message :
+                    '同步 eLearning 失败，已有待办已保留。请检查网络或重新认证后重试。'
+            }
         }
     })
 

@@ -42,12 +42,20 @@
 }
 
 @keyframes todos-refresh-spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .todos-action.secondary-button { transition: none; transform: none; }
-    .todos-refresh[aria-busy="true"] .icon { animation: none; }
+    .todos-action.secondary-button {
+        transition: none;
+        transform: none;
+    }
+
+    .todos-refresh[aria-busy="true"] .icon {
+        animation: none;
+    }
 }
 
 .todos-add {
@@ -81,7 +89,11 @@
     background-color: var(--color-bg-subtle);
 }
 
-.todos-search { flex: 1; min-width: 180px; }
+.todos-search {
+    flex: 1;
+    min-width: 180px;
+}
+
 .todos-search {
     padding: var(--space-2) var(--space-3);
     border: var(--border-width) solid var(--input-border);

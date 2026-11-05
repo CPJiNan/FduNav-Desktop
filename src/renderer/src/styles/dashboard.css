@@ -370,7 +370,7 @@
 }
 
 .dashboard-todos progress::-webkit-progress-value {
-    background: var(--color-success);
+    background: var(--color-success-progress);
     border-radius: 6px;
 }
 
