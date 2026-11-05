@@ -1,4 +1,4 @@
-import {BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent} from 'electron'
+import {BrowserWindow, ipcMain, type IpcMainInvokeEvent, shell} from 'electron'
 import {CookieJar} from 'tough-cookie'
 import type {AppDatabase} from './database'
 import {
@@ -185,8 +185,6 @@ export class AccountService {
                 cookies: await secureStorage.encrypt(JSON.stringify(result.jar.serializeSync())),
             })
             this.jar = result.jar
-            // External browsers own their login session. Let university SSO return
-            // to the matched course without putting app credentials in the URL.
             await shell.openExternal(courseReplayLoginUrl(result.courseId))
         })
     }

@@ -10,8 +10,6 @@ const normalize = (value: string) => value.normalize('NFKC').replace(/\s+/g, '')
 const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' ? value as Record<string, unknown> : {}
 
-// The login app's config.js otherLoginAdress uses school_login=1.
-// /yjlogin (without the slash) serves the portal SPA, not the login app.
 export function courseReplayLoginUrl(courseId?: string): string {
     const params = new URLSearchParams({
         r: 'auth/login', school_login: '1', tenant_code: '222',
@@ -25,14 +23,17 @@ export function isReplayLoginPage(value: string): boolean {
         const url = new URL(value)
         return url.origin === 'https://icourse.fudan.edu.cn' && !url.username && !url.password &&
             /^\/(?:yjlogin|yjapplogin|validate|casapi)(?:\/|$)/.test(url.pathname)
-    } catch { return false }
+    } catch {
+        return false
+    }
 }
 
-// The platform stores its bearer token in a PHP-serialized _token cookie.
 export function replayToken(value: string): string {
     try {
         return /\{i:\d+;s:\d+:"_token";i:\d+;s:\d+:"([^"\r\n]+)";\}/.exec(decodeURIComponent(value))?.[1] ?? ''
-    } catch { return '' }
+    } catch {
+        return ''
+    }
 }
 
 export function replayUser(value: unknown, username: string): string | null {
@@ -42,7 +43,6 @@ export function replayUser(value: unknown, username: string): string | null {
     return /^[1-9]\d*$/.test(id) ? id : null
 }
 
-// Shape used by iCourse's own “我的课程” weekly schedule, not public search.
 export function parseReplaySchedule(value: unknown): ReplayCourse[] {
     const list = record(record(value).result).list
     if (!Array.isArray(list)) throw new Error('无法读取 iCourse 本人课表，请重试。')
@@ -65,7 +65,6 @@ export function parseReplaySchedule(value: unknown): ReplayCourse[] {
 }
 
 export function matchReplayCourse(candidates: ReplayCourse[], course: Pick<TimetableCourse, 'name' | 'teachers'>): string | null {
-    // Never guess a teacher when the local timetable has no teacher information.
     const teachers = course.teachers.flatMap(name => name.split(/[、,，;；/]+/)).map(normalize).filter(Boolean)
     if (!teachers.length) return null
     const ids = new Set(candidates.filter(item => normalize(item.name) === normalize(course.name) &&
@@ -73,7 +72,7 @@ export function matchReplayCourse(candidates: ReplayCourse[], course: Pick<Timet
     return ids.size === 1 ? [...ids][0] : null
 }
 
-export function replayWeeks(startDate: string | null, weeks: number[]): {start: string; end: string}[] {
+export function replayWeeks(startDate: string | null, weeks: number[]): { start: string; end: string }[] {
     if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error('请先设置课表的学期开始日期。')
     const start = Date.parse(`${startDate}T00:00:00Z`)
     if (!Number.isFinite(start) || new Date(start).toISOString().slice(0, 10) !== startDate) throw new Error('学期开始日期无效。')

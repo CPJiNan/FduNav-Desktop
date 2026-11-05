@@ -909,6 +909,7 @@
         grid-template-columns: 1fr;
     }
 }
+
 .calendar-course-links {
     display: flex;
     flex-wrap: wrap;

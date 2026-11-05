@@ -1,4 +1,4 @@
-import {BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent} from 'electron'
+import {BrowserWindow, ipcMain, type IpcMainInvokeEvent, shell} from 'electron'
 import type {AppDatabase} from './database'
 import type {AccountService} from './accounts'
 import {AuthError} from './fudan-auth.ts'

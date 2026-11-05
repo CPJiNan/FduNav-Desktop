@@ -4,7 +4,16 @@ import type {CookieJar} from 'tough-cookie'
 import type {TimetableCourse} from '../shared/timetable'
 import {browserCookieJar, browserCookies} from './auth-cookies'
 import {AuthError, isAuthUrl, validateUrl} from './fudan-auth'
-import {courseReplayLoginUrl, isReplayLoginPage, matchReplayCourse, parseReplaySchedule, replayToken, replayUser, replayWeeks, type ReplayCourse} from './course-replay-data'
+import {
+    courseReplayLoginUrl,
+    isReplayLoginPage,
+    matchReplayCourse,
+    parseReplaySchedule,
+    type ReplayCourse,
+    replayToken,
+    replayUser,
+    replayWeeks
+} from './course-replay-data'
 
 const origin = 'https://icourse.fudan.edu.cn'
 const entry = courseReplayLoginUrl()
@@ -12,7 +21,9 @@ const entry = courseReplayLoginUrl()
 export async function resolveCourseReplay(course: TimetableCourse, startDate: string | null,
                                           username: string, jar: CookieJar, parent?: BrowserWindow) {
     let weeks: ReturnType<typeof replayWeeks>
-    try { weeks = replayWeeks(startDate, course.weeks) } catch (error) {
+    try {
+        weeks = replayWeeks(startDate, course.weeks)
+    } catch (error) {
         throw new AuthError(error instanceof Error ? error.message : '课表教学周无效，请刷新课表。')
     }
     if (!course.teachers.some(name => name.trim())) throw new AuthError('课表中缺少任课教师信息，请刷新课表后重试。')
@@ -41,28 +52,40 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
         const loginWindow = new BrowserWindow({
             show: false, width: 1100, height: 820, title: '课程回放身份验证', autoHideMenuBar: true,
             ...(parent ? {parent, modal: true} : {}),
-            webPreferences: {session: reader, sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false},
+            webPreferences: {
+                session: reader,
+                sandbox: true,
+                contextIsolation: true,
+                nodeIntegration: false,
+                webviewTag: false
+            },
         })
         window = loginWindow
         loginWindow.setMenu(null)
         loginWindow.once('closed', cancel)
         loginWindow.webContents.setWindowOpenHandler(() => ({action: 'deny'}))
         const guard = (event: Electron.Event, url: string) => {
-            try { validateUrl(url) } catch {
+            try {
+                validateUrl(url)
+            } catch {
                 event.preventDefault()
                 controller.abort(new AuthError('学校登录跳转到了不受支持的地址。'))
             }
         }
-        loginWindow.webContents.on('will-frame-navigate', event => { if (event.isMainFrame) guard(event, event.url) })
-        loginWindow.webContents.on('will-redirect', (event, url, _inPlace, mainFrame) => { if (mainFrame) guard(event, url) })
+        loginWindow.webContents.on('will-frame-navigate', event => {
+            if (event.isMainFrame) guard(event, event.url)
+        })
+        loginWindow.webContents.on('will-redirect', (event, url, _inPlace, mainFrame) => {
+            if (mainFrame) guard(event, url)
+        })
         loginWindow.webContents.on('render-process-gone', () => controller.abort(new AuthError('学校认证窗口异常退出，请重试。')))
-        const identity = await new Promise<{token: string; userId: string}>((resolve, reject) => {
+        const identity = await new Promise<{ token: string; userId: string }>((resolve, reject) => {
             let settled = false
             let checking = false
             let ready = false
             let authSince = 0
             let serviceSince = 0
-            const finish = (error?: unknown, result?: {token: string; userId: string}) => {
+            const finish = (error?: unknown, result?: { token: string; userId: string }) => {
                 if (settled) return
                 settled = true
                 clearInterval(poll)
@@ -77,7 +100,6 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
                 if (isAuthUrl(current) || isReplayLoginPage(current)) {
                     serviceSince = 0
                     authSince ||= Date.now()
-                    // Give the seeded university SSO session time to redirect automatically.
                     if (Date.now() - authSince > 1500 && !loginWindow.isVisible()) {
                         loginWindow.show()
                         loginWindow.focus()
@@ -104,11 +126,16 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
                     finish(undefined, {token, userId})
                 } catch {
                     if (Date.now() - serviceSince > 15_000) finish(new AuthError('iCourse 登录验证失败，请检查网络并重新登录。'))
-                } finally { checking = false }
+                } finally {
+                    checking = false
+                }
             }
             const poll = setInterval(() => void check(), 750)
             controller.signal.addEventListener('abort', aborted, {once: true})
-            loginWindow.webContents.on('dom-ready', () => { ready = true; void check() })
+            loginWindow.webContents.on('dom-ready', () => {
+                ready = true;
+                void check()
+            })
             loginWindow.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
                 if (mainFrame && code !== -3) finish(new AuthError('无法加载学校课程回放平台，请检查网络。'))
             })
@@ -117,12 +144,12 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
             })
         })
         const candidates: ReplayCourse[] = []
-        // Query only this account's teaching weeks in the selected semester.
-        // Read all of them before choosing so a duplicate course is never silently selected.
         for (const week of weeks) {
             controller.signal.throwIfAborted()
-            const params = new URLSearchParams({user_id: identity.userId, tenant_id: '222',
-                start_at: week.start, end_at: week.end, token: identity.token})
+            const params = new URLSearchParams({
+                user_id: identity.userId, tenant_id: '222',
+                start_at: week.start, end_at: week.end, token: identity.token
+            })
             candidates.push(...parseReplaySchedule(await getJson(`/courseapi/v2/schedule/get-week-schedules?${params}`, identity.token)))
         }
         const id = matchReplayCourse(candidates, course)
@@ -135,9 +162,14 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
     } finally {
         clearTimeout(timeout)
         parent?.removeListener('closed', cancel)
-        if (window && !window.isDestroyed()) { window.removeListener('closed', cancel); window.destroy() }
+        if (window && !window.isDestroyed()) {
+            window.removeListener('closed', cancel);
+            window.destroy()
+        }
         controller.abort()
-        await reader.clearStorageData().catch(() => {})
-        await reader.closeAllConnections().catch(() => {})
+        await reader.clearStorageData().catch(() => {
+        })
+        await reader.closeAllConnections().catch(() => {
+        })
     }
 }
