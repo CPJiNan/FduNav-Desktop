@@ -134,6 +134,17 @@ export class AppDatabase {
         return row ? JSON.parse(row.data as string) as Todo : null
     }
 
+    saveTodos(username: string, todos: Todo[]) {
+        this.db.exec('BEGIN')
+        try {
+            for (const todo of todos) this.saveTodo(username, todo)
+            this.db.exec('COMMIT')
+        } catch (error) {
+            this.db.exec('ROLLBACK')
+            throw error
+        }
+    }
+
     saveTodo(username: string, todo: Todo) {
         this.db.prepare(`INSERT INTO todos (username, id, data)
                          VALUES (?, ?, ?) ON CONFLICT(username, id) DO

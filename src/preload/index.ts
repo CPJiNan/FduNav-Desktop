@@ -64,6 +64,8 @@ const generalSettings: GeneralSettingsAPI = {
 contextBridge.exposeInMainWorld('generalSettings', generalSettings)
 
 const todos: TodosAPI = {
+    syncElearning: interactive => ipcRenderer.invoke('todos:sync-elearning', interactive),
+    openElearning: id => ipcRenderer.invoke('todos:open-elearning', id),
     list: () => ipcRenderer.invoke('todos:list'),
     save: input => ipcRenderer.invoke('todos:save', input),
     remove: id => ipcRenderer.invoke('todos:remove', id),

@@ -14,11 +14,6 @@
     color: var(--color-text-muted);
 }
 
-.source-search:focus-within {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-}
-
 .source-search input {
     width: 100%;
     min-width: 0;

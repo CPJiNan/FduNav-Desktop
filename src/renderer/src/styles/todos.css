@@ -7,10 +7,47 @@
 
 .todos-toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
     margin-bottom: var(--space-5);
+}
+
+.todos-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+
+.todos-filter-toggle.is-active {
+    color: var(--color-accent);
+}
+
+.todos-action.secondary-button {
+    background: transparent;
+    border-color: var(--color-border-default);
+    white-space: nowrap;
+    transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.todos-action:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.todos-refresh[aria-busy="true"] .icon {
+    animation: todos-refresh-spin 1s linear infinite;
+}
+
+@keyframes todos-refresh-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .todos-action.secondary-button { transition: none; transform: none; }
+    .todos-refresh[aria-busy="true"] .icon { animation: none; }
 }
 
 .todos-add {
@@ -19,6 +56,38 @@
     align-items: center;
     gap: var(--space-2);
     white-space: nowrap;
+}
+
+.todos-elearning-tools {
+    display: flex;
+    align-items: end;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin-top: var(--space-4);
+    margin-bottom: var(--space-5);
+    padding: var(--space-4);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+    font-size: var(--font-size-sm);
+}
+
+.todos-elearning-tools input, .todos-elearning-tools select {
+    min-height: var(--size-touch-target);
+    max-width: 100%;
+}
+
+.todos-elearning-tools select:not(:disabled):is(:hover, :active),
+.todos-elearning-tools .todos-search:not(:disabled):is(:hover, :active) {
+    background-color: var(--color-bg-subtle);
+}
+
+.todos-search { flex: 1; min-width: 180px; }
+.todos-search {
+    padding: var(--space-2) var(--space-3);
+    border: var(--border-width) solid var(--input-border);
+    border-radius: var(--input-radius);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
 }
 
 .todos-filters {
@@ -233,6 +302,17 @@
 }
 
 @media (max-width: 640px) {
+    .todos-elearning-tools {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-3);
+    }
+
+    .todos-elearning-tools .todos-search {
+        flex: none;
+        min-width: 0;
+    }
+
     .todos-page {
         padding: var(--space-6) var(--space-4);
     }

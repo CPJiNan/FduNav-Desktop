@@ -5,7 +5,7 @@ import {Icon} from './Icon'
 import {TodoDialog} from './TodoDialog'
 import './styles/todos.css'
 
-const filters = [{value: 'pending', label: '待完成'}, {value: 'completed', label: '已完成'}, {
+const filters = [{value: 'pending', label: '未完成'}, {value: 'completed', label: '已完成'}, {
     value: 'all',
     label: '全部'
 }] as const
@@ -22,6 +22,12 @@ const emptyTodo = (): TodoInput => ({
 
 export function TodosPage() {
     const [todos, setTodos] = useState<Todo[]>([])
+    const [source, setSource] = useState('all')
+    const [query, setQuery] = useState('')
+    const [filterOpen, setFilterOpen] = useState(false)
+    const [syncError, setSyncError] = useState('')
+    const [syncing, setSyncing] = useState(false)
+    const syncPending = useRef(false)
     const [filter, setFilter] = useState<Filter>('pending')
     const [loading, setLoading] = useState(true)
     const [loaded, setLoaded] = useState(false)
@@ -39,6 +45,36 @@ export function TodosPage() {
     const addButton = useRef<HTMLButtonElement>(null)
     const restoreFocus = useRef(false)
     const api = window.todos
+
+    async function syncElearning(interactive = false) {
+        if (!api || syncPending.current || pending.current || pendingToggles.current.size || editor) return
+        syncPending.current = true
+        setSyncing(true)
+        setSyncError('')
+        try {
+            const result = await api.syncElearning(interactive)
+            if (!active.current) return
+            if (result.ok) {
+                setTodos(result.data.todos)
+                setLoaded(true)
+            } else setSyncError(result.error)
+        } catch {
+            if (active.current) setSyncError('无法同步 eLearning，请稍后重试。')
+        } finally {
+            syncPending.current = false
+            if (active.current) setSyncing(false)
+        }
+    }
+
+    async function openAssignment(todo: Todo) {
+        if (!api) return
+        try {
+            const result = await api.openElearning(todo.id)
+            if (active.current && !result.ok) setError(result.error)
+        } catch {
+            if (active.current) setError('无法打开作业，请重试。')
+        }
+    }
 
     async function load() {
         if (!api) {
@@ -63,7 +99,9 @@ export function TodosPage() {
 
     useEffect(() => {
         active.current = true
-        const start = window.setTimeout(() => void load(), 0)
+        const start = window.setTimeout(() => void load().then(() => {
+            if (active.current) void syncElearning()
+        }), 0)
         let timer: number
 
         function updateClock() {
@@ -219,8 +257,10 @@ export function TodosPage() {
         unlockToggle(id)
     }
 
-    const remaining = todos.filter(todo => !todo.completed).length
-    const visible = todos.filter(todo => filter === 'all' || todo.completed === (filter === 'completed'))
+    const matching = todos.filter(todo => (source === 'all' || (source === 'elearning' ? !!todo.elearning : !todo.elearning)) &&
+        `${todo.title} ${todo.notes} ${todo.elearning?.status ?? ''} ${todo.elearning?.submittedAt ?? ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+    const remaining = matching.filter(todo => !todo.completed).length
+    const visible = matching.filter(todo => filter === 'all' || todo.completed === (filter === 'completed'))
         .sort((left, right) => Number(left.completed) - Number(right.completed) ||
             (left.dueDate ? `${left.dueDate}T${left.dueTime}` : '9999').localeCompare(
                 right.dueDate ? `${right.dueDate}T${right.dueTime}` : '9999') || right.createdAt.localeCompare(left.createdAt))
@@ -231,14 +271,35 @@ export function TodosPage() {
                 {filters.map(item => <button key={item.value} type="button" aria-pressed={filter === item.value}
                                              disabled={busy || toggling.size > 0}
                                              onClick={() => setFilter(item.value)}>
-                    {item.label}<span>{item.value === 'all' ? todos.length : item.value === 'pending' ? remaining : todos.length - remaining}</span>
+                    {item.label}<span>{item.value === 'all' ? matching.length : item.value === 'pending' ? remaining : matching.length - remaining}</span>
                 </button>)}
             </div>
-            <button ref={addButton} type="button" className="primary-button todos-add"
-                    disabled={!loaded || busy || editing || toggling.size > 0} onClick={() => void createTodo()}>
+            <div className="todos-actions">
+                <button type="button" className={`secondary-button todos-action todos-filter-toggle${source !== 'all' || query.trim() ? ' is-active' : ''}`}
+                        aria-label="筛选待办" title="筛选待办" aria-expanded={filterOpen}
+                        aria-controls="todos-filter-settings" onClick={() => setFilterOpen(value => !value)}>
+                    <Icon name="filter"/>筛选
+                </button>
+                <button type="button" className="secondary-button todos-action todos-refresh" aria-busy={syncing}
+                        aria-label={syncing ? '正在刷新 eLearning 作业' : '刷新 eLearning 作业'} title="刷新 eLearning 作业"
+                        disabled={!api || loading || syncing || busy || editing || toggling.size > 0}
+                        onClick={() => void syncElearning(true)}>
+                    <Icon name="refresh"/>{syncing ? '刷新中' : '刷新'}
+                </button>
+                <button ref={addButton} type="button" className="primary-button todos-add"
+                    disabled={!loaded || busy || syncing || editing || toggling.size > 0} onClick={() => void createTodo()}>
                 <Icon name="plus"/>新增待办
             </button>
+            </div>
         </div>
+        {filterOpen && <div id="todos-filter-settings" className="todos-elearning-tools">
+            <select aria-label="来源" value={source} onChange={event => setSource(event.target.value)}>
+                <option value="all">全部待办</option><option value="elearning">eLearning 作业</option><option value="manual">手动待办</option>
+            </select>
+            <input className="todos-search" type="search" aria-label="搜索待办名称、课程与提交记录" value={query}
+                placeholder="待办名称" onChange={event => setQuery(event.target.value)}/>
+        </div>}
+        {syncError && <p className="account-error" role="alert">{syncError}</p>}
         {!api && <p className="account-notice">请在桌面应用中使用待办；若已打开桌面应用，请重启以加载待办服务。</p>}
         {error && !editor && <div className="account-error" role="alert">{error}{!loaded && api &&
             <button type="button" className="text-button" disabled={loading}
@@ -262,12 +323,12 @@ export function TodosPage() {
                                    if (event.target === event.currentTarget && event.animationName === 'todo-row-exit') finishTransition(todo.id, event.currentTarget)
                                }}>
                         <button className="icon-button todo-check" type="button" aria-pressed={todo.completed}
-                                aria-disabled={busy || editing || toggling.has(todo.id)}
-                                disabled={busy || editing} title={todo.completed ? '标记为待完成' : '标记为已完成'}
-                                aria-label={`${todo.completed ? '标记为待完成' : '标记为已完成'}：${todo.title}`}
+                                aria-disabled={busy || editing || syncing || !!todo.elearning || toggling.has(todo.id)}
+                                disabled={busy || editing || syncing || !!todo.elearning} title={todo.elearning ? '完成状态由 eLearning 提交记录同步' : todo.completed ? '标记为待完成' : '标记为已完成'}
+                                aria-label={todo.elearning ? `${todo.elearning.status}：${todo.title}（自动同步）` : `${todo.completed ? '标记为待完成' : '标记为已完成'}：${todo.title}`}
                                 onClick={() => void toggleCompleted(todo)}><Icon name="check"/></button>
-                        <button className="todo-content" type="button" disabled={busy || editing || toggling.size > 0}
-                                aria-label={`编辑待办：${todo.title}`} onClick={() => openEditor(todo)}>
+                        <button className="todo-content" type="button" disabled={busy || syncing || editing || toggling.size > 0}
+                                aria-label={`${todo.elearning ? '打开作业' : '编辑待办'}：${todo.title}`} onClick={() => todo.elearning ? void openAssignment(todo) : openEditor(todo)}>
                         <span className="todo-title"><span className="todo-title-text" onAnimationEnd={event => {
                             if (event.target === event.currentTarget && transition?.todo.id === todo.id && transition.stage === 'line' &&
                                 (event.animationName === 'todo-strike-in' || event.animationName === 'todo-strike-out')) {
@@ -276,16 +337,20 @@ export function TodosPage() {
                             }
                         }}>{todo.title}</span></span>
                             {todo.notes && <span className="todo-notes">{todo.notes}</span>}
+                            {todo.elearning && <span className="todo-notes">eLearning · {todo.elearning.status}
+                                {todo.elearning.submittedAt && ` · 提交于 ${new Date(todo.elearning.submittedAt).toLocaleString()}`}
+                                {todo.elearning.attempts > 0 && ` · 第 ${todo.elearning.attempts} 次提交`}
+                                {' · 点击查看作业'}</span>}
                             {todo.dueDate && <span
                                 className={`todo-due${overdue ? ' is-overdue' : ''}`}>
                             <Icon name="calendar"/><time dateTime={dueAt}>{todo.dueDate} {todo.dueTime}</time>
                                 {!todo.completed && (overdue ? '已逾期' : todo.dueDate === today ? '今天截止' : '')}
                         </span>}
                         </button>
-                        <button type="button" className="icon-button todo-delete"
-                                disabled={busy || editing || toggling.has(todo.id)}
+                        {!todo.elearning && <button type="button" className="icon-button todo-delete"
+                                disabled={busy || syncing || editing || toggling.has(todo.id)}
                                 aria-label={`删除待办：${todo.title}`} title="删除待办"
-                                onClick={() => void remove(todo)}><Icon name="close"/></button>
+                                onClick={() => void remove(todo)}><Icon name="close"/></button>}
                     </li>
                 })}
             </ul>

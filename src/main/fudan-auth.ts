@@ -80,6 +80,7 @@ function checkPage(html: string) {
 export interface Page {
     text: string;
     url: string
+    link?: string
 }
 
 export interface Transport {
@@ -135,7 +136,7 @@ export class FudanTransport implements Transport {
                         if (!payload && [429, 500, 502, 503, 504].includes(response.status) && attempt < 2) break
                         throw new AuthError(`学校服务器返回 HTTP ${response.status}，请稍后重试。`)
                     }
-                    return {text: await response.text(), url}
+                    return {text: await response.text(), url, link: response.headers.get('link') ?? undefined}
                 }
             } catch (error) {
                 if (error instanceof AuthError) throw error
