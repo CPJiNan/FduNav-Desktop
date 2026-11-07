@@ -26,6 +26,20 @@ export function validateCompaction(raw: string): string {
     return summary
 }
 
+/**
+ * Stored summaries are JSON text. Inject them as structured data so the model does not read — and
+ * the trace panel does not display — escaped JSON inside JSON.
+ */
+export function parseSummary(summary: string | null | undefined): Record<string, unknown> | string | null {
+    if (!summary) return null
+    try {
+        const parsed: unknown = JSON.parse(summary)
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : summary
+    } catch {
+        return summary
+    }
+}
+
 /** Reuse the compaction response for memory suggestions; every write still requires approval. */
 export function extractCompactionMemories(summary: string, userMessages: string[]): MemoryInput[] {
     const raw = JSON.parse(summary).memories
