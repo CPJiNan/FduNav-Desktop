@@ -12,7 +12,7 @@ export const defaultToolDescriptions = {
     "list_events": "查询日历中的日程、考试和课程，按开始时间升序。不查询待办列表。返回卡片及课表状态。",
     "get_event": "通过日程 ID 获取详情及卡片。",
     "create_event": "请求新建日程。缺少起止时间时询问，用户明确要求待办/TODO 时禁止使用。展示新建日程请求卡片。",
-    "list_todos": "查询待办/TODO 列表。不查询日历。返回 kind=todo 的记录。",
+    "list_todos": "查询待办/TODO 列表。不查询日历。source=elearning 的记录来自 eLearning 作业同步，回答时必须说明这是 eLearning 作业，并报告课程 elearning.courseName 与提交状态 elearning.status（未提交/已提交/待批阅/已评分/免交）；source=manual 的是用户手动创建的待办，不要混淆。",
     "create_todo": "请求新增待办/TODO。用户明确要求日程时禁止使用。展示新建待办请求卡片。"
 } as const
 

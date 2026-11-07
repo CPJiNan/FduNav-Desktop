@@ -5,6 +5,7 @@ import {validateMemory, selectMemories, type Memory} from '../src/shared/memory.
 import {compactTurns, validateCompaction} from '../src/main/chat-context.ts'
 import {AppDatabase} from '../src/main/database.ts'
 import {createChatToolRunner} from '../src/main/chat-tools.ts'
+import {defaultToolDescriptions} from '../src/shared/llm-prompts.ts'
 
 const budget = {rounds: 3, calls: 10}
 test('tool envelope retains small data, bounds oversized result and identifies failure', () => {
@@ -76,6 +77,35 @@ test('tool runner validates raw args, enforces lookup first, returns full origin
         const result = await run('get_notice', JSON.stringify({sourceId: notice.sourceId, url: notice.url})) as {content: string}
         assert.equal(result.content.length, 20000)
         await assert.rejects(run('recall', '{}'), {code: 'forbidden'})
+    } finally {db.close()}
+})
+
+test('list_todos marks eLearning assignments instead of presenting them as manual todos', async () => {
+    const db = new AppDatabase(':memory:')
+    const notices = {list: () => ({items: []}), detail: async () => ({content: ''})}
+    const base = {
+        notes: '', dueDate: '2026-11-10', dueTime: '23:59', reminderMinutes: -1 as const,
+        completed: false, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z'
+    }
+    db.saveTodo('alice', {id: '11111111-1111-1111-1111-111111111111', title: '第三章习题', ...base,
+        elearning: {
+            courseId: '1', assignmentId: '2', courseName: '高等数学',
+            url: 'https://elearning.fudan.edu.cn/courses/1/assignments/2', status: '未提交',
+            submittedAt: null, attempts: 0, syncedAt: '2026-11-07T00:00:00Z'
+        }})
+    db.saveTodo('alice', {id: '22222222-2222-2222-2222-222222222222', title: '买书', ...base})
+    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}))
+    try {
+        const result = await run('list_todos', '{}') as {items: Array<Record<string, any>>}
+        const assignment = result.items.find(item => item.title === '第三章习题')!
+        const manual = result.items.find(item => item.title === '买书')!
+        assert.equal(assignment.source, 'elearning')
+        assert.equal(assignment.elearning.courseName, '高等数学')
+        assert.equal(assignment.elearning.status, '未提交')
+        assert.match(assignment.elearning.label, /eLearning 作业/)
+        assert.equal(manual.source, 'manual')
+        assert.equal(manual.elearning, undefined)
+        assert.match(defaultToolDescriptions.list_todos, /source=elearning/)
     } finally {db.close()}
 })
 

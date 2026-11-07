@@ -8,7 +8,7 @@ import {
     timeLabel,
     validateCalendarEvent
 } from '../shared/calendar'
-import {validateTodo} from '../shared/todos'
+import {type Todo, validateTodo} from '../shared/todos'
 import type {ChatAction, ChatCard} from '../shared/chat'
 import type {Notice} from '../shared/notices'
 import type {AppDatabase} from './database'
@@ -87,6 +87,18 @@ export const chatToolLabels: Record<string, string> = {
     generate_notice_summary: '正在请求通知摘要',
     list_events: '正在获取日程', get_event: '正在读取日程', create_event: '正在请求新增日程',
     list_todos: '正在查询待办', create_todo: '正在请求新增待办',
+}
+
+/** Model-facing view of a todo: mark eLearning-sourced items explicitly so they are not read as manual todos. */
+export function presentTodo(todo: Todo) {
+    const elearning = todo.elearning
+    if (!elearning) return {...todo, kind: 'todo' as const, source: 'manual' as const}
+    return {
+        ...todo,
+        kind: 'todo' as const,
+        source: 'elearning' as const,
+        elearning: {...elearning, label: `eLearning 作业 · ${elearning.courseName}`}
+    }
 }
 
 function textArg(args: Fields, key: string, required = false, max = 500): string {
@@ -267,7 +279,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             const result = page(db.getTodos(username).filter(todo =>
                 (input.completed === undefined || todo.completed === input.completed) &&
                 `${todo.title} ${todo.notes}`.toLocaleLowerCase().includes(query)), input)
-            return {...result, items: result.items.map(todo => ({...todo, kind: 'todo'}))}
+            return {...result, items: result.items.map(presentTodo)}
         }
         if (name === 'create_todo') {
             if (input.dueDate && input.dueTime === undefined) throw new ToolError('invalid_args', '请先明确待办截止时间（时、分）。')
