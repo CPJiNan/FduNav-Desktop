@@ -200,127 +200,130 @@ export function LlmPanel({active}: { active: boolean }) {
         }
     }
 
-    return <div className="llm-settings"><form className="llm-panel" onSubmit={save} aria-busy={busy || toggling}>
-        <div className="llm-field llm-enable-field">
-            <label id="llm-enable-label" htmlFor="llm-enable">启用</label>
-            <button id="llm-enable" type="button" role="switch" className="llm-switch"
-                    aria-labelledby="llm-enable-label" aria-checked={settings.enabled}
-                    disabled={!api || !loaded || toggling} onClick={() => void toggleEnabled()}>
-                <span className="llm-switch-track" aria-hidden="true"><span/></span>
-            </button>
-        </div>
-        <fieldset disabled={!api || !loaded || busy || toggling || !settings.enabled}>
-            <div className="llm-field">
-                <label htmlFor="llm-base-url">接口地址</label>
-                <input id="llm-base-url" type="url" value={settings.baseUrl} required maxLength={2048}
-                       placeholder="https://example.com/v1" autoCapitalize="none" spellCheck={false}
-                       onChange={event => {
-                           setSettings({...settings, baseUrl: event.target.value, model: ''});
-                           setModels(null);
-                           edited()
-                       }}/>
+    return <div className="llm-settings">
+        <form className="llm-panel" onSubmit={save} aria-busy={busy || toggling}>
+            <div className="llm-field llm-enable-field">
+                <label id="llm-enable-label" htmlFor="llm-enable">启用</label>
+                <button id="llm-enable" type="button" role="switch" className="llm-switch"
+                        aria-labelledby="llm-enable-label" aria-checked={settings.enabled}
+                        disabled={!api || !loaded || toggling} onClick={() => void toggleEnabled()}>
+                    <span className="llm-switch-track" aria-hidden="true"><span/></span>
+                </button>
             </div>
-            <div className="llm-field">
-                <label htmlFor="llm-api-key">API Key</label>
-                <div className="llm-key-control">
-                    <input id="llm-api-key" type="password" value={apiKey} maxLength={4096} autoComplete="new-password"
-                           autoCapitalize="none" spellCheck={false} disabled={clearApiKey}
-                           placeholder={settings.hasApiKey ? '已配置密钥' : '可选'}
+            <fieldset disabled={!api || !loaded || busy || toggling || !settings.enabled}>
+                <div className="llm-field">
+                    <label htmlFor="llm-base-url">接口地址</label>
+                    <input id="llm-base-url" type="url" value={settings.baseUrl} required maxLength={2048}
+                           placeholder="https://example.com/v1" autoCapitalize="none" spellCheck={false}
                            onChange={event => {
-                               setApiKey(event.target.value);
+                               setSettings({...settings, baseUrl: event.target.value, model: ''});
                                setModels(null);
                                edited()
                            }}/>
-                    {settings.hasApiKey && <label className="llm-clear-key">
-                        <input type="checkbox" checked={clearApiKey} onChange={event => {
-                            setClearApiKey(event.target.checked);
-                            setApiKey('');
-                            setModels(null);
-                            edited()
-                        }}/>清除已保存的密钥
-                    </label>}
                 </div>
-            </div>
-            <div className="llm-field">
-                <label htmlFor="llm-model">模型名称</label>
-                <div className="llm-model-control">
-                    <select id="llm-model" value={settings.model} required
-                            onChange={event => {
-                                setSettings({...settings, model: event.target.value});
+                <div className="llm-field">
+                    <label htmlFor="llm-api-key">API Key</label>
+                    <div className="llm-key-control">
+                        <input id="llm-api-key" type="password" value={apiKey} maxLength={4096}
+                               autoComplete="new-password"
+                               autoCapitalize="none" spellCheck={false} disabled={clearApiKey}
+                               placeholder={settings.hasApiKey ? '已配置密钥' : '可选'}
+                               onChange={event => {
+                                   setApiKey(event.target.value);
+                                   setModels(null);
+                                   edited()
+                               }}/>
+                        {settings.hasApiKey && <label className="llm-clear-key">
+                            <input type="checkbox" checked={clearApiKey} onChange={event => {
+                                setClearApiKey(event.target.checked);
+                                setApiKey('');
+                                setModels(null);
                                 edited()
-                            }}>
-                        <option value="">请选择模型</option>
-                        {(models ?? (settings.model ? [settings.model] : [])).map(model => <option key={model}
-                                                                                                   value={model}>{model}</option>)}
-                    </select>
-                    <button type="button" className="secondary-button"
-                            onClick={() => void loadModels()}>{fetchingModels ? '获取中…' : '获取模型'}</button>
+                            }}/>清除已保存的密钥
+                        </label>}
+                    </div>
                 </div>
-            </div>
-            <section className="llm-prompts" aria-labelledby="llm-prompts-heading">
-                <h3 id="llm-prompts-heading">提示词</h3>
-                {promptFields.map(({key, label}) => <PromptSection key={key} id={`llm-${key}`} label={label}
-                                                                   onReset={() => {
-                                                                       setSettings(value => ({
-                                                                           ...value,
-                                                                           [key]: emptyLlmSettings()[key]
-                                                                       }));
-                                                                       edited()
-                                                                   }}>
-                    <div className="llm-prompt-control">
+                <div className="llm-field">
+                    <label htmlFor="llm-model">模型名称</label>
+                    <div className="llm-model-control">
+                        <select id="llm-model" value={settings.model} required
+                                onChange={event => {
+                                    setSettings({...settings, model: event.target.value});
+                                    edited()
+                                }}>
+                            <option value="">请选择模型</option>
+                            {(models ?? (settings.model ? [settings.model] : [])).map(model => <option key={model}
+                                                                                                       value={model}>{model}</option>)}
+                        </select>
+                        <button type="button" className="secondary-button"
+                                onClick={() => void loadModels()}>{fetchingModels ? '获取中…' : '获取模型'}</button>
+                    </div>
+                </div>
+                <section className="llm-prompts" aria-labelledby="llm-prompts-heading">
+                    <h3 id="llm-prompts-heading">提示词</h3>
+                    {promptFields.map(({key, label}) => <PromptSection key={key} id={`llm-${key}`} label={label}
+                                                                       onReset={() => {
+                                                                           setSettings(value => ({
+                                                                               ...value,
+                                                                               [key]: emptyLlmSettings()[key]
+                                                                           }));
+                                                                           edited()
+                                                                       }}>
+                        <div className="llm-prompt-control">
                         <textarea aria-labelledby={`llm-${key}-label`} value={settings[key]}
                                   maxLength={summaryPromptMaxLength} spellCheck={false}
                                   onChange={event => {
                                       setSettings({...settings, [key]: event.target.value});
                                       edited()
                                   }}/>
-                    </div>
-                </PromptSection>)}
-                <PromptSection id="llm-tools" label="工具提示词">
-                    <div className="llm-tool-prompts">
-                        {(Object.keys(defaultToolDescriptions) as ChatToolName[]).map(name => <div
-                            className="llm-prompt-control llm-tool-prompt" key={name}>
-                            <div className="llm-prompt-toolbar">
-                                <label htmlFor={`llm-tool-${name}`}>{name}</label>
-                                <ResetPromptButton label={`${name} 提示词`} onReset={() => {
-                                    setSettings(value => ({
-                                        ...value, toolDescriptions: {
-                                            ...value.toolDescriptions, [name]: defaultToolDescriptions[name],
-                                        }
-                                    }));
-                                    edited()
-                                }}/>
-                            </div>
-                            <textarea id={`llm-tool-${name}`} value={settings.toolDescriptions[name]}
-                                      maxLength={2000} spellCheck={false}
-                                      onChange={event => {
-                                          setSettings({
-                                              ...settings, toolDescriptions: {
-                                                  ...settings.toolDescriptions, [name]: event.target.value,
-                                              }
-                                          });
-                                          edited()
-                                      }}/>
-                        </div>)}
-                    </div>
-                </PromptSection>
-            </section>
-            <div className="llm-actions">
-                <button type="submit"
-                        className="primary-button">{busy && loaded && !testing && !fetchingModels ? '保存中…' : '保存'}</button>
-                <button type="button" className="secondary-button"
-                        onClick={() => void testConnection()}>{testing ? '测试中…' : '测试连接'}</button>
-            </div>
-        </fieldset>
-        {!api && <p className="account-error" role="alert">LLM 设置服务不可用。</p>}
-        {busy && !loaded && <p className="llm-status" role="status">读取中…</p>}
-        {testing && <p className="llm-status" role="status">正在测试连接…</p>}
-        {fetchingModels && <p className="llm-status" role="status">正在获取模型…</p>}
-        {modelStatus && <p className="llm-status" role="status">{modelStatus}</p>}
-        {testResult && <p className="llm-status" role="status">{testResult}</p>}
-        {error && <div><p className="account-error" role="alert">{error}</p>
-            {!loaded && api && <button type="button" className="secondary-button" disabled={busy}
-                                       onClick={() => setRetry(value => value + 1)}>重试</button>}
-        </div>}
-    </form><UsagePanel active={active}/><MemoryPanel active={active}/></div>
+                        </div>
+                    </PromptSection>)}
+                    <PromptSection id="llm-tools" label="工具提示词">
+                        <div className="llm-tool-prompts">
+                            {(Object.keys(defaultToolDescriptions) as ChatToolName[]).map(name => <div
+                                className="llm-prompt-control llm-tool-prompt" key={name}>
+                                <div className="llm-prompt-toolbar">
+                                    <label htmlFor={`llm-tool-${name}`}>{name}</label>
+                                    <ResetPromptButton label={`${name} 提示词`} onReset={() => {
+                                        setSettings(value => ({
+                                            ...value, toolDescriptions: {
+                                                ...value.toolDescriptions, [name]: defaultToolDescriptions[name],
+                                            }
+                                        }));
+                                        edited()
+                                    }}/>
+                                </div>
+                                <textarea id={`llm-tool-${name}`} value={settings.toolDescriptions[name]}
+                                          maxLength={2000} spellCheck={false}
+                                          onChange={event => {
+                                              setSettings({
+                                                  ...settings, toolDescriptions: {
+                                                      ...settings.toolDescriptions, [name]: event.target.value,
+                                                  }
+                                              });
+                                              edited()
+                                          }}/>
+                            </div>)}
+                        </div>
+                    </PromptSection>
+                </section>
+                <div className="llm-actions">
+                    <button type="submit"
+                            className="primary-button">{busy && loaded && !testing && !fetchingModels ? '保存中…' : '保存'}</button>
+                    <button type="button" className="secondary-button"
+                            onClick={() => void testConnection()}>{testing ? '测试中…' : '测试连接'}</button>
+                </div>
+            </fieldset>
+            {!api && <p className="account-error" role="alert">LLM 设置服务不可用。</p>}
+            {busy && !loaded && <p className="llm-status" role="status">读取中…</p>}
+            {testing && <p className="llm-status" role="status">正在测试连接…</p>}
+            {fetchingModels && <p className="llm-status" role="status">正在获取模型…</p>}
+            {modelStatus && <p className="llm-status" role="status">{modelStatus}</p>}
+            {testResult && <p className="llm-status" role="status">{testResult}</p>}
+            {error && <div><p className="account-error" role="alert">{error}</p>
+                {!loaded && api && <button type="button" className="secondary-button" disabled={busy}
+                                           onClick={() => setRetry(value => value + 1)}>重试</button>}
+            </div>}
+        </form>
+        <UsagePanel active={active}/><MemoryPanel active={active}/></div>
 }

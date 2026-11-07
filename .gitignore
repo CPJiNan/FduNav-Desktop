@@ -148,6 +148,3 @@ release/
 
 # Claude Code
 .claude/
-
-# Local agent evaluation artifacts may contain personal data
-test-results/

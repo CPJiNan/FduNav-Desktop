@@ -101,11 +101,13 @@ export function registerTodoHandlers(db: AppDatabase, accounts: AccountService,
     }
 
     handle('todos:save', save)
+
     function remove(username: string, input: unknown) {
         const result = service.remove(username, input)
         db.afterCommit(() => reminders.changed(username, input as string))
         return result
     }
+
     handle('todos:remove', remove)
     return {save, remove}
 }

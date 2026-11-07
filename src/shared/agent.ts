@@ -1,6 +1,16 @@
-/** Stable, persisted execution records. Payloads are fetched separately from live snapshots. */
 export type ChatCancelReason = 'user' | 'timeout' | 'settings_changed' | 'account_changed'
-export type TraceKind = 'context' | 'compaction' | 'model' | 'retry' | 'tool' | 'usage' | 'approval' | 'undo' | 'error' | 'finish'
+export type TraceKind =
+    'context'
+    | 'compaction'
+    | 'model'
+    | 'retry'
+    | 'tool'
+    | 'usage'
+    | 'approval'
+    | 'undo'
+    | 'error'
+    | 'finish'
+
 export interface ChatTraceEvent {
     id: string
     kind: TraceKind
@@ -10,13 +20,20 @@ export interface ChatTraceEvent {
     status: 'running' | 'completed' | 'failed' | 'cancelled'
     details?: unknown
 }
-export interface ToolBudget {rounds: number; calls: number}
+
+export interface ToolBudget {
+    rounds: number;
+    calls: number
+}
+
 export type ToolErrorCode = 'invalid_args' | 'not_found' | 'forbidden' | 'transient' | 'internal' | 'budget_exhausted'
-export type ToolResult = ({ok: true; data: unknown} | {ok: false; code: ToolErrorCode; message: string; retryable: boolean}) & {
+export type ToolResult =
+    ({ ok: true; data: unknown } | { ok: false; code: ToolErrorCode; message: string; retryable: boolean })
+    & {
     truncated: boolean; remaining: ToolBudget; suggestion?: string
 }
 export const maxToolResultChars = 12000
-/** Shape-only summary of an oversized result; a truncated JSON fragment must never reach the model. */
+
 export function resultShape(value: unknown): Record<string, unknown> {
     if (Array.isArray(value)) return {kind: 'array', length: value.length}
     if (!value || typeof value !== 'object') return {kind: typeof value, ...(typeof value === 'string' ? {length: value.length} : {})}
@@ -24,37 +41,45 @@ export function resultShape(value: unknown): Record<string, unknown> {
     const fields = Object.fromEntries(Object.entries(record).slice(0, 12).map(([key, item]) => [key,
         Array.isArray(item) ? `array(${item.length})` : item && typeof item === 'object' ? 'object' : typeof item]))
     const items = record.items
-    return {kind: 'object', fields, ...(Array.isArray(items) ? {
-        itemCount: items.length,
-        ...(typeof record.total === 'number' ? {total: record.total} : {}),
-        ...(typeof record.hasMore === 'boolean' ? {hasMore: record.hasMore} : {}),
-    } : {})}
-}
-export function toolSuccess(data: unknown, remaining: ToolBudget): Extract<ToolResult, {ok: true}> {
-    const serialized = JSON.stringify(data) ?? 'null'
-    if (serialized.length <= maxToolResultChars - 400) return {ok: true, data, truncated: false, remaining}
-    return {ok: true, data: {
-        truncated: true,
-        originalChars: serialized.length,
-        message: '结果超过长度上限，正文已省略。这里是结构摘要，不是完整数据。',
-        shape: resultShape(data),
-    }, truncated: true, remaining,
-    suggestion: '请缩小日期或关键词范围、减少 limit，或按 ID 读取单条详情；不要根据结构摘要把数据当成完整结果。'}
-}
-export class ToolError extends Error {
-    constructor(public code: ToolErrorCode, message: string) {super(message)}
-}
-export function toolFailure(error: unknown, remaining: ToolBudget): Extract<ToolResult, {ok: false}> {
-    const code = error instanceof ToolError ? error.code : 'internal'
-    return {ok: false, code, message: error instanceof Error ? error.message : '工具执行失败。',
-        retryable: code === 'transient', truncated: false, remaining}
+    return {
+        kind: 'object', fields, ...(Array.isArray(items) ? {
+            itemCount: items.length,
+            ...(typeof record.total === 'number' ? {total: record.total} : {}),
+            ...(typeof record.hasMore === 'boolean' ? {hasMore: record.hasMore} : {}),
+        } : {})
+    }
 }
 
-/** Redact credential fields and common credential strings before persistence or IPC. */
+export function toolSuccess(data: unknown, remaining: ToolBudget): Extract<ToolResult, { ok: true }> {
+    const serialized = JSON.stringify(data) ?? 'null'
+    if (serialized.length <= maxToolResultChars - 400) return {ok: true, data, truncated: false, remaining}
+    return {
+        ok: true, data: {
+            truncated: true,
+            originalChars: serialized.length,
+            message: '结果超过长度上限，正文已省略。这里是结构摘要，不是完整数据。',
+            shape: resultShape(data),
+        }, truncated: true, remaining,
+        suggestion: '请缩小日期或关键词范围、减少 limit，或按 ID 读取单条详情；不要根据结构摘要把数据当成完整结果。'
+    }
+}
+
+export class ToolError extends Error {
+    constructor(public code: ToolErrorCode, message: string) {
+        super(message)
+    }
+}
+
+export function toolFailure(error: unknown, remaining: ToolBudget): Extract<ToolResult, { ok: false }> {
+    const code = error instanceof ToolError ? error.code : 'internal'
+    return {
+        ok: false, code, message: error instanceof Error ? error.message : '工具执行失败。',
+        retryable: code === 'transient', truncated: false, remaining
+    }
+}
+
 export function redactTrace(value: unknown, secrets: string[] = []): unknown {
     if (typeof value === 'string') {
-        // Raw SSE bodies contain JSON frames and JSON-encoded function arguments. Redact them
-        // structurally too; a credential inside a frame must not bypass object-field redaction.
         if (/^data:/m.test(value)) value = value.replace(/\r\n?/g, '\n').split('\n\n').map(frame => {
             const lines = frame.split('\n')
             const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /, '')).join('\n')
@@ -64,13 +89,19 @@ export function redactTrace(value: unknown, secrets: string[] = []): unknown {
                 return lines.flatMap(line => {
                     if (!line.startsWith('data:')) return [line]
                     if (written) return []
-                    written = true; return [`data: ${safe}`]
+                    written = true;
+                    return [`data: ${safe}`]
                 }).join('\n')
-            } catch {return frame}
+            } catch {
+                return frame
+            }
         }).join('\n\n')
         const input = value as string
         if (/^\s*[\[{]/.test(input)) {
-            try {return JSON.stringify(redactTrace(JSON.parse(input), secrets))} catch { /* preserve non-JSON text */ }
+            try {
+                return JSON.stringify(redactTrace(JSON.parse(input), secrets))
+            } catch {
+            }
         }
         let text = input.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{12,})\b/g, '[REDACTED]')
             .replace(/(Bearer\s+)[^\s"',}]+/gi, '$1[REDACTED]')
