@@ -2,6 +2,8 @@ import {type FormEvent, type ReactNode, useEffect, useRef, useState} from 'react
 import {emptyLlmSettings, type LlmSettings, summaryPromptMaxLength, validateLlmSettings} from '../../shared/llm'
 import {type ChatToolName, defaultToolDescriptions} from '../../shared/llm-prompts'
 import {Icon} from './Icon'
+import {MemoryPanel} from './MemoryPanel'
+import {UsagePanel} from './UsagePanel'
 import './styles/llm.css'
 
 const promptFields = [
@@ -198,7 +200,7 @@ export function LlmPanel({active}: { active: boolean }) {
         }
     }
 
-    return <form className="llm-panel" onSubmit={save} aria-busy={busy || toggling}>
+    return <div className="llm-settings"><form className="llm-panel" onSubmit={save} aria-busy={busy || toggling}>
         <div className="llm-field llm-enable-field">
             <label id="llm-enable-label" htmlFor="llm-enable">启用</label>
             <button id="llm-enable" type="button" role="switch" className="llm-switch"
@@ -320,5 +322,5 @@ export function LlmPanel({active}: { active: boolean }) {
             {!loaded && api && <button type="button" className="secondary-button" disabled={busy}
                                        onClick={() => setRetry(value => value + 1)}>重试</button>}
         </div>}
-    </form>
+    </form><UsagePanel active={active}/><MemoryPanel active={active}/></div>
 }

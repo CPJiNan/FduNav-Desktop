@@ -39,7 +39,7 @@ export class LlmSettingsService {
     setEnabled(enabled: unknown): LlmSettings {
         if (typeof enabled !== 'boolean') throw new Error('LLM 启用状态无效。')
         this.db.setLlmEnabled(enabled)
-        if (!enabled) this.requests.abort()
+        if (!enabled) this.requests.abort('settings_changed')
         else if (this.requests.signal.aborted) this.requests = new AbortController()
         return this.get()
     }
@@ -135,6 +135,8 @@ export class LlmSettingsService {
             connectionTestPrompt: value.connectionTestPrompt,
             toolDescriptions: value.toolDescriptions,
         })
+        this.requests.abort('settings_changed')
+        if (this.db.getLlmEnabled()) this.requests = new AbortController()
         return this.get()
     }
 }

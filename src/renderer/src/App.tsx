@@ -209,7 +209,7 @@ export default function App() {
                                     }}/></div>
                                     <div hidden={tab !== 'sources'}><SourcesPanel
                                         active={showSettings && tab === 'sources'}/></div>
-                                    <div hidden={tab !== 'llm'}><LlmPanel active={settings && tab === 'llm'}/></div>
+                                    <div hidden={tab !== 'llm'}><LlmPanel key={account?.username} active={settings && tab === 'llm'}/></div>
                                 </section>
                             </div>
                         </div>

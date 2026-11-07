@@ -1,51 +1,72 @@
-import type {ChatActionRequest} from '../../shared/chat'
+import {type ChatActionRequest, chatActionTitles as titles, chatActionStatusLabels as statuses} from '../../shared/chat'
 import type {CalendarEventInput} from '../../shared/calendar'
 import type {TodoInput} from '../../shared/todos'
 import {calendarReminderOptions} from '../../shared/calendar-reminders'
 import {Icon} from './Icon'
 
-const titles = {create_event: '新增日程', create_todo: '新增待办'}
-const statuses = {pending: '等待允许', executing: '正在执行', completed: '已完成', rejected: '已拒绝', failed: '未完成'}
 
-function Preview({value}: { value: CalendarEventInput | TodoInput }) {
+function factRows(value: CalendarEventInput | TodoInput) {
     const todo = 'dueDate' in value
     const reminder = calendarReminderOptions.find(item => item.value === value.reminderMinutes)?.label ?? '无'
-    return <div className="chat-action-preview">
-        <strong>{value.title}</strong>
-        <dl>
-            {todo ? <>
-                <dt>截止时间</dt>
-                <dd>{value.dueDate ? `${value.dueDate} ${value.dueTime}` : '无截止日期'}</dd>
-            </> : <>
-                <dt>开始</dt>
-                <dd>{value.startDate} {value.allDay ? '全天' : value.startTime}</dd>
-                <dt>结束</dt>
-                <dd>{value.endDate} {value.allDay ? '全天' : value.endTime}</dd>
-                <dt>地点</dt>
-                <dd>{value.location || '无'}</dd>
-            </>}
-            <dt>提醒</dt>
-            <dd>{todo && !value.dueDate ? '无' : reminder}</dd>
-            <dt>备注</dt>
-            <dd>{value.notes || '无'}</dd>
-        </dl>
-    </div>
+    return <dl className="chat-action-facts">
+        {todo ? <>
+            <dt>截止</dt>
+            <dd>{value.dueDate ? `${value.dueDate} ${value.dueTime}` : '无截止日期'}</dd>
+        </> : <>
+            <dt>时间</dt>
+            <dd>{value.startDate} {value.allDay ? '全天' : `${value.startTime} — ${value.endTime}`}</dd>
+            <dt>地点</dt>
+            <dd>{value.location || '无'}</dd>
+        </>}
+        <dt>提醒</dt>
+        <dd>{todo && !value.dueDate ? '无' : reminder}</dd>
+        {value.notes && <><dt>备注</dt><dd>{value.notes}</dd></>}
+    </dl>
 }
 
-export function ChatActionRequestCard({request, disabled, onDecide}: {
-    request: ChatActionRequest; disabled: boolean; onDecide: (allow: boolean) => void
+function Preview({value}: { value: CalendarEventInput | TodoInput }) {
+    return <><p className="chat-action-title">{value.title}</p>{factRows(value)}</>
+}
+
+export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onManageMemory}: {
+    request: ChatActionRequest; disabled: boolean; onDecide: (allow: boolean) => void; onUndo: () => void; onManageMemory: () => void
 }) {
     const {action} = request
-    return <section className="chat-summary-request" aria-label={`${titles[action.kind]}请求`}>
-        <header><strong><Icon name={action.kind === 'create_todo' ? 'todo' : 'calendar'}/>{titles[action.kind]}</strong>
+    const payload = action.kind === 'create_todo' ? action.todo
+        : action.kind === 'update_todo' ? action.after
+        : action.kind === 'create_event' || action.kind === 'update_event' ? action.after
+        : action.kind === 'delete_todo' || action.kind === 'delete_event' ? action.before : null
+    const title = payload?.title ?? ''
+    const heading = action.kind === 'remember' && action.targetId ? '更新已有记忆' : titles[action.kind]
+    return <section className="chat-summary-request" aria-label={`${heading}请求`}>
+        <header><strong><Icon name={action.kind === 'create_todo' ? 'todo' : action.kind === 'remember' ? 'sparkles' : 'calendar'}/>{heading}
+            {title && <span className="chat-action-title">{title}</span>}</strong>
             <span role="status">{statuses[request.status]}</span></header>
-        <Preview value={action.kind === 'create_todo' ? action.todo : action.after}/>
+        {action.kind === 'delete_todo' || action.kind === 'delete_event' ? <dl className="chat-action-facts">
+            <dt>将删除</dt><dd>{action.before.title}</dd>
+            <dt>说明</dt><dd>允许后删除，撤销可恢复。</dd>
+        </dl> : action.kind === 'remember' || action.kind === 'forget' ? <dl className="chat-action-facts">
+            {action.kind === 'remember' && action.targetId ? <>
+                <dt>原内容</dt><dd className="memory-diff-old">− {action.previousText ?? '（原记忆）'}</dd>
+                <dt>新内容</dt><dd className="memory-diff-new">＋ {action.memory.text}</dd>
+            </> : <>
+                <dt>内容</dt><dd>{action.memory.text}</dd>
+            </>}
+            <dt>依据</dt><dd>{action.memory.evidence}</dd>
+            <dt>说明</dt><dd>{action.kind === 'remember' ? '允许后保存在本机；记忆启用时可随对话发送给模型服务。' : '允许后从记忆库删除。'}</dd>
+            {request.status === 'completed' && action.kind === 'remember' && <><dt/><dd>
+                <button type="button" className="chat-ghost-button" onClick={onManageMemory}>查看或删除记忆</button>
+            </dd></>}
+        </dl> : <Preview value={payload as CalendarEventInput | TodoInput}/>}
         {request.status === 'pending' && <div className="chat-summary-actions">
-            <button type="button" className="primary-button" disabled={disabled} onClick={() => onDecide(true)}>允许
-            </button>
-            <button type="button" className="secondary-button" disabled={disabled}
+            <button type="button" className="secondary-button chat-ghost-button" disabled={disabled}
                     onClick={() => onDecide(false)}>拒绝
             </button>
+            <button type="button" className="primary-button" disabled={disabled} onClick={() => onDecide(true)}>允许
+            </button>
+        </div>}
+        {request.status === 'completed' && request.checkpoint && <div className="chat-summary-actions">
+            <button type="button" className="secondary-button" disabled={disabled} onClick={onUndo}>撤销{titles[action.kind]}</button>
         </div>}
         {request.error && <p className="chat-error" role="alert">{request.error}</p>}
     </section>

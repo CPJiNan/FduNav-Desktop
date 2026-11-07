@@ -2,17 +2,34 @@ import {type FormEvent, useEffect, useRef, useState} from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
-import type {ChatCard, ChatState} from '../../shared/chat'
+import type {ChatCard, ChatPushState, ChatState} from '../../shared/chat'
 import type {Notice} from '../../shared/notices'
 import {type CalendarOccurrence, calendarOccurrences, timeLabel} from '../../shared/calendar'
 import {CalendarEventDialog} from './CalendarEventDialog'
 import {Icon} from './Icon'
 import {ChatSummaryRequestCard} from './ChatSummaryRequestCard'
 import {ChatActionRequestCard} from './ChatActionRequestCard'
+import {ChatTracePanel} from './ChatTracePanel'
+import {ChatSessionTracePanel} from './ChatSessionTracePanel'
+import {ChatStatusBar} from './ChatStatusBar'
+import {CopyButton} from './MessageActions'
+import {TurnActivity} from './TurnActivity'
 import './styles/chat.css'
 import './styles/calendar.css'
 
 const suggestions = ['本周通知摘要', '查询今天日程', '新增待办事项']
+
+/** Delta pushes carry only the running turn; merge them into the previous state. */
+function mergeState(previous: ChatState, value: ChatPushState): ChatState {
+    if (value.full) return value
+    const turns = previous.username === value.username ? [...previous.turns] : []
+    for (const turn of value.turns) {
+        const index = turns.findIndex(item => item.id === turn.id)
+        if (index < 0) turns.push(turn)
+        else turns[index] = turn
+    }
+    return {...value, turns}
+}
 
 export function ChatPage({username, onOpenNotice, onSettings}: {
     username: string; onOpenNotice: (notice: Notice) => void; onSettings: () => void
@@ -27,6 +44,10 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const [opening, setOpening] = useState(false)
     const [decidingRequest, setDecidingRequest] = useState(false)
     const [confirmClear, setConfirmClear] = useState(false)
+    const [traceTurnId, setTraceTurnId] = useState<string | null>(null)
+    const [editingTurnId, setEditingTurnId] = useState<string | null>(null)
+    const [sessionTrace, setSessionTrace] = useState(false)
+    const traceTrigger = useRef<HTMLElement | null>(null)
     const [editor, setEditor] = useState<CalendarOccurrence | null>(null)
     const scroll = useRef<HTMLDivElement>(null)
     const input = useRef<HTMLTextAreaElement>(null)
@@ -42,7 +63,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
             if (value.username !== username) return
             stateRevision.current++
             receivedUpdate = true
-            setState(value)
+            setState(previous => mergeState(previous, value))
         })
         if (!window.chat) {
             setError('聊天服务未加载，请重启应用。');
@@ -107,12 +128,14 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         setConfirmClear(false);
         stickToBottom.current = true
         try {
-            const result = await window.chat.send(text)
+            // While editing a failed turn, re-send it instead of appending a new message.
+            const result = editingTurnId ? await window.chat.retry(editingTurnId, text) : await window.chat.send(text)
             if (!mounted.current) return
             if (!result.ok) setError(result.error)
             else {
                 setState(result.data);
-                setDraft('')
+                setDraft('');
+                setEditingTurnId(null)
             }
         } catch {
             if (mounted.current) setError('发送失败，请重试。')
@@ -122,6 +145,19 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                 input.current?.focus()
             }
         }
+    }
+
+    /** Put a failed message back into the composer so it can be fixed and resent. */
+    function startEdit(turn: {id: string; user: string}) {
+        setEditingTurnId(turn.id)
+        setDraft(turn.user)
+        setError('')
+        setTimeout(() => input.current?.focus(), 0)
+    }
+
+    function cancelEdit() {
+        setEditingTurnId(null)
+        input.current?.focus()
     }
 
     async function cancel() {
@@ -142,7 +178,8 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
             if (result.ok) {
                 setState(result.data);
                 setError('');
-                setConfirmClear(false)
+                setConfirmClear(false);
+                setTraceTurnId(null); setSessionTrace(false); setEditingTurnId(null); setDraft('')
             } else setError(result.error)
         } catch {
             if (mounted.current) setError('清空聊天失败。')
@@ -205,6 +242,23 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         }
     }
 
+    async function undo(turnId: string, requestId: string) {
+        if (!window.chat || state.busy || decidingRequest) return
+        setDecidingRequest(true); setError('')
+        try {
+            const result = await window.chat.undo(turnId, requestId)
+            if (!mounted.current) return
+            if (result.ok) setState(result.data); else setError(result.error)
+        } catch {if (mounted.current) setError('无法撤销操作，请重试。')}
+        finally {if (mounted.current) setDecidingRequest(false)}
+    }
+    function openTrace(turnId: string) {
+        traceTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        setSessionTrace(false)
+        setTraceTurnId(turnId)
+    }
+    function closeTrace() {setTraceTurnId(null); traceTrigger.current?.focus()}
+
     function closeEditor() {
         setEditor(null);
         previousFocus.current?.focus()
@@ -221,8 +275,14 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     }
 
     const busy = state.busy || sending
-    return <section className="chat-page" aria-label="聊天">
+    const lastTurnId = state.turns.at(-1)?.id
+    const streaming = (id: string) => busy && id === lastTurnId
+    const traced = state.turns.find(turn => turn.id === traceTurnId)
+    return <section className="chat-workspace" aria-label="聊天"><div className="chat-page">
         <header className="chat-header">
+            <button type="button" className="icon-button" aria-label="会话轨迹" title="会话轨迹"
+                    aria-controls="chat-session-trace" aria-expanded={sessionTrace} disabled={!state.turns.length}
+                    onClick={() => {setTraceTurnId(null); setSessionTrace(value => !value)}}><Icon name="panel"/></button>
             {confirmClear ? <div className="chat-clear-confirm"><span>清空聊天记录？</span>
                     <button type="button" className="secondary-button" disabled={busy} onClick={() => void clear()}>清空
                     </button>
@@ -249,9 +309,17 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                                                                            }}>{text}<Icon
                             name="chevron"/></button>)}</div>
                     </div>}
-                {state.turns.map(turn => <div className="chat-turn" key={turn.id}>
+                {state.turns.map(turn => <div className="chat-turn" key={turn.id}
+                                            data-streaming={streaming(turn.id) || undefined}>
                     <article className="chat-user" aria-label="我的消息">{turn.user}</article>
+                    <div className="chat-message-actions chat-user-actions">
+                        <CopyButton text={turn.user} label="复制这条消息"/>
+                        {turn.error && turn.id === state.turns.at(-1)?.id && !busy &&
+                            <button type="button" className="chat-message-action" onClick={() => startEdit(turn)}>编辑并重发</button>}
+                    </div>
                     <article className="chat-assistant" aria-label="助手回复">
+                        <TurnActivity trace={turn.trace} stage={streaming(turn.id) ? state.status : ''}
+                                      busy={streaming(turn.id)}/>
                         {turn.reply &&
                             <div className="chat-markdown"><Markdown remarkPlugins={[remarkGfm, remarkBreaks]}
                                                                      components={{
@@ -293,19 +361,36 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                             {turn.actionRequests.map(request => <ChatActionRequestCard key={request.id}
                                                                                        request={request}
                                                                                        disabled={state.busy || sending || decidingRequest}
-                                                                                       onDecide={allow => void decideRequest('action', turn.id, request.id, allow)}/>)}
+                                                                                       onDecide={allow => void decideRequest('action', turn.id, request.id, allow)}
+                                                                                       onUndo={() => void undo(turn.id, request.id)} onManageMemory={onSettings}/>)}
+                        </div>}
+                        {turn.startedAt && <div className="turn-meta">
+                            <time dateTime={turn.startedAt}>{new Date(turn.startedAt).toLocaleTimeString('zh-CN', {
+                                hour: '2-digit', minute: '2-digit', hour12: false
+                            })}</time>
+                            {turn.finishedAt && <><i className="turn-meta-dot" aria-hidden="true"/>
+                                <span>{((Date.parse(turn.finishedAt) - Date.parse(turn.startedAt)) / 1000).toFixed(1)}s</span></>}
+                            <button type="button" className="icon-button turn-meta-button" aria-label="查看执行记录"
+                                    title="查看执行记录" aria-controls="chat-trace-panel"
+                                    onClick={() => openTrace(turn.id)}><Icon name="panel"/></button>
                         </div>}
                         {turn.error && <p className="chat-error" role="alert">{turn.error}</p>}
+                        {turn.reply && <div className="chat-message-actions chat-assistant-actions">
+                            <CopyButton text={turn.reply} label="复制回复"/>
+                        </div>}
                     </article>
                 </div>)}
-                {state.busy &&
-                    <p className="chat-status" role="status"><span className="chat-status-dot"/>{state.status}…</p>}
             </div>
         </div>
         <footer className="chat-footer">
+            <ChatStatusBar stats={state.turns.length || state.busy ? state.stats : undefined}/>
             {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
             {syncError && <p className="chat-error" role="alert">{syncError}</p>}
             {error && <p className="chat-error" role="alert">{error}</p>}
+            {editingTurnId && <div className="chat-edit-hint" role="status">
+                <span>正在编辑最近一条失败消息，发送后会替换它。</span>
+                <button type="button" className="secondary-button" onClick={cancelEdit}>取消编辑</button>
+            </div>}
             <form className="chat-composer" onSubmit={event => void send(event)}>
                 <textarea ref={input} value={draft} maxLength={8000} rows={2} aria-label="聊天消息"
                           placeholder="发送消息…"
@@ -318,12 +403,14 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                 <div className="chat-composer-actions">
                     {state.busy ? <button type="button" className="icon-button" title="停止回复" aria-label="停止回复"
                                           onClick={() => void cancel()}><Icon name="stop"/></button> :
-                        <button type="submit" className="icon-button chat-send" title="发送" aria-label="发送"
+                        <button type="submit" className="icon-button chat-send" title={editingTurnId ? '重新发送' : '发送'}
+                                aria-label={editingTurnId ? '重新发送' : '发送'}
                                 disabled={busy || loading || syncing || !draft.trim()}><Icon name="send"/></button>}
                 </div>
             </form>
         </footer>
         {editor && <CalendarEventDialog date={editor.date} item={editor} create={false} onClose={closeEditor}
                                         onSaved={() => void refreshCards()} onRemoved={() => void refreshCards()}/>}
-    </section>
+    </div>{traced && <ChatTracePanel key={traced.id} turn={traced} onClose={closeTrace}/>}
+        {sessionTrace && <ChatSessionTracePanel onClose={() => setSessionTrace(false)}/>}</section>
 }

@@ -1,3 +1,4 @@
+import {streamLlmWithTools} from './llm-stream'
 import type {LlmConnectionTest} from '../shared/llm'
 import {defaultConnectionTestPrompt} from '../shared/llm-prompts'
 
@@ -18,7 +19,7 @@ export interface ToolCall {
     function: { name: string; arguments: string }
 }
 
-export type ToolChatMessage = ChatMessage | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] } |
+export type ToolChatMessage = ChatMessage | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[]; reasoning_content?: string } |
     { role: 'tool'; tool_call_id: string; content: string }
 
 export interface ChatTool {
@@ -30,26 +31,7 @@ export async function completeLlmWithTools(connection: Connection, messages: Too
                                            signal: AbortSignal): Promise<Extract<ToolChatMessage, {
     role: 'assistant'
 }>> {
-    const data = await requestLlmJson(connection, '/chat/completions', {
-        method: 'POST',
-        body: JSON.stringify({model: connection.model, messages, tools, tool_choice: 'auto', stream: false}),
-    }, fetch, 60_000, signal)
-    const payload = data as {
-        error?: unknown;
-        choices?: { message?: { content?: unknown; tool_calls?: unknown } }[]
-    } | null
-    const message = Array.isArray(payload?.choices) ? payload.choices[0]?.message : undefined
-    if (payload?.error || !message) throw new Error('模型未返回有效回复，请确认模型支持工具调用。')
-    const content = typeof message.content === 'string' ? message.content.slice(0, 16000) : null
-    const calls = message.tool_calls ?? undefined
-    if (calls !== undefined && (!Array.isArray(calls) || calls.length > 8 || calls.some(call =>
-        !call || typeof call.id !== 'string' || !call.id || call.id.length > 200 || call.type !== 'function' ||
-        typeof call.function?.name !== 'string' || typeof call.function?.arguments !== 'string' ||
-        call.function.arguments.length > 16000) || new Set(calls.map(call => call.id)).size !== calls.length)) {
-        throw new Error('模型返回了无效的工具调用，请重试。')
-    }
-    if (!content?.trim() && !calls?.length) throw new Error('模型未返回有效回复。')
-    return {role: 'assistant', content, ...(calls?.length ? {tool_calls: calls as ToolCall[]} : {})}
+    return streamLlmWithTools(connection, messages, tools, signal)
 }
 
 export async function completeLlm(connection: Connection, messages: ChatMessage[], signal: AbortSignal,
@@ -103,7 +85,25 @@ export async function fetchLlmModels(connection: Connection, request: typeof fet
     return models
 }
 
+class TransientLlmError extends Error {}
+
 async function requestLlmJson(connection: Connection, path: string, init: RequestInit,
+                              request: typeof fetch, timeoutMs: number, enabledSignal?: AbortSignal): Promise<unknown> {
+    for (let attempt = 0; ; attempt++) {
+        try {return await requestLlmJsonOnce(connection, path, init, request, timeoutMs, enabledSignal)}
+        catch (error) {
+            if (!(error instanceof TransientLlmError) || attempt >= 2 || enabledSignal?.aborted) throw error
+            await new Promise<void>((resolve, reject) => {
+                const abort = () => {clearTimeout(timer); reject(new Error('LLM 请求已取消。'))}
+                const timer = setTimeout(() => {enabledSignal?.removeEventListener('abort', abort); resolve()}, [1000, 3000][attempt])
+                enabledSignal?.addEventListener('abort', abort, {once: true})
+                if (enabledSignal?.aborted) abort()
+            })
+        }
+    }
+}
+
+async function requestLlmJsonOnce(connection: Connection, path: string, init: RequestInit,
                               request: typeof fetch, timeoutMs: number, enabledSignal?: AbortSignal): Promise<unknown> {
     if (enabledSignal?.aborted) throw new Error('LLM 已停用。')
     const timeout = AbortSignal.timeout(timeoutMs)
@@ -119,12 +119,14 @@ async function requestLlmJson(connection: Connection, path: string, init: Reques
         })
     } catch {
         if (enabledSignal?.aborted) throw new Error('LLM 已停用。')
-        throw new Error(signal.aborted ? '连接超时，请稍后重试。' : '无法连接模型服务，请检查接口地址、网络或证书；接口不能重定向。')
+        if (signal.aborted) throw new Error('连接超时，请稍后重试。')
+        throw new TransientLlmError('无法连接模型服务，请检查接口地址、网络或证书；接口不能重定向。')
     }
     if (!response.ok) {
         await response.body?.cancel().catch(() => {
         })
 
+        if (response.status === 429 || response.status >= 500) throw new TransientLlmError(statusError(response.status))
         throw new Error(statusError(response.status))
     }
     const reader = response.body?.getReader()
@@ -139,8 +141,9 @@ async function requestLlmJson(connection: Connection, path: string, init: Reques
             if (size > 1024 * 1024) throw new Error('response too large')
             chunks.push(value)
         }
-    } catch {
+    } catch (error) {
         if (enabledSignal?.aborted) throw new Error('LLM 已停用。')
+        if (!signal.aborted && error instanceof TypeError) throw new TransientLlmError('接口响应读取失败，请稍后重试。')
         throw new Error(signal.aborted ? '连接超时，请稍后重试。' : '接口响应读取失败或内容过大。')
     } finally {
         await reader.cancel().catch(() => {
