@@ -561,9 +561,6 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 let request = requests.find(item => JSON.stringify(item.action) === JSON.stringify(action) && item.status !== 'undone')
                 if (!request) {
                     if (requests.length >= 20) throw new ToolError('forbidden', '本轮最多请求 20 个操作，请缩小范围。')
-                    if (action.kind === 'remember' && !turn.user.includes(action.memory.evidence)) {
-                        throw new ToolError('invalid_args', '记忆依据必须是本轮用户消息中的原话；请先向用户确认。')
-                    }
                     request = {id: randomUUID(), action, status: 'pending'};
                     requests.push(request)
                 }
