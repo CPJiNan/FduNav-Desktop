@@ -24,8 +24,6 @@ export function UsagePanel({active}: { active: boolean }) {
         }
     }, [active, retry])
     return <section className="agent-settings" aria-label="模型用量"><h3>聊天用量</h3>
-        <p>按北京时间统计当前账号的聊天与上下文压缩请求。仅记录服务端报告的
-            token，不估算缺失值，不限额；耗时包含等待与重试。</p>
         {usage ? <div className="usage-grid">{(['today', 'month'] as const).map(key => <div key={key}>
             <h4>{key === 'today' ? '今日' : '本月'}</h4>
             <p>{(usage[key].promptTokens + usage[key].completionTokens).toLocaleString()} 已报告 token</p>

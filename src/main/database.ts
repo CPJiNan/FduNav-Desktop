@@ -195,11 +195,18 @@ export class AppDatabase {
         const serialized = JSON.stringify(data)
         const detailJson = details === undefined ? null : JSON.stringify(details)
         const inserted = this.db.prepare(`INSERT INTO chat_traces (username, turn_id, event_id, position, kind, data, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(username, turn_id, event_id) DO NOTHING`)
+                                          VALUES (?, ?, ?, ?, ?, ?,
+                                                  ?) ON CONFLICT(username, turn_id, event_id) DO NOTHING`)
             .run(username, turnId, event.id, position, event.kind, serialized, detailJson)
         if (Number(inserted.changes) > 0) this.bumpSteps(username, event.kind === 'tool' ? 1 : 0)
-        this.db.prepare(`UPDATE chat_traces SET position = ?, kind = ?, data = ?, details = COALESCE(?, details)
-            WHERE username = ? AND turn_id = ? AND event_id = ?`)
+        this.db.prepare(`UPDATE chat_traces
+                         SET position = ?,
+                             kind     = ?,
+                             data     = ?,
+                             details  = COALESCE(?, details)
+                         WHERE username = ?
+                           AND turn_id = ?
+                           AND event_id = ?`)
             .run(position, event.kind, serialized, detailJson, username, turnId, event.id)
     }
 
@@ -295,23 +302,32 @@ export class AppDatabase {
     removeChatTrace(username: string, turnId: string) {
         this.db.prepare('DELETE FROM chat_traces WHERE username = ? AND turn_id = ?').run(username, turnId)
         const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND kind = 'tool'").get(username)!
-        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps) VALUES (?, ?)
-            ON CONFLICT(username) DO UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
+        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps)
+                         VALUES (?, ?) ON CONFLICT(username) DO
+        UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
     }
 
     pruneChatTrace(username: string, keepTurns?: number) {
         if (keepTurns === undefined) return
-        this.db.prepare(`DELETE FROM chat_traces WHERE username = ? AND turn_id NOT IN (
-            SELECT turn_id FROM (SELECT turn_id, MAX(rowid) AS last FROM chat_traces WHERE username = ?
-                GROUP BY turn_id ORDER BY last DESC LIMIT ?))`).run(username, username, keepTurns)
+        this.db.prepare(`DELETE
+                         FROM chat_traces
+                         WHERE username = ?
+                           AND turn_id NOT IN (SELECT turn_id
+                                               FROM (SELECT turn_id, MAX(rowid) AS last
+                                                     FROM chat_traces
+                                                     WHERE username = ?
+                                                     GROUP BY turn_id
+                                                     ORDER BY last DESC LIMIT ?))`).run(username, username, keepTurns)
         const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND kind = 'tool'").get(username)!
-        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps) VALUES (?, ?)
-            ON CONFLICT(username) DO UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
+        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps)
+                         VALUES (?, ?) ON CONFLICT(username) DO
+        UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
     }
 
     saveRunningTurn(username: string, turnId: string, position: number, data: string) {
-        this.db.prepare(`INSERT INTO chat_running_turns (username, turn_id, position, data) VALUES (?, ?, ?, ?)
-            ON CONFLICT(username) DO UPDATE SET turn_id = excluded.turn_id, position = excluded.position, data = excluded.data`)
+        this.db.prepare(`INSERT INTO chat_running_turns (username, turn_id, position, data)
+                         VALUES (?, ?, ?, ?) ON CONFLICT(username) DO
+        UPDATE SET turn_id = excluded.turn_id, position = excluded.position, data = excluded.data`)
             .run(username, turnId, position, data)
     }
 
@@ -382,7 +398,9 @@ export class AppDatabase {
 
     saveConsolidation(record: ConsolidationRecord) {
         this.db.prepare(`INSERT INTO memory_consolidations (id, username, created_at, status, before, after, error)
-            VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, after = excluded.after, error = excluded.error`)
+                         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO
+        UPDATE
+            SET status = excluded.status, after = excluded.after, error = excluded.error`)
             .run(record.id, record.username, record.createdAt, record.status, JSON.stringify(record.before),
                 JSON.stringify(record.after), record.error ?? null)
     }
@@ -400,8 +418,11 @@ export class AppDatabase {
     }
 
     findConsolidationPreview(username: string): ConsolidationRecord | null {
-        const row = this.db.prepare(`SELECT id FROM memory_consolidations WHERE username = ? AND status = 'preview'
-            ORDER BY created_at DESC LIMIT 1`).get(username)
+        const row = this.db.prepare(`SELECT id
+                                     FROM memory_consolidations
+                                     WHERE username = ?
+                                       AND status = 'preview'
+                                     ORDER BY created_at DESC LIMIT 1`).get(username)
         return row ? this.getConsolidation(username, String(row.id)) : null
     }
 
@@ -440,10 +461,13 @@ export class AppDatabase {
     }
 
     getChatStats(username: string) {
-        const usage = this.db.prepare(`SELECT COUNT(*) AS requests,
-                COALESCE(SUM(prompt_tokens), 0) AS prompt, COALESCE(SUM(completion_tokens), 0) AS completion,
-                COALESCE(SUM(cache_hit_tokens), 0) AS cache_hit, COALESCE(SUM(elapsed_ms), 0) AS elapsed
-            FROM llm_usage WHERE username = ?`).get(username)!
+        const usage = this.db.prepare(`SELECT COUNT(*)                            AS requests,
+                                              COALESCE(SUM(prompt_tokens), 0)     AS prompt,
+                                              COALESCE(SUM(completion_tokens), 0) AS completion,
+                                              COALESCE(SUM(cache_hit_tokens), 0)  AS cache_hit,
+                                              COALESCE(SUM(elapsed_ms), 0)        AS elapsed
+                                       FROM llm_usage
+                                       WHERE username = ?`).get(username)!
         const last = this.db.prepare('SELECT prompt_tokens FROM llm_usage WHERE username = ? ORDER BY id DESC LIMIT 1').get(username)
         const steps = this.db.prepare('SELECT steps FROM chat_trace_stats WHERE username = ?').get(username)
         const saved = this.db.prepare('SELECT data FROM chat_conversations WHERE username = ?').get(username)
@@ -918,8 +942,9 @@ export class AppDatabase {
 
     private bumpSteps(username: string, delta: number) {
         if (!delta) return
-        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps) VALUES (?, ?)
-            ON CONFLICT(username) DO UPDATE SET steps = steps + excluded.steps`).run(username, delta)
+        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps)
+                         VALUES (?, ?) ON CONFLICT(username) DO
+        UPDATE SET steps = steps + excluded.steps`).run(username, delta)
     }
 
     private initializeSources() {

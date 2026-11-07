@@ -79,7 +79,7 @@ export function MemoryPanel({active}: { active: boolean }) {
     const eligibleItems = state.items.filter(item => item.status === 'active' && (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()))
     const readyStage = stage === 'idle' || stage === 'done'
     const canConsolidate = loaded && state.enabled && llmReady && eligibleItems.length >= 2 && readyStage && !busy
-    const disabledReason = !state.enabled ? '请先启用长期记忆' : !llmReady ? '请先启用并配置模型服务'
+    const disabledReason = !state.enabled ? '' : !llmReady ? '请先启用并配置模型服务'
         : eligibleItems.length < 2 ? '至少需要 2 条有效记忆才能整理' : ''
 
     function toggleItem(id: string) {
@@ -185,8 +185,6 @@ export function MemoryPanel({active}: { active: boolean }) {
 
     return <section className="agent-settings" aria-label="记忆管理">
         <h3>记忆</h3>
-        <p>默认关闭。启用后，选中的事实和偏好会随聊天发送给你配置的模型服务，单次最多 1200
-            字符。记忆保存在本机，按登录账号隔离。</p>
         <label className="memory-enable"><input type="checkbox" checked={state.enabled} disabled={busy || !loaded}
                                                 onChange={event => void update(() => window.memory?.setEnabled(event.target.checked))}/>启用长期记忆</label>
         <p>关闭后聊天不再读取或新增记忆，仍可在这里管理。关闭或删除记忆不会清除旧会话中已有的副本；需要时可同时清空聊天记录。</p>
@@ -219,7 +217,8 @@ export function MemoryPanel({active}: { active: boolean }) {
                                                                                   void update(async () => window.memory?.importJson(await file.text(), state.username))
                                                                               }}/></label>
         </div>
-        {loaded && readyStage && <p role="status">{disabledReason || '先展示整理预览，确认后才修改记忆。'}</p>}
+        {loaded && readyStage && state.enabled &&
+            <p role="status">{disabledReason || '先展示整理预览，确认后才修改记忆。'}</p>}
         {stage === 'scanning' && <div className="memory-consolidate" role="status">
             <p>正在扫描 {state.items.length} 条记忆…</p>
             <div className="trace-toolbar">
@@ -260,7 +259,6 @@ export function MemoryPanel({active}: { active: boolean }) {
             </div>
         </div>}
         {!loaded && !error && <p role="status">正在读取记忆…</p>}
-        {loaded && !state.items.length && <p>还没有记忆。你可以在聊天中请求记住一条偏好，并在卡片中允许保存。</p>}
         <ul className="memory-list">{state.items.map(item => <li key={item.id}>
             <div className="memory-select">
                 <input type="checkbox" aria-label="选择这条记忆" checked={selectedItems.has(item.id)}
