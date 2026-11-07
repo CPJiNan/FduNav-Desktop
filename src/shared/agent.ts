@@ -16,11 +16,30 @@ export type ToolResult = ({ok: true; data: unknown} | {ok: false; code: ToolErro
     truncated: boolean; remaining: ToolBudget; suggestion?: string
 }
 export const maxToolResultChars = 12000
+/** Shape-only summary of an oversized result; a truncated JSON fragment must never reach the model. */
+export function resultShape(value: unknown): Record<string, unknown> {
+    if (Array.isArray(value)) return {kind: 'array', length: value.length}
+    if (!value || typeof value !== 'object') return {kind: typeof value, ...(typeof value === 'string' ? {length: value.length} : {})}
+    const record = value as Record<string, unknown>
+    const fields = Object.fromEntries(Object.entries(record).slice(0, 12).map(([key, item]) => [key,
+        Array.isArray(item) ? `array(${item.length})` : item && typeof item === 'object' ? 'object' : typeof item]))
+    const items = record.items
+    return {kind: 'object', fields, ...(Array.isArray(items) ? {
+        itemCount: items.length,
+        ...(typeof record.total === 'number' ? {total: record.total} : {}),
+        ...(typeof record.hasMore === 'boolean' ? {hasMore: record.hasMore} : {}),
+    } : {})}
+}
 export function toolSuccess(data: unknown, remaining: ToolBudget): Extract<ToolResult, {ok: true}> {
     const serialized = JSON.stringify(data) ?? 'null'
     if (serialized.length <= maxToolResultChars - 400) return {ok: true, data, truncated: false, remaining}
-    return {ok: true, data: {preview: serialized.slice(0, maxToolResultChars - 500), originalChars: serialized.length},
-        truncated: true, remaining, suggestion: '结果已截断。请缩小日期或关键词范围、减少 limit，或按 ID 读取单条详情；不要把预览当成完整结果。'}
+    return {ok: true, data: {
+        truncated: true,
+        originalChars: serialized.length,
+        message: '结果超过长度上限，正文已省略。这里是结构摘要，不是完整数据。',
+        shape: resultShape(data),
+    }, truncated: true, remaining,
+    suggestion: '请缩小日期或关键词范围、减少 limit，或按 ID 读取单条详情；不要根据结构摘要把数据当成完整结果。'}
 }
 export class ToolError extends Error {
     constructor(public code: ToolErrorCode, message: string) {super(message)}

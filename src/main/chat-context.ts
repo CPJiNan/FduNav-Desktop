@@ -8,6 +8,22 @@ export interface CompactPlan {older: ContextTurn[]; recent: ContextTurn[]}
 export const recentTurns = 4
 /** Reaching this many turns compacts everything older than the kept window. */
 export const compactThreshold = 12
+/** Character cap for one compaction request; older turns are folded in several chunks. */
+export const compactionChunkChars = 24000
+/** Split compaction input on turn boundaries so a single request stays within the model window. */
+export function compactionChunks(turns: ContextTurn[]): ContextTurn[][] {
+    const chunks: ContextTurn[][] = []
+    let current: ContextTurn[] = [], size = 0
+    for (const turn of turns) {
+        const length = JSON.stringify(turn.context).length
+        if (current.length && size + length > compactionChunkChars) {
+            chunks.push(current); current = []; size = 0
+        }
+        current.push(turn); size += length
+    }
+    if (current.length) chunks.push(current)
+    return chunks
+}
 /** Preserve complete turns and tool-call/result pairs; oversized single turns go into the summary. */
 export function compactTurns(turns: ContextTurn[]): CompactPlan {
     const recent = [...turns], older: ContextTurn[] = []
@@ -24,14 +40,30 @@ export function uncompactedTurns(turns: ContextTurn[], saved: Compaction | null)
     // Missing coverage marker means the conversation changed; do not silently drop history.
     return index < 0 ? turns : turns.slice(index + 1)
 }
+export const summaryKeys = ['facts', 'actions', 'pending', 'preferences'] as const
+/**
+ * Lenient summary validation: strip a JSON fence, fill missing sections with [] and drop unknown
+ * keys, so a single cosmetic deviation does not burn all three compaction attempts.
+ */
 export function validateCompaction(raw: string): string {
-    const parsed = JSON.parse(raw)
-    const keys = ['facts', 'actions', 'pending', 'preferences']
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || keys.some(key => !Array.isArray(parsed[key]) ||
-        parsed[key].some((item: unknown) => typeof item !== 'string')) || Object.keys(parsed).some(key => ![...keys, 'memories'].includes(key))) throw new Error('摘要结构无效。')
-    const summary = JSON.stringify(parsed)
-    if (summary.length > 1600) throw new Error('摘要超过 1600 字符。')
-    return summary
+    const text = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+    let parsed: unknown
+    try {parsed = JSON.parse(text)} catch {throw new Error('摘要不是有效 JSON。')}
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('摘要结构无效。')
+    const record = parsed as Record<string, unknown>
+    const summary: Record<string, unknown> = {}
+    for (const key of summaryKeys) {
+        const value = record[key] ?? []
+        if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) throw new Error('摘要结构无效。')
+        summary[key] = value
+    }
+    if (record.memories !== undefined) {
+        if (!Array.isArray(record.memories)) throw new Error('摘要记忆候选格式无效。')
+        summary.memories = record.memories
+    }
+    const result = JSON.stringify(summary)
+    if (result.length > 1600) throw new Error('摘要超过 1600 字符。')
+    return result
 }
 
 /**

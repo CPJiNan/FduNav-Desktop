@@ -11,7 +11,7 @@ import type {GeneralSettingsAPI} from '../shared/general-settings'
 import type {NotificationSettingsAPI} from '../shared/notification-settings'
 import type {AppInfoAPI} from '../shared/app-info'
 import type {MemoryAPI} from '../shared/memory'
-import type {ChatAPI, ChatState} from '../shared/chat'
+import type {ChatAPI, ChatPushState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
 
@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('memory', memory)
 const chat: ChatAPI = {
     get: () => ipcRenderer.invoke('chat:get'),
     trace: turnId => ipcRenderer.invoke('chat:trace', turnId),
+    traceEvent: (turnId, eventId) => ipcRenderer.invoke('chat:trace-event', {turnId, eventId}),
     sessionTrace: () => ipcRenderer.invoke('chat:session-trace'),
     usage: () => ipcRenderer.invoke('chat:usage'),
     undo: (turnId, requestId) => ipcRenderer.invoke('chat:undo', {turnId, requestId}),
@@ -48,7 +49,7 @@ const chat: ChatAPI = {
     decideSummary: (turnId, requestId, allow) => ipcRenderer.invoke('chat:decide-summary', {turnId, requestId, allow}),
     decideAction: (turnId, requestId, allow) => ipcRenderer.invoke('chat:decide-action', {turnId, requestId, allow}),
     onChanged: callback => {
-        const listener = (_event: IpcRendererEvent, state: ChatState) => callback(state)
+        const listener = (_event: IpcRendererEvent, state: ChatPushState) => callback(state)
         ipcRenderer.on('chat:changed', listener)
         return () => ipcRenderer.removeListener('chat:changed', listener)
     },

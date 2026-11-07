@@ -32,6 +32,12 @@ export function validateMemory(input: unknown): Result<MemoryInput> {
     return {ok: true, data: {kind: v.kind as MemoryInput['kind'], text: v.text.trim(), evidence: v.evidence.trim(),
         confidence: v.confidence, pinned: v.pinned, status: v.status as MemoryInput['status'], expiresAt: v.expiresAt as string | null}}
 }
+/** Memory ids are UUIDs owned by the UI; the model only needs a stable, short handle. */
+export const memoryShortId = (id: string) => id.slice(0, 8)
+/** Compact injection line: no timestamps, evidence or status, which the model cannot use. */
+export const memoryLine = (item: Pick<Memory, 'id' | 'kind' | 'text'>) => `- [${item.kind}] ${item.text} #${memoryShortId(item.id)}`
+/** Model-facing memory record shared by recall and forget. */
+export const presentMemory = (item: Memory) => ({id: memoryShortId(item.id), kind: item.kind, text: item.text})
 /** Character budget applies to the exact JSON injected, including metadata. */
 export function selectMemories(items: Memory[], query: string, now = Date.now()): Memory[] {
     const phrases = query.toLocaleLowerCase().match(/[a-z0-9_]+|[\p{Script=Han}]+/gu) ?? []

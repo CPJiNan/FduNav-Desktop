@@ -2,7 +2,7 @@ import {type FormEvent, useEffect, useRef, useState} from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
-import type {ChatCard, ChatState} from '../../shared/chat'
+import type {ChatCard, ChatPushState, ChatState} from '../../shared/chat'
 import type {Notice} from '../../shared/notices'
 import {type CalendarOccurrence, calendarOccurrences, timeLabel} from '../../shared/calendar'
 import {CalendarEventDialog} from './CalendarEventDialog'
@@ -17,6 +17,18 @@ import './styles/chat.css'
 import './styles/calendar.css'
 
 const suggestions = ['本周通知摘要', '查询今天日程', '新增待办事项']
+
+/** Delta pushes carry only the running turn; merge them into the previous state. */
+function mergeState(previous: ChatState, value: ChatPushState): ChatState {
+    if (value.full) return value
+    const turns = previous.username === value.username ? [...previous.turns] : []
+    for (const turn of value.turns) {
+        const index = turns.findIndex(item => item.id === turn.id)
+        if (index < 0) turns.push(turn)
+        else turns[index] = turn
+    }
+    return {...value, turns}
+}
 
 export function ChatPage({username, onOpenNotice, onSettings}: {
     username: string; onOpenNotice: (notice: Notice) => void; onSettings: () => void
@@ -49,7 +61,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
             if (value.username !== username) return
             stateRevision.current++
             receivedUpdate = true
-            setState(value)
+            setState(previous => mergeState(previous, value))
         })
         if (!window.chat) {
             setError('聊天服务未加载，请重启应用。');

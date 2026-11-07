@@ -2,9 +2,9 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {toolSuccess, toolFailure, ToolError, maxToolResultChars, redactTrace} from '../src/shared/agent.ts'
 import {validateMemory, selectMemories, type Memory} from '../src/shared/memory.ts'
-import {compactTurns, validateCompaction, parseSummary} from '../src/main/chat-context.ts'
+import {compactTurns, compactionChunks, validateCompaction, parseSummary} from '../src/main/chat-context.ts'
 import {AppDatabase} from '../src/main/database.ts'
-import {createChatToolRunner} from '../src/main/chat-tools.ts'
+import {chatTools, createChatToolRunner} from '../src/main/chat-tools.ts'
 import {defaultToolDescriptions} from '../src/shared/llm-prompts.ts'
 import {readUsage} from '../src/main/llm-stream.ts'
 
@@ -150,5 +150,124 @@ test('trace detail updates preserve historical payload while keeping snapshots s
         assert.equal(db.getChatTrace('alice', 'turn')[0].status, 'completed')
         assert.equal(db.getChatTrace('bob', 'turn').length, 0)
         db.clearChatTrace('alice'); assert.equal(db.getChatTrace('alice', 'turn').length, 0)
+    } finally {db.close()}
+})
+
+test('remember defaults optional fields; only kind/text/evidence stay required', async () => {
+    const db = new AppDatabase(':memory:')
+    db.setMemoryEnabled('alice', true)
+    const actions: any[] = []
+    const run = createChatToolRunner(db, 'alice', {list: () => ({items: []}), detail: async () => ({content: ''})} as never,
+        () => {}, () => {}, () => ({}), action => {actions.push(action); return {}})
+    try {
+        const schema = chatTools.find(item => item.function.name === 'remember')!.function.parameters
+        assert.deepEqual(schema.required, ['kind', 'text', 'evidence'])
+        await run('remember', JSON.stringify({kind: 'fact', text: '主修数学', evidence: '我主修数学'}))
+        assert.deepEqual(actions[0].memory, {kind: 'fact', text: '主修数学', evidence: '我主修数学',
+            confidence: 0.6, pinned: false, expiresAt: null, status: 'active'})
+        // The tool schema keeps a single string type for gateway compatibility.
+        assert.equal((chatTools.find(item => item.function.name === 'remember')!.function.parameters.properties as any).expiresAt.type,
+            'string')
+    } finally {db.close()}
+})
+
+test('recall returns compact memory DTOs and forget resolves the short id', async () => {
+    const db = new AppDatabase(':memory:')
+    db.setMemoryEnabled('alice', true)
+    const full = 'abcdef12-3456-7890-abcd-ef1234567890'
+    db.saveMemory('alice', memory(full))
+    const actions: any[] = []
+    const run = createChatToolRunner(db, 'alice', {list: () => ({items: []}), detail: async () => ({content: ''})} as never,
+        () => {}, () => {}, () => ({}), action => {actions.push(action); return {}})
+    try {
+        const recalled = await run('recall', '{}') as {items: unknown[]}
+        assert.deepEqual(recalled.items, [{id: 'abcdef12', kind: 'preference', text: '用户偏好数学'}])
+        await run('forget', JSON.stringify({id: 'abcdef12'}))
+        assert.equal(actions[0].kind, 'forget'); assert.equal(actions[0].memory.id, full)
+        db.saveMemory('alice', memory('abcdef99-3456-7890-abcd-ef1234567890'))
+        await assert.rejects(run('forget', JSON.stringify({id: 'abcdef'})), {code: 'invalid_args'})
+    } finally {db.close()}
+})
+
+test('tool results are model-facing DTOs without persisted timestamps or UI-only fields', async () => {
+    const db = new AppDatabase(':memory:')
+    const notices = {list: () => ({items: [{sourceId: 's', sourceName: '数学学院', title: '讲座', url: 'https://example.com/n',
+        published: '2026-11-07', read: false, relevance: 'related' as const}]}), detail: async () => ({content: '正文'})}
+    db.saveTodo('alice', {id: '11111111-1111-1111-1111-111111111111', title: '买书', notes: '', dueDate: '2026-11-10',
+        dueTime: '23:59', reminderMinutes: -1, completed: false, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z'})
+    db.saveCalendarEvent('alice', {id: '22222222-2222-2222-2222-222222222222', title: '组会', startDate: '2026-11-10',
+        endDate: '2026-11-10', startTime: '14:00', endTime: '15:00', allDay: false, reminderMinutes: -1, location: '', notes: ''})
+    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}))
+    try {
+        const todo = (await run('list_todos', '{}') as {items: Array<Record<string, unknown>>}).items[0]
+        assert.deepEqual(Object.keys(todo).sort(), ['completed', 'dueDate', 'dueTime', 'id', 'kind', 'notes', 'source', 'title'])
+        const event = await run('get_event', JSON.stringify({id: '22222222-2222-2222-2222-222222222222'})) as Record<string, unknown>
+        assert.deepEqual(Object.keys(event).sort(),
+            ['allDay', 'endDate', 'endTime', 'id', 'kind', 'location', 'notes', 'startDate', 'startTime', 'title'])
+        const notice = (await run('search_notices', '{}') as {items: Array<Record<string, unknown>>}).items[0]
+        assert.deepEqual(Object.keys(notice).sort(), ['published', 'relevance', 'sourceId', 'sourceName', 'title', 'url'])
+    } finally {db.close()}
+})
+
+test('timed events with empty start or end time fail in the tool layer', async () => {
+    const db = new AppDatabase(':memory:')
+    const run = createChatToolRunner(db, 'alice', {list: () => ({items: []})} as never, () => {}, () => {}, () => ({}), () => ({}))
+    try {
+        const base = {title: '组会', startDate: '2026-11-10', endDate: '2026-11-10', allDay: false}
+        await assert.rejects(run('create_event', JSON.stringify({...base, startTime: '', endTime: ''})), {code: 'invalid_args'})
+        await assert.rejects(run('create_event', JSON.stringify({...base, startTime: '14:00'})), {code: 'invalid_args'})
+    } finally {db.close()}
+})
+
+test('oversized tool results return a shape summary instead of a truncated JSON preview', () => {
+    const data = {items: Array.from({length: 3000}, (_, i) => ({id: i, text: 'x'.repeat(20)})), total: 3000, hasMore: true}
+    const result = toolSuccess(data, budget)
+    assert.equal(result.truncated, true)
+    const payload = result.data as Record<string, any>
+    assert.equal('preview' in payload, false, 'a half-serialized JSON fragment must never be returned')
+    assert.equal(payload.shape.kind, 'object')
+    assert.equal(payload.shape.itemCount, 3000)
+    assert.equal(payload.shape.total, 3000)
+    assert.equal(payload.shape.hasMore, true)
+    assert.match(String(payload.message), /结构摘要/)
+    assert.ok(JSON.stringify(result).length <= maxToolResultChars)
+})
+
+test('compaction tolerates a JSON fence, missing sections and unknown keys', () => {
+    const raw = '```json\n{"facts":["用户是本科生"],"preferences":["喜欢数学"],"note":"ignored"}\n```'
+    const summary = JSON.parse(validateCompaction(raw)) as Record<string, unknown>
+    assert.deepEqual(summary.facts, ['用户是本科生'])
+    assert.deepEqual(summary.actions, [])
+    assert.deepEqual(summary.pending, [])
+    assert.deepEqual(summary.preferences, ['喜欢数学'])
+    assert.equal('note' in summary, false)
+    assert.throws(() => validateCompaction('{"facts":"not-an-array"}'))
+    assert.throws(() => validateCompaction('not json'))
+})
+
+test('compaction input is split into turn-aligned bounded chunks', () => {
+    const turns = Array.from({length: 6}, (_, i) => ({id: String(i),
+        context: [{role: 'user' as const, content: 'x'.repeat(10000)}]}))
+    const chunks = compactionChunks(turns)
+    assert.equal(chunks.length, 3, 'two ~10k turns fit in one 24k chunk')
+    assert.deepEqual(chunks.flat().map(turn => turn.id), ['0', '1', '2', '3', '4', '5'])
+    assert.deepEqual(compactionChunks([]), [])
+})
+
+test('trace steps are counted incrementally instead of scanning data with LIKE', () => {
+    const db = new AppDatabase(':memory:')
+    try {
+        db.saveChatTrace('alice', 'turn', [
+            {id: 'tool-1', kind: 'tool', label: '工具', at: 'now', status: 'running'},
+            {id: 'model-1', kind: 'model', label: '模型', at: 'now', status: 'completed'},
+        ])
+        assert.equal(db.getChatStats('alice').steps, 1)
+        // Updating the same event must not double count.
+        db.saveChatTrace('alice', 'turn', [{id: 'tool-1', kind: 'tool', label: '工具', at: 'now', status: 'completed'}])
+        assert.equal(db.getChatStats('alice').steps, 1)
+        db.saveChatTrace('alice', 'turn-2', [{id: 'tool-2', kind: 'tool', label: '工具', at: 'now', status: 'completed'}])
+        assert.equal(db.getChatStats('alice').steps, 2)
+        db.clearChatTrace('alice')
+        assert.equal(db.getChatStats('alice').steps, 0)
     } finally {db.close()}
 })

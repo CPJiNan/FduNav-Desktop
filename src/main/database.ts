@@ -64,8 +64,12 @@ export class AppDatabase {
             CREATE INDEX IF NOT EXISTS llm_usage_owner_time ON llm_usage (username, created_at);
             CREATE TABLE IF NOT EXISTS chat_traces (
                 username TEXT NOT NULL, turn_id TEXT NOT NULL, event_id TEXT NOT NULL,
-                position INTEGER NOT NULL, data TEXT NOT NULL, details TEXT,
+                position INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT '', data TEXT NOT NULL, details TEXT,
                 PRIMARY KEY (username, turn_id, event_id)
+            );
+            CREATE TABLE IF NOT EXISTS chat_trace_stats (username TEXT PRIMARY KEY, steps INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_running_turns (
+                username TEXT PRIMARY KEY, turn_id TEXT NOT NULL, position INTEGER NOT NULL, data TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS chat_compactions (username TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -150,15 +154,44 @@ export class AppDatabase {
         `)
         this.db.exec('PRAGMA foreign_keys = ON;')
         this.ensureUsageColumns()
+        this.ensureTraceKind()
         this.initializeSources()
     }
 
+    /** Add `kind` to pre-existing trace tables and rebuild the incremental step counters once. */
+    private ensureTraceKind() {
+        const columns = new Set(this.db.prepare('PRAGMA table_info(chat_traces)').all().map(row => String(row.name)))
+        if (!columns.has('kind')) this.db.exec("ALTER TABLE chat_traces ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
+        this.db.exec(`UPDATE chat_traces SET kind = COALESCE(json_extract(data, '$.kind'), '')
+            WHERE kind = ''`)
+        this.db.exec('CREATE INDEX IF NOT EXISTS chat_traces_kind ON chat_traces (username, kind)')
+        this.db.exec(`INSERT INTO chat_trace_stats (username, steps)
+            SELECT username, COUNT(*) FROM chat_traces WHERE kind = 'tool' GROUP BY username
+            ON CONFLICT(username) DO UPDATE SET steps = excluded.steps`)
+    }
+
+    private bumpSteps(username: string, delta: number) {
+        if (!delta) return
+        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps) VALUES (?, ?)
+            ON CONFLICT(username) DO UPDATE SET steps = steps + excluded.steps`).run(username, delta)
+    }
+
+    /** One trace event: append if new, otherwise update in place; `kind` and the step count stay in sync. */
+    saveChatTraceEvent(username: string, turnId: string, event: ChatTraceEvent, position: number) {
+        const {details, ...data} = event
+        const serialized = JSON.stringify(data)
+        const detailJson = details === undefined ? null : JSON.stringify(details)
+        const inserted = this.db.prepare(`INSERT INTO chat_traces (username, turn_id, event_id, position, kind, data, details)
+            VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(username, turn_id, event_id) DO NOTHING`)
+            .run(username, turnId, event.id, position, event.kind, serialized, detailJson)
+        if (Number(inserted.changes) > 0) this.bumpSteps(username, event.kind === 'tool' ? 1 : 0)
+        this.db.prepare(`UPDATE chat_traces SET position = ?, kind = ?, data = ?, details = COALESCE(?, details)
+            WHERE username = ? AND turn_id = ? AND event_id = ?`)
+            .run(position, event.kind, serialized, detailJson, username, turnId, event.id)
+    }
+
     saveChatTrace(username: string, turnId: string, events: ChatTraceEvent[]) {
-        const save = this.db.prepare(`INSERT INTO chat_traces (username, turn_id, event_id, position, data, details)
-            VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(username, turn_id, event_id) DO UPDATE SET
-            data = excluded.data, details = COALESCE(excluded.details, chat_traces.details)`)
-        events.forEach(({details, ...event}, index) => save.run(username, turnId, event.id, index,
-            JSON.stringify(event), details === undefined ? null : JSON.stringify(details)))
+        events.forEach((event, index) => this.saveChatTraceEvent(username, turnId, event, index))
     }
 
     getChatTrace(username: string, turnId: string): ChatTraceEvent[] {
@@ -167,7 +200,32 @@ export class AppDatabase {
                 ...(row.details === null ? {} : {details: JSON.parse(String(row.details))})}))
     }
 
-    clearChatTrace(username: string) {this.db.prepare('DELETE FROM chat_traces WHERE username = ?').run(username)}
+    /** Metadata only: details stay in SQLite until a step is expanded. */
+    getChatTraceMetadata(username: string, turnId: string): Array<Omit<ChatTraceEvent, 'details'> & {hasDetails: boolean}> {
+        return this.db.prepare('SELECT data, details IS NOT NULL AS has_details FROM chat_traces WHERE username = ? AND turn_id = ? ORDER BY position')
+            .all(username, turnId).map(row => ({...JSON.parse(String(row.data)), hasDetails: Number(row.has_details) === 1}))
+    }
+
+    clearChatTrace(username: string) {
+        this.db.prepare('DELETE FROM chat_traces WHERE username = ?').run(username)
+        this.db.prepare('DELETE FROM chat_trace_stats WHERE username = ?').run(username)
+    }
+
+    /** The turn currently streaming, persisted on its own so a crash keeps only the increment. */
+    saveRunningTurn(username: string, turnId: string, position: number, data: string) {
+        this.db.prepare(`INSERT INTO chat_running_turns (username, turn_id, position, data) VALUES (?, ?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET turn_id = excluded.turn_id, position = excluded.position, data = excluded.data`)
+            .run(username, turnId, position, data)
+    }
+
+    getRunningTurn(username: string): {turnId: string; position: number; data: string} | null {
+        const row = this.db.prepare('SELECT turn_id, position, data FROM chat_running_turns WHERE username = ?').get(username)
+        return row ? {turnId: String(row.turn_id), position: Number(row.position), data: String(row.data)} : null
+    }
+
+    clearRunningTurn(username: string) {
+        this.db.prepare('DELETE FROM chat_running_turns WHERE username = ?').run(username)
+    }
 
     afterCommit(action: () => void) {
         if (this.transactionDepth) this.commitCallbacks.push(action)
@@ -252,11 +310,12 @@ export class AppDatabase {
                 COALESCE(SUM(cache_hit_tokens), 0) AS cache_hit, COALESCE(SUM(elapsed_ms), 0) AS elapsed
             FROM llm_usage WHERE username = ?`).get(username)!
         const last = this.db.prepare('SELECT prompt_tokens FROM llm_usage WHERE username = ? ORDER BY id DESC LIMIT 1').get(username)
-        const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND data LIKE '%\"kind\":\"tool\"%'").get(username)!
+        // Incremental counter: no LIKE scan over every trace row on each publish.
+        const steps = this.db.prepare('SELECT steps FROM chat_trace_stats WHERE username = ?').get(username)
         const saved = this.db.prepare('SELECT data FROM chat_conversations WHERE username = ?').get(username)
         const turns = saved ? (JSON.parse(String(saved.data)) as unknown[]).length : 0
         return {
-            turns, steps: Number(steps.n), requests: Number(usage.requests),
+            turns, steps: steps ? Number(steps.steps) : 0, requests: Number(usage.requests),
             promptTokens: Number(usage.prompt), completionTokens: Number(usage.completion),
             cacheHitTokens: Number(usage.cache_hit), elapsedMs: Number(usage.elapsed),
             lastPromptTokens: last ? Number(last.prompt_tokens ?? 0) : 0
@@ -498,6 +557,11 @@ export class AppDatabase {
     saveCalendarEvent(username: string, event: CalendarEvent) {
         this.db.prepare('INSERT INTO calendar_events (username, id, data) VALUES (?, ?, ?) ON CONFLICT(username, id) DO UPDATE SET data = excluded.data')
             .run(username, event.id, JSON.stringify(event))
+    }
+
+    getCalendarEvent(username: string, id: string): CalendarEvent | null {
+        const row = this.db.prepare('SELECT data FROM calendar_events WHERE username = ? AND id = ?').get(username, id)
+        return row ? JSON.parse(String(row.data)) as CalendarEvent : null
     }
 
     removeCalendarEvent(username: string, id: string) {

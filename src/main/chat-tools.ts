@@ -1,5 +1,5 @@
 import {ToolError} from '../shared/agent'
-import {validateMemory} from '../shared/memory'
+import {validateMemory, presentMemory} from '../shared/memory'
 import {type ChatToolName, defaultToolDescriptions} from '../shared/llm-prompts'
 import {
     calendarDate,
@@ -44,10 +44,12 @@ function tool(name: ChatToolName, properties: Fields, required: string[] = []): 
 export const chatTools: ChatTool[] = [
     tool('recall', {query: str('记忆关键词，可留空')}),
     tool('remember', {kind: {type: 'string', enum: ['fact', 'preference', 'event']}, text: str('长期事实或偏好，最多 600 字'),
-        evidence: str('用户明确陈述的原话与上下文，不得猜测'), confidence: {type: 'number', minimum: 0, maximum: 1},
-        pinned: {type: 'boolean'}, expiresAt: {type: ['string', 'null'], description: 'ISO 到期时间，或 null；可省略'}},
+        evidence: str('用户明确陈述的原话与上下文，不得猜测'),
+        confidence: {type: 'number', minimum: 0, maximum: 1, description: '0–1，省略按 0.6 处理'},
+        pinned: {type: 'boolean', description: '省略按 false 处理'},
+        expiresAt: {type: 'string', description: 'ISO 到期时间；空字符串表示永久'}},
         ['kind', 'text', 'evidence']),
-    tool('forget', {id: str('记忆 ID，必须来自 recall')}, ['id']),
+    tool('forget', {id: str('记忆 ID，来自 recall；可使用短 id')}, ['id']),
     tool('search_notices', {
         query: str('标题或来源关键词，空字符串查询最新通知'), sourceId: str('可选来源 ID'),
         from: str('最早发布日期 YYYY-MM-DD'), to: str('最晚发布日期 YYYY-MM-DD'),
@@ -105,15 +107,41 @@ export const chatToolLabels: Record<string, string> = {
     update_event: '请求修改日程', delete_event: '请求删除日程',
 }
 
-/** Model-facing view of a todo: mark eLearning-sourced items explicitly so they are not read as manual todos. */
+/**
+ * Model-facing views: ids and the fields the model needs, without timestamps, database-only ids or
+ * UI state. Persisted records stay internal and are never passed through to the model verbatim.
+ */
 export function presentTodo(todo: Todo) {
     const elearning = todo.elearning
-    if (!elearning) return {...todo, kind: 'todo' as const, source: 'manual' as const}
+    const base = {
+        id: todo.id, kind: 'todo' as const, title: todo.title, notes: todo.notes,
+        dueDate: todo.dueDate, dueTime: todo.dueTime, completed: todo.completed,
+        source: elearning ? 'elearning' as const : 'manual' as const,
+    }
+    if (!elearning) return base
     return {
-        ...todo,
-        kind: 'todo' as const,
-        source: 'elearning' as const,
-        elearning: {...elearning, label: `eLearning 作业 · ${elearning.courseName}`}
+        ...base,
+        elearning: {
+            courseName: elearning.courseName, status: elearning.status, url: elearning.url,
+            submittedAt: elearning.submittedAt, attempts: elearning.attempts,
+            label: `eLearning 作业 · ${elearning.courseName}`,
+        }
+    }
+}
+
+export function presentEvent(event: CalendarEvent) {
+    return {
+        id: event.id, kind: 'event' as const, title: event.title,
+        startDate: event.startDate, endDate: event.endDate,
+        startTime: event.startTime, endTime: event.endTime, allDay: event.allDay,
+        location: event.location, notes: event.notes,
+    }
+}
+
+export function presentNotice(notice: Notice) {
+    return {
+        sourceId: notice.sourceId, sourceName: notice.sourceName, title: notice.title,
+        url: notice.url, published: notice.published, relevance: notice.relevance ?? 'none',
     }
 }
 
@@ -195,15 +223,22 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             if (!db.getMemoryEnabled(username)) throw new ToolError('forbidden', '记忆已关闭，可在设置中管理。')
             if (name === 'recall') {
                 const query = textArg(input, 'query').toLocaleLowerCase()
-                return page(db.getMemories(username).filter(item => item.status === 'active' &&
+                const result = page(db.getMemories(username).filter(item => item.status === 'active' &&
                     (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()) && item.text.toLocaleLowerCase().includes(query)), {})
+                return {...result, items: result.items.map(presentMemory)}
             }
             if (name === 'forget') {
-                const memory = db.getMemories(username).find(item => item.id === textArg(input, 'id', true))
-                if (!memory) throw new ToolError('not_found', '记忆不存在。')
-                return requestAction({kind: 'forget', memory})
+                const id = textArg(input, 'id', true)
+                const matches = db.getMemories(username).filter(item => item.id === id || (id.length >= 4 && item.id.startsWith(id)))
+                if (!matches.length) throw new ToolError('not_found', '记忆不存在，请先查询后再请求删除。')
+                if (matches.length > 1) throw new ToolError('invalid_args', '记忆 ID 前缀不唯一，请使用 recall 返回的短 id。')
+                return requestAction({kind: 'forget', memory: matches[0]})
             }
-            const result = validateMemory({confidence: 0.6, pinned: false, expiresAt: null, ...input, status: 'active'})
+            // Optional fields default here instead of failing the call: models routinely omit them.
+            // `expiresAt: ''` means permanent — a single string type keeps older gateways from 400ing
+            // on the former ["string","null"] union.
+            const result = validateMemory({confidence: 0.6, pinned: false, ...input,
+                expiresAt: input.expiresAt === '' ? null : input.expiresAt ?? null, status: 'active'})
             if (!result.ok) throw new ToolError('invalid_args', result.error)
             return requestAction({kind: 'remember', memory: result.data})
         }
@@ -218,7 +253,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
                 .sort((a, b) => b.published.localeCompare(a.published))
             const result = page(items, input)
             result.items.forEach(noticeCard)
-            return result
+            return {...result, items: result.items.map(presentNotice)}
         }
         if (name === 'get_notice') {
             const notice = knownNotice(input)
@@ -226,7 +261,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             assertCurrent()
             if (detail.requiresLogin) throw new ToolError('forbidden', '通知需要登录，请在通知详情中登录后再试。')
             noticeCard(notice)
-            return {notice, content: detail.content}
+            return {notice: presentNotice(notice), content: detail.content}
         }
         if (name === 'generate_notice_summary') {
             const notice = knownNotice(input)
@@ -263,23 +298,22 @@ export function createChatToolRunner(db: AppDatabase, username: string,
                 else eventCard(item.event)
             })
             return {
-                ...result, items: result.items.map(item => {
-                    if (item.kind === 'course') {
-                        const {occurrence: _occurrence, ...fields} = item;
-                        return fields
-                    }
-                    const {event: _event, ...fields} = item;
-                    return fields
-                }), timetableUpdatedAt: timetable?.updatedAt ?? null, timetableWarning
+                ...result, items: result.items.map(item => item.kind === 'course'
+                    ? {kind: 'course' as const, readOnly: true, id: item.id, title: item.title, date: item.startDate,
+                        startTime: item.startTime, endTime: item.endTime, location: item.location,
+                        teachers: item.teachers, startUnit: item.startUnit, endUnit: item.endUnit}
+                    : {...presentEvent(item.event), readOnly: false}), timetableUpdatedAt: timetable?.updatedAt ?? null, timetableWarning
             }
         }
         if (name === 'get_event') {
             const event = getEvent(input);
             eventCard(event);
-            return event
+            return presentEvent(event)
         }
         if (name === 'create_event') {
-            if (input.allDay === false && (input.startTime === undefined || input.endTime === undefined)) {
+            // Non-empty times are required for timed events; an empty string must fail here rather
+            // than relying on the downstream calendar validator.
+            if (input.allDay === false && (!input.startTime || !input.endTime)) {
                 throw new ToolError('invalid_args', '请先明确日程的起止时间。')
             }
             const checked = validateCalendarEvent({
