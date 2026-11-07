@@ -45,8 +45,8 @@ export const chatTools: ChatTool[] = [
     tool('recall', {query: str('记忆关键词，可留空')}),
     tool('remember', {kind: {type: 'string', enum: ['fact', 'preference', 'event']}, text: str('长期事实或偏好，最多 600 字'),
         evidence: str('用户明确陈述的原话与上下文，不得猜测'), confidence: {type: 'number', minimum: 0, maximum: 1},
-        pinned: {type: 'boolean'}, expiresAt: {type: ['string', 'null'], description: 'ISO 到期时间，或 null'}},
-        ['kind', 'text', 'evidence', 'confidence', 'pinned', 'expiresAt']),
+        pinned: {type: 'boolean'}, expiresAt: {type: ['string', 'null'], description: 'ISO 到期时间，或 null；可省略'}},
+        ['kind', 'text', 'evidence']),
     tool('forget', {id: str('记忆 ID，必须来自 recall')}, ['id']),
     tool('search_notices', {
         query: str('标题或来源关键词，空字符串查询最新通知'), sourceId: str('可选来源 ID'),
@@ -70,6 +70,20 @@ export const chatTools: ChatTool[] = [
         title: str('待办名称'), notes: str('备注'), dueDate: str('截止日期 YYYY-MM-DD，未指定可省略'),
         dueTime: str('截止时间 HH:mm，有截止日期时必填'), reminderMinutes: eventFields.reminderMinutes,
     }, ['title']),
+    tool('update_todo', {
+        id: str('待办 ID，来自 list_todos'), title: str('新名称，可省略'), notes: str('新备注，可省略'),
+        dueDate: str('新截止日期 YYYY-MM-DD，可省略'), dueTime: str('新截止时间 HH:mm，可省略'),
+        completed: {type: 'boolean', description: '是否完成，可省略'}, reminderMinutes: eventFields.reminderMinutes,
+    }, ['id']),
+    tool('delete_todo', {id: str('待办 ID，来自 list_todos')}, ['id']),
+    tool('update_event', {
+        ...eventFields, id: str('日程 ID，来自 list_events'),
+        title: str('新名称，可省略'), startDate: str('新开始日期，可省略'), endDate: str('新结束日期，可省略'),
+        startTime: str('新开始时间，可省略'), endTime: str('新结束时间，可省略'),
+        allDay: {type: 'boolean', description: '是否全天，可省略'}, location: str('新地点，可省略'),
+        notes: str('新备注，可省略'),
+    }, ['id']),
+    tool('delete_event', {id: str('日程 ID，来自 list_events')}, ['id']),
 ]
 
 export function configuredChatTools(descriptions: Record<ChatToolName, string>): ChatTool[] {
@@ -82,11 +96,13 @@ export function configuredChatTools(descriptions: Record<ChatToolName, string>):
 }
 
 export const chatToolLabels: Record<string, string> = {
-    remember: '正在请求保存记忆', recall: '正在查询记忆', forget: '正在请求删除记忆',
-    search_notices: '正在检索通知', get_notice: '正在读取通知',
-    generate_notice_summary: '正在请求通知摘要',
-    list_events: '正在获取日程', get_event: '正在读取日程', create_event: '正在请求新增日程',
-    list_todos: '正在查询待办', create_todo: '正在请求新增待办',
+    remember: '请求保存记忆', recall: '查询记忆', forget: '请求删除记忆',
+    search_notices: '检索通知', get_notice: '读取通知',
+    generate_notice_summary: '请求通知摘要',
+    list_events: '获取日程', get_event: '读取日程', create_event: '请求新增日程',
+    list_todos: '查询待办', create_todo: '请求新增待办',
+    update_todo: '请求修改待办', delete_todo: '请求删除待办',
+    update_event: '请求修改日程', delete_event: '请求删除日程',
 }
 
 /** Model-facing view of a todo: mark eLearning-sourced items explicitly so they are not read as manual todos. */
@@ -187,7 +203,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
                 if (!memory) throw new ToolError('not_found', '记忆不存在。')
                 return requestAction({kind: 'forget', memory})
             }
-            const result = validateMemory({...input, status: 'active'})
+            const result = validateMemory({confidence: 0.6, pinned: false, expiresAt: null, ...input, status: 'active'})
             if (!result.ok) throw new ToolError('invalid_args', result.error)
             return requestAction({kind: 'remember', memory: result.data})
         }
@@ -290,6 +306,44 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             })
             if (!checked.ok) throw new ToolError('invalid_args', checked.error)
             return requestAction({kind: 'create_todo', todo: checked.data})
+        }
+        if (name === 'update_todo') {
+            const id = textArg(input, 'id', true)
+            const before = db.getTodo(username, id)
+            if (!before) throw new ToolError('not_found', '待办不存在或已被删除。')
+            const checked = validateTodo({
+                title: input.title === undefined ? before.title : textArg(input, 'title', true, 200),
+                notes: input.notes === undefined ? before.notes : textArg(input, 'notes', false, 5000),
+                dueDate: input.dueDate === undefined ? before.dueDate : textArg(input, 'dueDate'),
+                dueTime: input.dueTime === undefined ? before.dueTime : textArg(input, 'dueTime'),
+                reminderMinutes: input.reminderMinutes === undefined ? before.reminderMinutes : input.reminderMinutes,
+                completed: input.completed === undefined ? before.completed : input.completed,
+                id,
+            })
+            if (!checked.ok) throw new ToolError('invalid_args', checked.error)
+            return requestAction({kind: 'update_todo', before, after: checked.data})
+        }
+        if (name === 'delete_todo') {
+            const before = db.getTodo(username, textArg(input, 'id', true))
+            if (!before) throw new ToolError('not_found', '待办不存在或已被删除。')
+            return requestAction({kind: 'delete_todo', before})
+        }
+        if (name === 'update_event') {
+            const before = getEvent(input)
+            const pick = <T>(key: string, fallback: T): T => (input[key] === undefined ? fallback : input[key] as T)
+            const checked = validateCalendarEvent({
+                title: pick('title', before.title),
+                startDate: pick('startDate', before.startDate), endDate: pick('endDate', before.endDate),
+                startTime: pick('startTime', before.startTime), endTime: pick('endTime', before.endTime),
+                allDay: pick('allDay', before.allDay), location: pick('location', before.location),
+                notes: pick('notes', before.notes), reminderMinutes: pick('reminderMinutes', before.reminderMinutes),
+                id: before.id,
+            })
+            if (!checked.ok) throw new ToolError('invalid_args', checked.error)
+            return requestAction({kind: 'update_event', before, after: checked.data})
+        }
+        if (name === 'delete_event') {
+            return requestAction({kind: 'delete_event', before: getEvent(input)})
         }
         throw new ToolError('forbidden', '不支持的工具。')
     }

@@ -13,6 +13,12 @@ export interface StreamOptions {
 class HttpError extends Error {
     constructor(public status: number) {super(`模型服务请求失败（HTTP ${status}）。`)}
 }
+/** User-facing reason for an incomplete response; avoids blaming tool calls that were never made. */
+function finishMessage(reason: string | null): string {
+    if (reason === 'length') return '回答达到长度上限，已截断，可以让我分段继续。'
+    if (reason === 'content_filter') return '模型因内容策略中断了回答。'
+    return '模型输出未正常结束，已保留前半段回答，可以重试。'
+}
 export function readUsage(value: unknown): LlmUsage {
     const v = value && typeof value === 'object' ? value as Record<string, unknown> : {}
     const count = (key: string) => typeof v[key] === 'number' && Number.isSafeInteger(v[key]) && (v[key] as number) >= 0 ? v[key] as number : null
@@ -177,7 +183,7 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
                 if (payload.error) throw new Error('模型服务返回错误。')
                 usage = readUsage(payload.usage)
                 const reason = payload.choices?.[0]?.finish_reason
-                if (reason && !['stop', 'tool_calls'].includes(reason)) throw new Error('模型输出未完整结束，未执行工具调用。')
+                if (reason && !['stop', 'tool_calls'].includes(reason)) throw new Error(finishMessage(reason))
                 const message = payload.choices?.[0]?.message
                 const result = validateAssistant(message?.content, message?.tool_calls)
                 if (result.content) options.onDelta?.(result.content)
@@ -186,7 +192,9 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
             drain()
             // A final data frame without a trailing blank line is accepted only when it contains [DONE].
             if (buffer.trim() === 'data: [DONE]' || dataLines.join('\n') === '[DONE]') doneEvent = true
-            if (!doneEvent || !['stop', 'tool_calls'].includes(finishReason ?? '')) throw new Error('模型输出中断或达到输出上限，未执行不完整的工具调用。')
+            if (!doneEvent || !['stop', 'tool_calls'].includes(finishReason ?? '')) {
+                throw new Error(doneEvent ? finishMessage(finishReason) : '连接中断，已保留前半段回答，可以重试。')
+            }
             const ordered = [...calls.entries()].sort(([a], [b]) => a - b)
             if (ordered.some(([index], position) => index !== position)) throw new Error('工具调用分片缺少索引。')
             return validateAssistant(content || null, ordered.map(([, call]) => call))

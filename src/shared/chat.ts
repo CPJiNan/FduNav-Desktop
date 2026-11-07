@@ -19,9 +19,16 @@ export interface ChatSummaryRequest {
 
 export type ChatAction = { kind: 'create_event'; after: CalendarEventInput } |
     { kind: 'create_todo'; todo: TodoInput } |
+    {kind: 'update_event'; before: CalendarEvent; after: CalendarEventInput} |
+    {kind: 'update_todo'; before: Todo; after: TodoInput} |
+    {kind: 'delete_event'; before: CalendarEvent} |
+    {kind: 'delete_todo'; before: Todo} |
     {kind: 'remember'; memory: MemoryInput} | {kind: 'forget'; memory: Memory}
 
-export const chatActionTitles = {create_event: '新增日程', create_todo: '新增待办', remember: '保存记忆', forget: '删除记忆'} as const
+export const chatActionTitles = {
+    create_event: '新增日程', create_todo: '新增待办', remember: '保存记忆', forget: '删除记忆',
+    update_event: '修改日程', update_todo: '修改待办', delete_event: '删除日程', delete_todo: '删除待办'
+} as const
 export const chatActionStatusLabels = {pending: '等待允许', executing: '正在执行', completed: '已完成', rejected: '已拒绝', failed: '未完成', undone: '已撤销'} as const
 export const chatSummaryStatusLabels = {pending: '等待允许', generating: '正在生成', completed: '已完成', rejected: '已拒绝', failed: '未完成'} as const
 
@@ -29,7 +36,7 @@ export interface ChatActionRequest {
     id: string
     action: ChatAction
     status: 'pending' | 'executing' | 'completed' | 'rejected' | 'failed' | 'undone'
-    checkpoint?: {before: Memory | null; after: CalendarEvent | Todo | Memory | null; at: string}
+    checkpoint?: {before: CalendarEvent | Todo | Memory | null; after: CalendarEvent | Todo | Memory | null; at: string}
     result?: CalendarEvent | Todo | Memory
     error?: string
 }
