@@ -471,6 +471,19 @@
     align-items: flex-start;
 }
 
+.memory-pin {
+    display: inline-flex;
+    align-items: center;
+    vertical-align: -2px;
+    margin-right: 6px;
+    color: var(--color-text-muted);
+}
+
+.memory-pin .icon {
+    width: 14px;
+    height: 14px;
+}
+
 .memory-select input {
     margin-top: 4px;
     width: 16px;

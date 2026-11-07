@@ -1,4 +1,5 @@
 import {useState} from 'react'
+import {Icon} from './Icon'
 
 export async function copyText(text: string): Promise<boolean> {
     try {
@@ -19,8 +20,9 @@ export function CopyButton({text, label = '复制'}: { text: string; label?: str
         setTimeout(() => setStatus('idle'), 1500)
     }
 
-    return <button type="button" className="chat-message-action" aria-label={label} title={label}
-                   onClick={event => void copy(event)}>
-        {status === 'copied' ? '已复制' : status === 'failed' ? '复制失败' : '复制'}
+    const title = status === 'copied' ? '已复制' : status === 'failed' ? '复制失败' : label
+    return <button type="button" className="chat-message-action chat-message-icon" data-status={status}
+                   aria-label={title} title={title} onClick={event => void copy(event)}>
+        <Icon name={status === 'copied' ? 'check' : status === 'failed' ? 'close' : 'copy'}/>
     </button>
 }

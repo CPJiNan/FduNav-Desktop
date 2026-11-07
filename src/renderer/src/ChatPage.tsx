@@ -380,20 +380,24 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                                                                            onUndo={() => void undo(turn.id, request.id)}
                                                                                            onManageMemory={onSettings}/>)}
                             </div>}
-                            {turn.startedAt && <div className="turn-meta">
-                                <time dateTime={turn.startedAt}>{new Date(turn.startedAt).toLocaleTimeString('zh-CN', {
+                            {(turn.startedAt || turn.reply) && <div className="turn-meta">
+                                {turn.startedAt && <time
+                                    dateTime={turn.startedAt}>{new Date(turn.startedAt).toLocaleTimeString('zh-CN', {
                                     hour: '2-digit', minute: '2-digit', hour12: false
-                                })}</time>
-                                {turn.finishedAt && <><i className="turn-meta-dot" aria-hidden="true"/>
+                                })}</time>}
+                                {turn.startedAt && turn.finishedAt && <><i className="turn-meta-dot"
+                                                                           aria-hidden="true"/>
                                     <span>{((Date.parse(turn.finishedAt) - Date.parse(turn.startedAt)) / 1000).toFixed(1)}s</span></>}
-                                <button type="button" className="icon-button turn-meta-button" aria-label="查看执行记录"
-                                        title="查看执行记录" aria-controls="chat-trace-panel"
-                                        onClick={() => openTrace(turn.id)}><Icon name="panel"/></button>
+                                {turn.reply && <CopyButton text={turn.reply} label="复制回复"/>}
+                                {turn.startedAt && <button type="button" className="icon-button turn-meta-button"
+                                                           aria-label="查看执行记录"
+                                                           title="查看执行记录" aria-controls="chat-trace-panel"
+                                                           aria-expanded={traceTurnId === turn.id}
+                                                           onClick={() => traceTurnId === turn.id ? closeTrace() : openTrace(turn.id)}>
+                                    <Icon
+                                        name="panel"/></button>}
                             </div>}
                             {turn.error && <p className="chat-error" role="alert">{turn.error}</p>}
-                            {turn.reply && <div className="chat-message-actions chat-assistant-actions">
-                                <CopyButton text={turn.reply} label="复制回复"/>
-                            </div>}
                         </article>
                     </div>)}
                 </div>

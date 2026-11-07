@@ -4,7 +4,6 @@ import type {Result} from '../../shared/accounts'
 import {downloadJson} from './ChatTracePanel'
 import {Icon} from './Icon'
 
-const kinds = {fact: '事实', preference: '偏好', event: '事项'}
 type Stage = 'idle' | 'scanning' | 'preview' | 'applying' | 'done'
 
 export function MemoryPanel({active}: { active: boolean }) {
@@ -260,8 +259,8 @@ export function MemoryPanel({active}: { active: boolean }) {
                        disabled={!readyStage || !eligibleItems.some(value => value.id === item.id)}
                        onChange={() => toggleItem(item.id)}/>
                 <div>
-                    <small>{kinds[item.kind]} · {item.pinned ? '已置顶' : '未置顶'} · {item.status === 'archived' ? '已归档' : item.expiresAt && Date.parse(item.expiresAt) <= Date.now() ? '已到期' : '有效'}</small>
-                    <p>{item.text}</p><small>依据：{item.evidence}</small></div>
+                    <p>{item.pinned && <span className="memory-pin" role="img" aria-label="已置顶"><Icon
+                        name="pin"/></span>}{item.text}</p><small>依据：{item.evidence}</small></div>
             </div>
             <div className="trace-toolbar">
                 <button type="button" className="secondary-button" disabled={busy}

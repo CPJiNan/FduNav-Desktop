@@ -62,7 +62,6 @@ export function ChatSessionTracePanel({onClose}: { onClose: () => void }) {
         }
     }
 
-    const steps = turns.reduce((total, turn) => total + turn.events.length, 0)
     return <aside id="chat-session-trace" className="chat-trace" aria-label="会话轨迹" onKeyDown={event => {
         if (event.key === 'Escape') {
             event.stopPropagation();
@@ -70,11 +69,10 @@ export function ChatSessionTracePanel({onClose}: { onClose: () => void }) {
         }
     }}>
         <header>
-            <div><h2>会话轨迹</h2><p>{turns.length} 轮 · {steps} 步</p></div>
+            <div><h2>会话轨迹</h2></div>
             <button type="button" ref={close} className="icon-button" title="关闭会话轨迹"
                     aria-label="关闭会话轨迹" onClick={onClose}><Icon name="close"/></button>
         </header>
-        <p className="trace-help">从对话开始至今的全部轮次，包含每轮的工具调用与模型请求。压缩只影响发给模型的上下文，不会删除这里的记录。</p>
         {error && <div role="alert"><p className="chat-error">{error}</p>
             <button type="button" className="secondary-button" onClick={() => setReload(value => value + 1)}>重试
             </button>

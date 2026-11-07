@@ -45,7 +45,18 @@ export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onMa
                 : action.kind === 'delete_todo' || action.kind === 'delete_event' ? action.before : null
     const title = payload?.title ?? ''
     const heading = action.kind === 'remember' && action.targetId ? '更新已有记忆' : titles[action.kind]
-    return <section className="chat-summary-request" aria-label={`${heading}请求`}>
+    const opensMemory = action.kind === 'remember' && request.status === 'completed'
+    return <section className={`chat-summary-request${opensMemory ? ' is-clickable' : ''}`}
+                    aria-label={`请求${heading}`}
+                    role={opensMemory ? 'link' : undefined}
+                    tabIndex={opensMemory ? 0 : undefined}
+                    onClick={opensMemory ? onManageMemory : undefined}
+                    onKeyDown={opensMemory ? event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            onManageMemory()
+                        }
+                    } : undefined}>
         <header><strong><Icon
             name={action.kind === 'create_todo' ? 'todo' : action.kind === 'remember' ? 'sparkles' : 'calendar'}/>{heading}
             {title && <span className="chat-action-title">{title}</span>}</strong>
@@ -67,14 +78,6 @@ export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onMa
             </>}
             <dt>依据</dt>
             <dd>{action.memory.evidence}</dd>
-            <dt>说明</dt>
-            <dd>{action.kind === 'remember' ? '允许后保存在本机；记忆启用时可随对话发送给模型服务。' : '允许后从记忆库删除。'}</dd>
-            {request.status === 'completed' && action.kind === 'remember' && <>
-                <dt/>
-                <dd>
-                    <button type="button" className="chat-ghost-button" onClick={onManageMemory}>查看或删除记忆</button>
-                </dd>
-            </>}
         </dl> : <Preview value={payload as CalendarEventInput | TodoInput}/>}
         {request.status === 'pending' && <div className="chat-summary-actions">
             <button type="button" className="secondary-button chat-ghost-button" disabled={disabled}
