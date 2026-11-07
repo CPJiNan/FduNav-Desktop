@@ -180,8 +180,9 @@ app.whenReady().then(async () => {
         const notices = registerNoticeHandlers(database, accounts, llm, trusted, showMainWindow)
         registerChatHandlers(database, accounts, llm, notices, calendar, todos, trusted)
         registerMessagePreferenceHandlers(database, trusted)
-    } catch {
-        dialog.showErrorBox('无法打开应用数据', 'SQLite 数据库初始化失败，请检查应用数据目录的访问权限。')
+    } catch (error) {
+        console.error('FduNav 启动失败', error)
+        dialog.showErrorBox('FduNav 启动失败', error instanceof Error ? error.message : '初始化失败，请查看终端输出。')
         app.quit()
         return
     }

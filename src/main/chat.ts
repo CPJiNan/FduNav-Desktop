@@ -552,13 +552,6 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     })
     handle('chat:session-trace', user => {
         const turns = running.get(user)?.turns ?? load(user)
-        return turns.map(turn => ({
-            turnId: turn.id, user: turn.user, at: turn.startedAt ?? '',
-            events: db.getChatTrace(user, turn.id)
-        })).filter(item => item.events.length)
-    })
-    handle('chat:session-trace', user => {
-        const turns = running.get(user)?.turns ?? load(user)
         const live = new Map<string, ChatTraceEvent>()
         for (const turn of turns) for (const item of turn.trace ?? []) live.set(item.id, item)
         return turns.map(turn => ({
