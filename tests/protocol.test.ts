@@ -84,7 +84,7 @@ test('database isolates memories, usage and rollback; missing usage is not zero'
         assert.equal(db.getUsage('bob').today.requests, 0)
     } finally {db.close()}
 })
-test('tool runner validates raw args, enforces lookup first, returns full original notice', async () => {
+test('tool runner validates raw args, enforces lookup first and pages the whole notice', async () => {
     const db = new AppDatabase(':memory:')
     const notice = {sourceId: 'test', sourceName: 'test', title: 'Math', url: 'https://example.com/n', published: '2026-11-07', read: false}
     const notices = {list: () => ({items: [notice]}), detail: async () => ({content: 'x'.repeat(20000)})}
@@ -96,8 +96,14 @@ test('tool runner validates raw args, enforces lookup first, returns full origin
         await assert.rejects(run('unknown', '{}'), {code: 'forbidden'})
         await assert.rejects(run('get_notice', JSON.stringify({sourceId: notice.sourceId, url: notice.url})), {code: 'forbidden'})
         await run('search_notices', '{}')
-        const result = await run('get_notice', JSON.stringify({sourceId: notice.sourceId, url: notice.url})) as {content: string}
-        assert.equal(result.content.length, 20000)
+        let offset: number | null = 0, text = ''
+        do {
+            const result = await run('get_notice', JSON.stringify({sourceId: notice.sourceId, url: notice.url, offset})) as {content: string; nextOffset: number | null; totalChars: number}
+            assert.ok(result.content.length <= 6000)
+            assert.equal(result.totalChars, 20000)
+            text += result.content; offset = result.nextOffset
+        } while (offset !== null)
+        assert.equal(text, 'x'.repeat(20000))
         await assert.rejects(run('recall', '{}'), {code: 'forbidden'})
     } finally {db.close()}
 })
@@ -399,13 +405,14 @@ test('clustering groups identical or similar memories and caps groups', () => {
 test('compaction candidates support update and skip, and downgrade fabricated targets', () => {
     const existing = [memory('3f2a91c0-1111-2222-3333-444455556666', {text: '用户是数学科学学院本科生'})]
     const raw = JSON.stringify({memories: [
-        {op: 'update', targetId: '3f2a91c0', kind: 'fact', text: '用户是数学科学学院 2026 级本科生', confidence: 0.9, expiresAt: null}
+        {op: 'update', targetId: '3f2a91c0', kind: 'fact', text: '用户是数学科学学院 2026 级本科生', evidence: '我是数学科学学院2026级本科生', confidence: 0.9, expiresAt: null}
     ]})
-    const updated = extractCompactionMemories(raw, [], existing)
+    const updated = extractCompactionMemories(raw, ['我是数学科学学院2026级本科生'], existing)
     assert.equal(updated.candidates.length, 1)
     assert.equal(updated.candidates[0].op, 'update')
     assert.equal((updated.candidates[0] as any).targetId, existing[0].id)
-    assert.equal(updated.candidates[0].memory.evidence, existing[0].evidence, 'evidence is inherited from the target')
+    assert.equal(updated.candidates[0].memory.evidence, '我是数学科学学院2026级本科生', 'updates cite the new user evidence')
+    assert.equal(extractCompactionMemories(raw, [], existing).candidates.length, 0, 'fabricated evidence is rejected for updates too')
 
     const mixed = JSON.stringify({memories: [
         {op: 'skip', kind: 'fact', text: '重复'},

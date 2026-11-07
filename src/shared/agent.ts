@@ -53,10 +53,26 @@ export function toolFailure(error: unknown, remaining: ToolBudget): Extract<Tool
 /** Redact credential fields and common credential strings before persistence or IPC. */
 export function redactTrace(value: unknown, secrets: string[] = []): unknown {
     if (typeof value === 'string') {
-        if (/^\s*[\[{]/.test(value)) {
-            try {return JSON.stringify(redactTrace(JSON.parse(value), secrets))} catch { /* preserve non-JSON text */ }
+        // Raw SSE bodies contain JSON frames and JSON-encoded function arguments. Redact them
+        // structurally too; a credential inside a frame must not bypass object-field redaction.
+        if (/^data:/m.test(value)) value = value.replace(/\r\n?/g, '\n').split('\n\n').map(frame => {
+            const lines = frame.split('\n')
+            const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /, '')).join('\n')
+            try {
+                const safe = JSON.stringify(redactTrace(JSON.parse(data), secrets))
+                let written = false
+                return lines.flatMap(line => {
+                    if (!line.startsWith('data:')) return [line]
+                    if (written) return []
+                    written = true; return [`data: ${safe}`]
+                }).join('\n')
+            } catch {return frame}
+        }).join('\n\n')
+        const input = value as string
+        if (/^\s*[\[{]/.test(input)) {
+            try {return JSON.stringify(redactTrace(JSON.parse(input), secrets))} catch { /* preserve non-JSON text */ }
         }
-        let text = value.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{12,})\b/g, '[REDACTED]')
+        let text = input.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{12,})\b/g, '[REDACTED]')
             .replace(/(Bearer\s+)[^\s"',}]+/gi, '$1[REDACTED]')
         for (const secret of secrets.filter(Boolean)) text = text.split(secret).join('[REDACTED]')
         return text

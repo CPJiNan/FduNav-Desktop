@@ -1,62 +1,11 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {randomUUID} from 'node:crypto'
 import {handlers} from './fakes/electron.ts'
 import {streamResponse, replyResponse} from './fakes/model.ts'
-import {registerChatHandlers} from '../src/main/chat.ts'
-import {AppDatabase} from '../src/main/database.ts'
-import {TodoService} from '../src/main/todo-service.ts'
-import {emptyLlmSettings} from '../src/shared/llm.ts'
-import {LlmSettingsService} from '../src/main/llm-settings.ts'
-import type {ChatState, ChatTurn} from '../src/shared/chat.ts'
+import type {ChatTurn} from '../src/shared/chat.ts'
 import type {ChatTraceEvent} from '../src/shared/agent.ts'
 import {memoryShortId} from '../src/shared/memory.ts'
-
-function callResponse(name: string, args: unknown, id = 'call-1') {
-    return streamResponse([{choices: [{delta: {tool_calls: [{index: 0, id, type: 'function', function: {name, arguments: JSON.stringify(args)}}]}, finish_reason: 'tool_calls'}]}, '[DONE]'])
-}
-function harness() {
-    handlers.clear()
-    const db = new AppDatabase(':memory:')
-    let user = 'alice'
-    db.saveAccount({username: user, cookies: new Uint8Array(), target: '', last_login: 'now'})
-    db.saveLlmSettings({...emptyLlmSettings(), baseUrl: 'https://example.com/v1', model: 'test-model', encryptedApiKey: null})
-    db.setLlmEnabled(true)
-    const accounts = {getState: () => ({status: 'signed-in', username: user})}
-    const llm = new LlmSettingsService(db, {available: async () => true, encrypt: async () => new Uint8Array(), decrypt: async () => ''})
-    const service = new TodoService(db)
-    const calendar = {save: (_user: string, input: any) => {const value = {...input, id: randomUUID()}; db.saveCalendarEvent(_user, value); return value},
-        remove: (_user: string, id: string) => db.removeCalendarEvent(_user, id)}
-    const todos = {save: (owner: string, input: unknown) => service.save(owner, input), remove: (owner: string, id: string) => service.remove(owner, id)}
-    const notice = {sourceId: 'test', sourceName: '数学学院', title: '讲座通知', url: 'https://example.com/n', published: '2026-11-07', read: false}
-    const notices = {list: () => ({items: [notice]}), detail: async () => ({content: '讲座详情'.repeat(5000)})}
-    const register = () => registerChatHandlers(db, accounts as never, llm, notices as never, calendar as never, todos as never,
-        event => !!(event as any).trusted)
-    register()
-    const snapshots: ChatState[] = []
-    const event = {trusted: true, sender: {once: () => {}, isDestroyed: () => false, send: (_channel: string, value: ChatState) => snapshots.push(structuredClone(value))}}
-    const invoke = (channel: string, input?: unknown): any => handlers.get(channel)!(event, channel === 'memory:import' && typeof input === 'string' ? {json: input, username: user} : input)
-    const state = (): ChatState => {const result = invoke('chat:get'); assert.equal(result.ok, true); return result.data}
-    const finish = async () => {
-        const until = Date.now() + 8000
-        while (state().busy && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 5))
-        assert.equal(state().busy, false, 'chat should finish'); return state().turns.at(-1)!
-    }
-    const originalFetch = globalThis.fetch
-    const restore = () => {globalThis.fetch = originalFetch; db.close()}
-    return {db, llm, invoke, state, finish, event, snapshots, notice, notices, register, restore,
-        switchUser: (next: string) => {user = next; db.saveAccount({username: user, cookies: new Uint8Array(), target: '', last_login: 'now'})}}
-}
-function setModel(responses: Response[]) {
-    const requests: any[] = []
-    globalThis.fetch = async (_url, init) => {
-        requests.push(JSON.parse(String(init?.body)))
-        const response = responses.shift()
-        if (!response) throw new Error('unexpected model request')
-        return response
-    }
-    return requests
-}
+import {harness, callResponse, setModel} from './helpers/chat.ts'
 
 /** Summary and memory are injected as a system message after history, never as user text. */
 function referenceBlock(messages: any[]) {
@@ -105,14 +54,15 @@ test('write and approval status roll back together if conversation persistence f
         assert.equal(h.state().turns[0].actionRequests![0].status, 'failed')
     } finally {h.restore()}
 })
-test('trace preserves full original tool result and distinct truncated model response; clear removes trace', async () => {
+test('trace preserves the complete paged tool result and model response; clear removes trace', async () => {
     const h = harness()
     try {
         setModel([callResponse('search_notices', {}), callResponse('get_notice', {sourceId: h.notice.sourceId, url: h.notice.url}), replyResponse()])
         h.invoke('chat:send', '读取讲座通知'); const turn = await h.finish()
         const events = h.invoke('chat:trace', turn.id).data as ChatTraceEvent[]
         const tool = events.filter(item => item.kind === 'tool').at(-1)!.details as any
-        assert.equal(tool.rawResponse.content.length, 20000); assert.equal(tool.modelResponse.truncated, true)
+        assert.equal(tool.rawResponse.content.length, 6000); assert.equal(tool.rawResponse.totalChars, 20000)
+        assert.equal(tool.modelResponse.truncated, false); assert.equal(tool.modelResponse.data.nextOffset, 6000)
         h.switchUser('bob'); assert.equal(h.invoke('chat:trace', turn.id).ok, false); assert.equal(h.state().turns.length, 0)
         h.switchUser('alice'); assert.equal(h.invoke('chat:clear').ok, true); assert.equal(h.invoke('chat:trace', turn.id).ok, false)
     } finally {h.restore()}
@@ -471,7 +421,7 @@ test('large histories are compacted in bounded chunks with a chained summary', a
     } finally {h.restore()}
 })
 
-test('trace details keep counts, not full prompts, while tool responses stay inspectable', async () => {
+test('trace hydration exposes wire requests while context metadata stays small', async () => {
     const h = harness()
     try {
         setModel([callResponse('list_todos', {}), replyResponse('完成')])
@@ -482,7 +432,8 @@ test('trace details keep counts, not full prompts, while tool responses stay ins
         const model = events.find(item => item.kind === 'model')!
         assert.equal('messages' in (context.details as object), false, 'context details must not embed the prompt')
         assert.ok((context.details as any).messageCount > 0)
-        assert.equal('messages' in (model.details as object), false, 'model details must not embed the prompt')
+        assert.ok((model.details as any).requests[0].messages.some((item: any) => item.content === '查询待办'))
+        assert.equal((model.details as any).response.content, null, 'the first model response is a tool call')
         assert.ok((model.details as any).tools.includes('list_todos'), 'tool names must still be listed')
         assert.ok((model.details as any).chars > 0)
         const tool = events.find(item => item.kind === 'tool')!
@@ -609,10 +560,12 @@ test('older turns fold their tool results before being replayed to the model', a
 test('a single turn folds older tool results once the in-turn budget is exceeded', async () => {
     const h = harness()
     try {
-        h.notices.detail = async () => ({content: 'x'.repeat(11000)})
-        const responses = [callResponse('search_notices', {})]
-        for (let i = 0; i < 6; i++) responses.push(callResponse('get_notice',
-            {sourceId: h.notice.sourceId, url: h.notice.url}, `n-${i}`))
+        for (const id of ['aaaa1111', 'bbbb2222']) h.db.saveTodo('alice', {
+            id: `${id}-1111-1111-1111-111111111111`, title: '长备注', notes: 'x'.repeat(5000),
+            dueDate: '', dueTime: '00:00', completed: false, reminderMinutes: -1, createdAt: 'now', updatedAt: 'now',
+        })
+        const responses: Response[] = []
+        for (let i = 0; i < 6; i++) responses.push(callResponse('list_todos', {}, `n-${i}`))
         responses.push(replyResponse('完成'))
         const requests = setModel(responses)
         h.invoke('chat:send', '读六次通知')
@@ -707,11 +660,14 @@ test('a skip candidate creates no card; an update candidate shows and applies a 
         assert.equal(turn.actionRequests?.length ?? 0, 0, 'skip produces no card')
 
         // Reset the seeded history so the second turn compacts again.
-        h.db.saveChatConversation('alice', JSON.stringify(seedTurns()))
+        const updateHistory = seedTurns()
+        updateHistory[0].user = '我是数学科学学院2026级本科生'
+        updateHistory[0].context[0].content = updateHistory[0].user
+        h.db.saveChatConversation('alice', JSON.stringify(updateHistory))
         h.db.saveCompaction('alice', null)
         const update = JSON.stringify({facts: [], actions: [], pending: [], preferences: [], memories: [
             {op: 'update', targetId: '3f2a91c0', kind: 'fact', text: '用户是数学科学学院 2026 级本科生',
-                confidence: 0.9, expiresAt: null}]})
+                evidence: '我是数学科学学院2026级本科生', confidence: 0.9, expiresAt: null}]})
         setModel([replyResponse(update), replyResponse('请确认更新。')])
         h.invoke('chat:send', '再继续')
         turn = await h.finish()

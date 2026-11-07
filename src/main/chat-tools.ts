@@ -1,5 +1,5 @@
-import {ToolError} from '../shared/agent'
-import {validateMemory, presentMemory} from '../shared/memory'
+import {ToolError, maxToolResultChars} from '../shared/agent'
+import {validateMemory, presentMemory, memoryShortId} from '../shared/memory'
 import {type ChatToolName, defaultToolDescriptions} from '../shared/llm-prompts'
 import {
     calendarDate,
@@ -10,6 +10,7 @@ import {
 } from '../shared/calendar'
 import {type Todo, validateTodo} from '../shared/todos'
 import type {ChatAction, ChatCard} from '../shared/chat'
+import type {Memory} from '../shared/memory'
 import type {Notice} from '../shared/notices'
 import type {AppDatabase} from './database'
 import type {registerNoticeHandlers} from './notices'
@@ -55,7 +56,8 @@ export const chatTools: ChatTool[] = [
         from: str('最早发布日期 YYYY-MM-DD'), to: str('最晚发布日期 YYYY-MM-DD'),
         relevance: {type: 'string', enum: ['related', 'maybe', 'none']}, ...pagination,
     }),
-    tool('get_notice', ref, ['sourceId', 'url']),
+    tool('get_notice', {...ref, offset: {type: 'integer', minimum: 0, description: '正文字符偏移，首次省略；后续使用 nextOffset'},
+        limit: {type: 'integer', minimum: 1, maximum: 8000, description: '正文片段最大字符数，默认 6000'}}, ['sourceId', 'url']),
     tool('generate_notice_summary', ref, ['sourceId', 'url']),
     tool('list_events', {
         from: str('开始日期 YYYY-MM-DD'),
@@ -143,6 +145,32 @@ export function presentNotice(notice: Notice) {
         sourceId: notice.sourceId, sourceName: notice.sourceName, title: notice.title,
         url: notice.url, published: notice.published, relevance: notice.relevance ?? 'none',
     }
+}
+
+/** Approval checkpoints contain full database records; model messages use these views only. */
+export function presentAction(action: ChatAction) {
+    switch (action.kind) {
+        case 'create_todo': return {kind: action.kind, todo: action.todo}
+        case 'create_event': return {kind: action.kind, event: action.after}
+        case 'update_todo': return {kind: action.kind, id: action.before.id, changes: changedFields(action.before, action.after)}
+        case 'update_event': return {kind: action.kind, id: action.before.id, changes: changedFields(action.before, action.after)}
+        case 'delete_todo': case 'delete_event': return {kind: action.kind, id: action.before.id, title: action.before.title}
+        case 'remember': return {kind: action.kind, memory: {kind: action.memory.kind, text: action.memory.text},
+            ...(action.targetId ? {id: memoryShortId(action.targetId)} : {})}
+        case 'forget': return {kind: action.kind, memory: presentMemory(action.memory)}
+    }
+}
+
+function changedFields(before: object, after: object) {
+    const values = before as Record<string, unknown>
+    return Object.fromEntries(Object.entries(after).filter(([key, value]) => key !== 'id' && value !== values[key]))
+}
+
+export function presentActionResult(action: ChatAction, result: CalendarEvent | Todo | Memory | undefined) {
+    if (!result) return undefined
+    if (action.kind === 'remember') return presentMemory(result as Memory)
+    if (action.kind.endsWith('_todo')) return presentTodo(result as Todo)
+    return presentEvent(result as CalendarEvent)
 }
 
 function textArg(args: Fields, key: string, required = false, max = 500): string {
@@ -261,7 +289,22 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             assertCurrent()
             if (detail.requiresLogin) throw new ToolError('forbidden', '通知需要登录，请在通知详情中登录后再试。')
             noticeCard(notice)
-            return {notice: presentNotice(notice), content: detail.content}
+            const offset = input.offset ?? 0, limit = input.limit ?? 6000
+            if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 || offset > detail.content.length ||
+                typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 8000) {
+                throw new ToolError('invalid_args', '正文分页参数无效。')
+            }
+            const makePage = (end: number) => ({notice: presentNotice(notice), content: detail.content.slice(offset, end),
+                offset, totalChars: detail.content.length, nextOffset: end < detail.content.length ? end : null,
+                hasMore: end < detail.content.length})
+            let end = Math.min(detail.content.length, offset + limit)
+            let result = makePage(end)
+            // JSON escaping also consumes the tool-result budget (e.g. quoted tables/newlines).
+            while (JSON.stringify(result).length > maxToolResultChars - 400 && end > offset) {
+                end = offset + Math.floor((end - offset) * 0.8); result = makePage(end)
+            }
+            if (end === offset && offset < detail.content.length) throw new ToolError('internal', '通知元数据超过读取上限，暂时无法分段。')
+            return result
         }
         if (name === 'generate_notice_summary') {
             const notice = knownNotice(input)

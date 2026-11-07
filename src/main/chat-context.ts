@@ -2,7 +2,7 @@ import {validateMemory, memoryShortId, type Memory, type MemoryInput} from '../s
 import type {ToolChatMessage} from './llm-connection'
 
 export interface ContextTurn {id: string; context: ToolChatMessage[]}
-export interface Compaction {summary: string; coversUpTo: string}
+export interface Compaction {summary: string; coversUpTo: string; updatesThrough?: number}
 export interface CompactPlan {older: ContextTurn[]; recent: ContextTurn[]}
 /** Turns always kept verbatim in context after a compaction. */
 export const recentTurns = 4
@@ -147,17 +147,18 @@ export function extractCompactionMemories(summary: string, userMessages: string[
         }
         const checked = validateMemory({
             kind: value.kind, text: value.text,
-            evidence: typeof value.evidence === 'string' && value.evidence.trim() ? value.evidence : target?.evidence,
+            evidence: value.evidence,
             confidence: value.confidence ?? target?.confidence ?? 0.6,
             pinned: target?.pinned ?? false,
             expiresAt: value.expiresAt === undefined ? target?.expiresAt ?? null : value.expiresAt,
             status: 'active',
         })
         if (!checked.ok) {scan.dropped++; continue}
-        // `update` keeps the target; a fabricated or ambiguous target downgrades to add.
+        // Both additions and updates must cite actual user input. Old evidence cannot establish
+        // a new fact just because the model happened to name a valid target.
+        if (!userMessages.some(text => text.includes(checked.data.evidence))) {scan.dropped++; continue}
         if (op === 'update' && target) scan.candidates.push({op: 'update', targetId: target.id, memory: checked.data})
         else {
-            if (!userMessages.some(text => text.includes(checked.data.evidence))) {scan.dropped++; continue}
             scan.candidates.push({op: 'add', memory: checked.data})
         }
     }

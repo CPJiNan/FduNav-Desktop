@@ -86,13 +86,13 @@ export const memoryLineBudget = 1200
  * Only pinned or keyword-matched memories are injected: recency alone is not relevance, and a
  * memory last edited within 30 days used to be pushed even for unrelated questions.
  */
-export function selectMemories(items: Memory[], query: string, now = Date.now()): Memory[] {
+export function selectMemories(items: Memory[], query: string, now = Date.now(), carryIds: string[] = []): Memory[] {
     const phrases = query.toLocaleLowerCase().match(/[a-z0-9_]+|[\p{Script=Han}]+/gu) ?? []
     const words = [...new Set(phrases.flatMap(word => /^[\p{Script=Han}]+$/u.test(word) && word.length > 2
         ? Array.from({length: word.length - 1}, (_, index) => word.slice(index, index + 2)) : [word]))]
     const active = items.filter(item => item.status === 'active' && (!item.expiresAt || Date.parse(item.expiresAt) > now))
     const score = (item: Memory) => words.filter(word => item.text.toLocaleLowerCase().includes(word)).length
-    const sorted = active.filter(item => item.pinned || score(item) > 0)
+    const sorted = active.filter(item => item.pinned || score(item) > 0 || carryIds.includes(item.id))
         .sort((a, b) => Number(b.pinned) - Number(a.pinned) || score(b) - score(a) || b.confidence - a.confidence || b.updatedAt.localeCompare(a.updatedAt))
     const selected: Memory[] = []
     let unpinned = 0, chars = 0

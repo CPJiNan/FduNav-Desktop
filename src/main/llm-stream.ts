@@ -10,6 +10,10 @@ export interface StreamOptions {
     onDelta?: (content: string) => void
     onRetry?: (attempt: number, delayMs: number, reason: string) => void
     onUsage?: (usage: LlmUsage, elapsedMs: number) => void
+    /** Exact wire body per HTTP attempt, before transmission (including compatibility fallbacks). */
+    onRequest?: (body: Record<string, unknown>) => void
+    /** Raw provider response, including partial streams; never reused as model input. */
+    onRawResponse?: (response: {contentType: string; body: string}) => void
 }
 class HttpError extends Error {
     constructor(public status: number) {super(`模型服务请求失败（HTTP ${status}）。`)}
@@ -26,7 +30,7 @@ export function readUsage(value: unknown): LlmUsage {
     return {promptTokens: count('prompt_tokens'), completionTokens: count('completion_tokens'),
         cacheHitTokens: count('prompt_cache_hit_tokens'), cacheMissTokens: count('prompt_cache_miss_tokens')}
 }
-export function validateAssistant(content: unknown, calls: unknown): Extract<ToolChatMessage, {role: 'assistant'}> {
+export function validateAssistant(content: unknown, calls: unknown, reasoning?: unknown): Extract<ToolChatMessage, {role: 'assistant'}> {
     if (content !== null && content !== undefined && typeof content !== 'string') throw new Error('模型文本格式无效。')
     if (typeof content === 'string' && content.length > 64000) throw new Error('模型回复过长，请缩小问题范围。')
     if (calls !== undefined && (!Array.isArray(calls) || calls.length > 8 || calls.some(call =>
@@ -35,7 +39,9 @@ export function validateAssistant(content: unknown, calls: unknown): Extract<Too
         typeof call.function?.arguments !== 'string' || call.function.arguments.length > 16000) ||
         new Set(calls.map(call => call.id)).size !== calls.length)) throw new Error('模型返回了无效的工具调用。')
     if (!(typeof content === 'string' && content.trim()) && !(Array.isArray(calls) && calls.length)) throw new Error('模型未返回有效回复。')
+    if (reasoning !== undefined && reasoning !== null && (typeof reasoning !== 'string' || reasoning.length > 256000)) throw new Error('模型协议状态格式无效或过长。')
     return {role: 'assistant', content: typeof content === 'string' ? content : null,
+        ...(typeof reasoning === 'string' ? {reasoning_content: reasoning} : {}),
         ...(Array.isArray(calls) && calls.length ? {tool_calls: calls as ToolCall[]} : {})}
 }
 function wait(ms: number, signal: AbortSignal): Promise<void> {
@@ -71,13 +77,15 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
             const signal = AbortSignal.any([enabledSignal, controller.signal])
             resetIdle()
             try {
+                const body = {model: connection.model, messages, stream: streaming,
+                    ...(streaming && includeUsage ? {stream_options: {include_usage: true}} : {}),
+                    ...(tools.length ? {tools, tool_choice: 'auto'} : {})}
+                options.onRequest?.(body)
                 response = await request(`${connection.baseUrl}/chat/completions`, {
                     method: 'POST', redirect: 'error', signal,
                     headers: {'Content-Type': 'application/json', Accept: 'text/event-stream, application/json',
                         ...(connection.apiKey ? {Authorization: `Bearer ${connection.apiKey}`} : {})},
-                    body: JSON.stringify({model: connection.model, messages, stream: streaming,
-                        ...(streaming && includeUsage ? {stream_options: {include_usage: true}} : {}),
-                        ...(tools.length ? {tools, tool_choice: 'auto'} : {})}),
+                    body: JSON.stringify(body),
                 })
                 if (!response.ok) {
                     await response.body?.cancel().catch(() => {})
@@ -112,7 +120,8 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
         const stopReading = () => {void reader.cancel(signal.reason).catch(() => {})}
         signal.addEventListener('abort', stopReading, {once: true})
         const decoder = new TextDecoder()
-        let buffer = '', size = 0, content = '', doneEvent = false, finishReason: string | null = null
+        let buffer = '', size = 0, content = '', reasoning = '', hasReasoning = false, doneEvent = false, finishReason: string | null = null
+        const rawChunks: string[] = []
         const calls = new Map<number, ToolCall>()
         const json = response.headers.get('content-type')?.includes('application/json')
         const consume = (data: string) => {
@@ -125,6 +134,11 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
             if (!choice) return
             if (choice.finish_reason) finishReason = choice.finish_reason
             const delta = choice.delta
+            if (delta?.reasoning_content !== undefined && delta.reasoning_content !== null) {
+                if (typeof delta.reasoning_content !== 'string') throw new Error('模型协议状态分片无效。')
+                hasReasoning = true; reasoning += delta.reasoning_content
+                if (reasoning.length > 256000) throw new Error('模型协议状态过长。')
+            }
             if (typeof delta?.content === 'string') {
                 content += delta.content
                 if (content.length > 64000) throw new Error('模型回复过长。')
@@ -173,12 +187,14 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
                 resetIdle()
                 size += value.byteLength
                 if (size > 1024 * 1024) throw new Error('接口响应超过 1 MiB 限制。')
-                buffer += decoder.decode(value, {stream: true})
+                const decoded = decoder.decode(value, {stream: true})
+                rawChunks.push(decoded); buffer += decoded
                 if (!json) drain()
                 if (doneEvent) break
             }
             signal.throwIfAborted()
-            buffer += decoder.decode()
+            const tail = decoder.decode()
+            rawChunks.push(tail); buffer += tail
             if (json) {
                 const payload = JSON.parse(buffer)
                 if (payload.error) throw new Error('模型服务返回错误。')
@@ -186,7 +202,7 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
                 const reason = payload.choices?.[0]?.finish_reason
                 if (reason && !['stop', 'tool_calls'].includes(reason)) throw new Error(finishMessage(reason))
                 const message = payload.choices?.[0]?.message
-                const result = validateAssistant(message?.content, message?.tool_calls)
+                const result = validateAssistant(message?.content, message?.tool_calls, message?.reasoning_content)
                 if (result.content) options.onDelta?.(result.content)
                 return result
             }
@@ -198,12 +214,13 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
             }
             const ordered = [...calls.entries()].sort(([a], [b]) => a - b)
             if (ordered.some(([index], position) => index !== position)) throw new Error('工具调用分片缺少索引。')
-            return validateAssistant(content || null, ordered.map(([, call]) => call))
+            return validateAssistant(content || null, ordered.map(([, call]) => call), hasReasoning ? reasoning : undefined)
         } catch (error) {
             options.onPartialResponse?.({content, tool_calls: [...calls.values()], finishReason, responseTail: buffer.slice(-2000)})
             if (signal.aborted) throw abortError(signal.reason)
             throw error
         } finally {
+            options.onRawResponse?.({contentType: response.headers.get('content-type') ?? '', body: rawChunks.join('')})
             signal.removeEventListener('abort', stopReading)
             await reader.cancel().catch(() => {})
             reader.releaseLock()

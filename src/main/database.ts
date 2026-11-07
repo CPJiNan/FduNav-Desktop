@@ -3,6 +3,8 @@ import type {Memory} from '../shared/memory'
 import {validateMemory} from '../shared/memory'
 import type {UsageSummary, UsageTotals} from '../shared/chat'
 import {DatabaseSync} from 'node:sqlite'
+import {createHash} from 'node:crypto'
+import type {Compaction} from './chat-context'
 import {type AdditionalLlmPrompts, readAdditionalLlmPrompts} from '../shared/llm-prompts'
 import type {Theme} from '../shared/accounts'
 import {type CloseAction, isCloseAction} from '../shared/general-settings'
@@ -32,6 +34,7 @@ export interface ConsolidationGroupRecord {
     status: 'ok' | 'failed'
     merged?: Memory
     error?: string
+    applied?: boolean
 }
 
 export interface ConsolidationRecord {
@@ -86,6 +89,13 @@ export class AppDatabase {
                 PRIMARY KEY (username, turn_id, event_id)
             );
             CREATE TABLE IF NOT EXISTS chat_trace_stats (username TEXT PRIMARY KEY, steps INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_payloads (
+                username TEXT NOT NULL, hash TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (username, hash)
+            );
+            CREATE TABLE IF NOT EXISTS chat_context_updates (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, data TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS chat_context_updates_owner ON chat_context_updates (username, seq);
             CREATE TABLE IF NOT EXISTS chat_running_turns (
                 username TEXT PRIMARY KEY, turn_id TEXT NOT NULL, position INTEGER NOT NULL, data TEXT NOT NULL
             );
@@ -220,7 +230,55 @@ export class AppDatabase {
     getChatTrace(username: string, turnId: string): ChatTraceEvent[] {
         return this.db.prepare('SELECT data, details FROM chat_traces WHERE username = ? AND turn_id = ? ORDER BY position')
             .all(username, turnId).map(row => ({...JSON.parse(String(row.data)),
-                ...(row.details === null ? {} : {details: JSON.parse(String(row.details))})}))
+                ...(row.details === null ? {} : {details: JSON.parse(String(row.details))})})).map(event => this.hydrateChatTrace(username, event))
+    }
+
+    /** Immutable, account-scoped values. Unchanged messages and tool schemas occupy one row. */
+    saveChatPayload(username: string, value: unknown): string {
+        const data = JSON.stringify(value)
+        const hash = createHash('sha256').update(data).digest('hex')
+        this.db.prepare('INSERT OR IGNORE INTO chat_payloads (username, hash, data) VALUES (?, ?, ?)').run(username, hash, data)
+        return hash
+    }
+
+    getChatPayload(username: string, hash: string): unknown {
+        const row = this.db.prepare('SELECT data FROM chat_payloads WHERE username = ? AND hash = ?').get(username, hash)
+        if (!row) throw new Error('模型请求快照缺失。')
+        return JSON.parse(String(row.data))
+    }
+
+    saveChatModelRequest(username: string, body: Record<string, unknown>): string {
+        const {messages, tools, ...options} = body
+        return this.saveChatPayload(username, {...options,
+            messageRefs: (messages as unknown[]).map(message => this.saveChatPayload(username, message)),
+            ...(tools === undefined ? {} : {toolsRef: this.saveChatPayload(username, tools)})})
+    }
+
+    hydrateChatTrace(username: string, event: ChatTraceEvent): ChatTraceEvent {
+        if (!event.details || typeof event.details !== 'object' || !['model', 'compaction'].includes(event.kind)) return event
+        const {requestRefs, rawResponseRefs, responseRef, ...details} = event.details as Record<string, unknown>
+        return {...event, details: {...details,
+            ...(Array.isArray(requestRefs) ? {requests: requestRefs.map(ref => {
+                const {messageRefs, toolsRef, ...options} = this.getChatPayload(username, String(ref)) as Record<string, unknown>
+                return {...options, messages: (messageRefs as string[]).map(id => this.getChatPayload(username, id)),
+                    ...(typeof toolsRef === 'string' ? {tools: this.getChatPayload(username, toolsRef)} : {})}
+            })} : {}),
+            ...(Array.isArray(rawResponseRefs) ? {rawResponses: rawResponseRefs.map(ref => this.getChatPayload(username, String(ref)))} : {}),
+            ...(typeof responseRef === 'string' ? {response: this.getChatPayload(username, responseRef)} : {}),
+        }}
+    }
+
+    appendChatContextUpdate(username: string, value: unknown) {
+        this.db.prepare('INSERT INTO chat_context_updates (username, data) VALUES (?, ?)').run(username, JSON.stringify(value))
+    }
+
+    getChatContextUpdates(username: string, after = 0): Array<{seq: number; data: unknown}> {
+        return this.db.prepare('SELECT seq, data FROM chat_context_updates WHERE username = ? AND seq > ? ORDER BY seq')
+            .all(username, after).map(row => ({seq: Number(row.seq), data: JSON.parse(String(row.data))}))
+    }
+
+    clearChatContextUpdates(username: string) {
+        this.db.prepare('DELETE FROM chat_context_updates WHERE username = ?').run(username)
     }
 
     /** Metadata only: details stay in SQLite until a step is expanded. */
@@ -232,6 +290,7 @@ export class AppDatabase {
     clearChatTrace(username: string) {
         this.db.prepare('DELETE FROM chat_traces WHERE username = ?').run(username)
         this.db.prepare('DELETE FROM chat_trace_stats WHERE username = ?').run(username)
+        this.db.prepare('DELETE FROM chat_payloads WHERE username = ?').run(username)
     }
 
     removeChatTrace(username: string, turnId: string) {
@@ -241,8 +300,9 @@ export class AppDatabase {
             ON CONFLICT(username) DO UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
     }
 
-    /** Roll the trace so at most `keepTurns` turns stay stored, then resync the step counter. */
-    pruneChatTrace(username: string, keepTurns = 50) {
+    /** Explicit maintenance only. Ordinary chat completion retains the whole session. */
+    pruneChatTrace(username: string, keepTurns?: number) {
+        if (keepTurns === undefined) return
         this.db.prepare(`DELETE FROM chat_traces WHERE username = ? AND turn_id NOT IN (
             SELECT turn_id FROM (SELECT turn_id, MAX(rowid) AS last FROM chat_traces WHERE username = ?
                 GROUP BY turn_id ORDER BY last DESC LIMIT ?))`).run(username, username, keepTurns)
@@ -352,12 +412,12 @@ export class AppDatabase {
             .run(username, before)
     }
 
-    getCompaction(username: string): {summary: string; coversUpTo: string} | null {
+    getCompaction(username: string): Compaction | null {
         const row = this.db.prepare('SELECT data FROM chat_compactions WHERE username = ?').get(username)
         return row ? JSON.parse(String(row.data)) : null
     }
 
-    saveCompaction(username: string, value: {summary: string; coversUpTo: string} | null) {
+    saveCompaction(username: string, value: Compaction | null) {
         if (!value) this.db.prepare('DELETE FROM chat_compactions WHERE username = ?').run(username)
         else this.db.prepare('INSERT INTO chat_compactions (username, data) VALUES (?, ?) ON CONFLICT(username) DO UPDATE SET data = excluded.data')
             .run(username, JSON.stringify(value))
