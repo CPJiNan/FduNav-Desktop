@@ -28,25 +28,6 @@ import {
 
 const defaultSourceRank = new Map<string, number>(defaultSources.map((source, index) => [source.id, index]))
 
-export interface ConsolidationGroupRecord {
-    groupId: string
-    before: Memory[]
-    status: 'ok' | 'failed'
-    merged?: Memory
-    error?: string
-    applied?: boolean
-}
-
-export interface ConsolidationRecord {
-    id: string
-    username: string
-    createdAt: string
-    status: 'preview' | 'applied' | 'undone' | 'discarded'
-    before: Memory[]
-    after: ConsolidationGroupRecord[]
-    error?: string
-}
-
 export interface SavedAccount {
     username: string
     cookies: Uint8Array
@@ -101,11 +82,6 @@ export class AppDatabase {
                 username TEXT PRIMARY KEY, turn_id TEXT NOT NULL, position INTEGER NOT NULL, data TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS chat_compactions (username TEXT PRIMARY KEY, data TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS memory_consolidations (
-                id TEXT PRIMARY KEY, username TEXT NOT NULL, created_at TEXT NOT NULL,
-                status TEXT NOT NULL, before TEXT NOT NULL, after TEXT NOT NULL, error TEXT
-            );
-            CREATE INDEX IF NOT EXISTS memory_consolidations_owner ON memory_consolidations (username, created_at);
             CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_conversations (username TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS timetable_cache (
@@ -394,45 +370,6 @@ export class AppDatabase {
 
     removeMemory(username: string, id: string) {
         this.db.prepare('DELETE FROM memories WHERE username = ? AND id = ?').run(username, id)
-    }
-
-    saveConsolidation(record: ConsolidationRecord) {
-        this.db.prepare(`INSERT INTO memory_consolidations (id, username, created_at, status, before, after, error)
-                         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO
-        UPDATE
-            SET status = excluded.status, after = excluded.after, error = excluded.error`)
-            .run(record.id, record.username, record.createdAt, record.status, JSON.stringify(record.before),
-                JSON.stringify(record.after), record.error ?? null)
-    }
-
-    getConsolidation(username: string, id: string): ConsolidationRecord | null {
-        const row = this.db.prepare('SELECT * FROM memory_consolidations WHERE username = ? AND id = ?').get(username, id)
-        if (!row) return null
-        return {
-            id: String(row.id), username: String(row.username), createdAt: String(row.created_at),
-            status: String(row.status) as ConsolidationRecord['status'],
-            before: JSON.parse(String(row.before)) as Memory[],
-            after: JSON.parse(String(row.after)) as ConsolidationGroupRecord[],
-            ...(row.error === null ? {} : {error: String(row.error)}),
-        }
-    }
-
-    findConsolidationPreview(username: string): ConsolidationRecord | null {
-        const row = this.db.prepare(`SELECT id
-                                     FROM memory_consolidations
-                                     WHERE username = ?
-                                       AND status = 'preview'
-                                     ORDER BY created_at DESC LIMIT 1`).get(username)
-        return row ? this.getConsolidation(username, String(row.id)) : null
-    }
-
-    setConsolidationStatus(username: string, id: string, status: ConsolidationRecord['status']) {
-        this.db.prepare('UPDATE memory_consolidations SET status = ? WHERE username = ? AND id = ?').run(status, username, id)
-    }
-
-    pruneConsolidations(username: string, before: string) {
-        this.db.prepare("DELETE FROM memory_consolidations WHERE username = ? AND status = 'preview' AND created_at < ?")
-            .run(username, before)
     }
 
     getCompaction(username: string): Compaction | null {

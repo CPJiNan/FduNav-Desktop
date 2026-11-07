@@ -10,7 +10,7 @@ export interface MemoryInput {
     status: 'active' | 'archived'
 }
 
-export type MemorySource = 'tool' | 'compaction' | 'import' | 'edit' | 'restore' | 'consolidation'
+export type MemorySource = 'tool' | 'compaction' | 'import' | 'edit' | 'restore'
 
 export interface Memory extends MemoryInput {
     id: string;
@@ -27,33 +27,6 @@ export interface MemoryState {
     items: Memory[]
 }
 
-export interface ConsolidationGroup {
-    id: string
-    before: Memory[]
-    after: MemoryInput
-    status: 'ok' | 'failed'
-    error?: string
-}
-
-export interface ConsolidationPreview {
-    previewId: string
-    groups: ConsolidationGroup[]
-    failed: number
-    skipped: number
-}
-
-export interface ConsolidationApplyResult {
-    consolidationId: string
-    groups: number
-    removed: number
-    state: MemoryState
-}
-
-export interface ConsolidationUndoResult {
-    restored: number
-    state: MemoryState
-}
-
 export interface MemoryAPI {
     get(): Promise<Result<MemoryState>>
 
@@ -66,16 +39,6 @@ export interface MemoryAPI {
     importJson(json: string, expectedUsername: string): Promise<Result<MemoryState>>
 
     exportJson(): Promise<Result<string>>
-
-    consolidatePreview(input?: { ids?: string[] }): Promise<Result<ConsolidationPreview>>
-
-    consolidateApply(input: { previewId: string; groupIds: string[] }): Promise<Result<ConsolidationApplyResult>>
-
-    consolidateUndo(consolidationId: string): Promise<Result<ConsolidationUndoResult>>
-
-    consolidateDiscard(previewId: string): Promise<Result<MemoryState>>
-
-    consolidateCancel(): Promise<Result<null>>
 }
 
 export function validateMemory(input: unknown): Result<MemoryInput> {
@@ -175,102 +138,4 @@ export function buildMemoryDigest(items: Memory[], turns: Array<{
         digest.push(entry)
     }
     return digest
-}
-
-export function normalizeMemoryText(text: string): string {
-    return text.normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '')
-}
-
-function bigrams(text: string): Map<string, number> {
-    const grams = new Map<string, number>()
-    for (let index = 0; index < text.length - 1; index++) {
-        const gram = text.slice(index, index + 2)
-        grams.set(gram, (grams.get(gram) ?? 0) + 1)
-    }
-    return grams
-}
-
-export function diceCoefficient(left: string, right: string): number {
-    if (!left || !right) return 0
-    if (left === right) return 1
-    const a = bigrams(left), b = bigrams(right)
-    let total = 0, overlap = 0
-    for (const [gram, count] of a) {
-        total += count
-        overlap += Math.min(count, b.get(gram) ?? 0)
-    }
-    for (const count of b.values()) total += count
-    return total ? (2 * overlap) / total : 0
-}
-
-export interface MemoryCluster {
-    items: Memory[];
-    score: number
-}
-
-export function clusterMemories(items: Memory[], options: {
-    threshold?: number;
-    maxGroup?: number;
-    maxGroups?: number
-} = {}): MemoryCluster[] {
-    const threshold = options.threshold ?? 0.55, maxGroup = options.maxGroup ?? 12, maxGroups = options.maxGroups ?? 8
-    const parent = items.map((_, index) => index)
-    const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]))
-    const union = (a: number, b: number) => {
-        const ra = find(a), rb = find(b);
-        if (ra !== rb) parent[rb] = ra
-    }
-    const norms = items.map(item => normalizeMemoryText(item.text))
-    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
-        const score = norms[i] === norms[j] ? 1 : diceCoefficient(norms[i], norms[j])
-        if (score >= threshold) union(i, j)
-    }
-    const groups = new Map<number, number[]>()
-    items.forEach((_, index) => {
-        const root = find(index)
-        groups.set(root, [...(groups.get(root) ?? []), index])
-    })
-    const clusters: MemoryCluster[] = []
-    for (const indexes of groups.values()) {
-        if (indexes.length < 2) continue
-        let score = 0
-        for (let i = 0; i < indexes.length; i++) for (let j = i + 1; j < indexes.length; j++) {
-            const value = norms[indexes[i]] === norms[indexes[j]] ? 1 : diceCoefficient(norms[indexes[i]], norms[indexes[j]])
-            if (value > score) score = value
-        }
-        clusters.push({items: indexes.slice(0, maxGroup).map(index => items[index]), score})
-    }
-    return clusters.sort((a, b) => b.score - a.score).slice(0, maxGroups)
-}
-
-export function mergeConsolidationGroup(before: Memory[], output: unknown): Result<MemoryInput> {
-    if (!output || typeof output !== 'object' || Array.isArray(output)) return {ok: false, error: '模型输出格式无效。'}
-    const value = output as Record<string, unknown>
-    if (typeof value.text !== 'string' || !value.text.trim()) return {ok: false, error: '模型未返回合并后的文本。'}
-    const text = value.text.trim().slice(0, 600)
-    if (!Array.isArray(value.keepIds) || !value.keepIds.length || value.keepIds.some(id => typeof id !== 'string')) {
-        return {ok: false, error: '模型未说明保留了哪些条目。'}
-    }
-    const ids = value.keepIds.map(id => before.find(item => memoryShortId(item.id) === id || item.id === id)?.id)
-    if (ids.some(id => !id) || new Set(ids).size !== ids.length) return {
-        ok: false,
-        error: '模型引用了组外或不存在的记忆。'
-    }
-    const kind = before[0].kind
-    const counts = new Map<Memory['kind'], number>()
-    for (const item of before) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1)
-    let chosen: Memory['kind'] = kind
-    for (const [candidate, count] of counts) {
-        if (count > (counts.get(chosen) ?? 0)) chosen = candidate
-    }
-    const evidence = [...new Set(before.map(item => item.evidence))].join('；').slice(0, 1000)
-    const expiries = before.map(item => item.expiresAt).filter((value): value is string => !!value).sort()
-    return {
-        ok: true, data: {
-            kind: chosen, text, evidence, status: 'active',
-            confidence: Math.max(...before.map(item => item.confidence)),
-            pinned: before.some(item => item.pinned),
-            expiresAt: expiries[0] ?? null,
-        }
-    }
 }

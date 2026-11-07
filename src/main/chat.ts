@@ -3,13 +3,13 @@ import {app, ipcMain, type IpcMainInvokeEvent, type WebContents} from 'electron'
 import type {Result} from '../shared/accounts'
 import type {ChatAction, ChatActionRequest, ChatCard, ChatPushState, ChatSummaryRequest, ChatTurn} from '../shared/chat'
 import {chatActionStatusLabels, chatActionTitles, chatSummaryStatusLabels} from '../shared/chat'
-import type {AppDatabase, ConsolidationGroupRecord} from './database'
+import type {AppDatabase} from './database'
 import type {AccountService} from './accounts'
 import type {LlmSettingsService} from './llm-settings'
 import type {registerNoticeHandlers} from './notices'
 import type {registerCalendarHandlers} from './calendar'
 import type {registerTodoHandlers} from './todos'
-import {completeLlm, type Connection, type ToolChatMessage} from './llm-connection'
+import {type Connection, type ToolChatMessage} from './llm-connection'
 import {abortError, awaitWithAbort} from './abortable'
 import {streamLlmWithTools} from './llm-stream'
 import {
@@ -30,17 +30,7 @@ import {
     toolFailure,
     toolSuccess
 } from '../shared/agent'
-import {
-    buildMemoryDigest,
-    clusterMemories,
-    type Memory,
-    type MemoryInput,
-    memoryLine,
-    memoryShortId,
-    mergeConsolidationGroup,
-    selectMemories,
-    validateMemory
-} from '../shared/memory'
+import {buildMemoryDigest, type Memory, memoryLine, selectMemories, validateMemory} from '../shared/memory'
 import {
     chatToolLabels,
     configuredChatTools,
@@ -289,19 +279,6 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             if (previous && previous.status === event.status && previous.details === event.details) return
             db.saveChatTraceEvent(user, turn.id, event, position)
             active.savedTrace.set(event.id, {status: event.status, details: event.details})
-        })
-    }
-
-    function handleAsync<T>(channel: string, action: (user: string, input: unknown, event: IpcMainInvokeEvent) => Promise<T>) {
-        ipcMain.handle(channel, async (event, input): Promise<Result<T>> => {
-            if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
-            try {
-                const user = username()
-                subscribe(event.sender, user)
-                return {ok: true, data: await action(user, input, event)}
-            } catch (error) {
-                return {ok: false, error: error instanceof Error ? error.message : '聊天操作失败。'}
-            }
         })
     }
 
@@ -1120,199 +1097,6 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         })
         return memoryState(user)
     })
-    const consolidationTtlMs = 10 * 60 * 1000
-    const consolidationScans = new Map<string, AbortController>()
-    const consolidationPrompt = '你在合并重复的长期记忆。给定同一主题的若干条记忆，输出一条信息更完整的记忆。\n要求：\n1. 不得丢失任何事实，不得编造；\n2. evidence 用原有用户原话拼接，总长 ≤1000 字；\n3. 只输出 JSON：{"text":"…","kind":"fact|preference|event","keepIds":["…"]}'
-
-    function consolidationInput(item: Memory): MemoryInput {
-        const {kind, text, evidence, confidence, pinned, expiresAt, status} = item
-        return {kind, text, evidence, confidence, pinned, expiresAt, status}
-    }
-
-    async function mapWithLimit<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
-        const results = new Array<R>(items.length)
-        let cursor = 0
-        await Promise.all(Array.from({length: Math.min(limit, items.length)}, async () => {
-            while (cursor < items.length) {
-                const index = cursor++
-                results[index] = await task(items[index])
-            }
-        }))
-        return results
-    }
-
-    handleAsync('memory:consolidate-preview', async (user, input) => {
-        if (!db.getMemoryEnabled(user)) throw new Error('请先启用长期记忆。')
-        const settings = llm.get()
-        if (!settings.enabled || !settings.baseUrl || !settings.model) throw new Error('请先配置并启用模型服务。')
-        if (consolidationScans.has(user)) throw new Error('正在整理记忆，请稍候。')
-        const now = Date.now()
-        db.pruneConsolidations(user, new Date(now - consolidationTtlMs).toISOString())
-        const previous = db.findConsolidationPreview(user)
-        if (previous) db.setConsolidationStatus(user, previous.id, 'discarded')
-        const items = db.getMemories(user).filter(item => item.status === 'active' &&
-            (!item.expiresAt || Date.parse(item.expiresAt) > now))
-        if (items.length < 2) throw new Error('至少需要 2 条有效记忆才能整理。')
-        const raw = input && typeof input === 'object' && !Array.isArray(input) ? input as { ids?: unknown } : {}
-        let groups: Memory[][]
-        if (raw.ids !== undefined) {
-            const ids = raw.ids
-            if (!Array.isArray(ids) || ids.length < 2 || ids.length > 12 || ids.some(id => typeof id !== 'string')) throw new Error('请选择 2–12 条记忆。')
-            const picked = (ids as string[]).map(id => items.find(item => item.id === id))
-            if (picked.some(item => !item)) throw new Error('所选记忆已变化，请重新选择。')
-            groups = [picked as Memory[]]
-        } else {
-            groups = clusterMemories(items, {maxGroups: 99}).map(cluster => cluster.items)
-        }
-        const skipped = Math.max(0, groups.length - 8)
-        groups = groups.slice(0, 8)
-        if (!groups.length) return {previewId: '', groups: [], failed: 0, skipped: 0}
-        const connection = await llm.getConnection()
-        const controller = new AbortController()
-        consolidationScans.set(user, controller)
-        try {
-            const signal = AbortSignal.any([llm.getRequestSignal(), controller.signal, AbortSignal.timeout(90_000)])
-            const settled = await mapWithLimit(groups, 2, async group => {
-                try {
-                    const content = await completeLlm(connection, [{role: 'system', content: consolidationPrompt},
-                        {
-                            role: 'user', content: JSON.stringify({
-                                entries: group.map(item => ({
-                                    id: memoryShortId(item.id),
-                                    kind: item.kind,
-                                    text: item.text,
-                                    evidence: item.evidence
-                                }))
-                            })
-                        }], signal)
-                    const text = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
-                    let parsed: unknown
-                    try {
-                        parsed = JSON.parse(text)
-                    } catch {
-                        throw new Error('模型未返回有效 JSON。')
-                    }
-                    const merged = mergeConsolidationGroup(group, parsed)
-                    if (!merged.ok) throw new Error(merged.error)
-                    return {group, merged: merged.data}
-                } catch (error) {
-                    return {group, error: error instanceof Error ? error.message : '合并失败。'}
-                }
-            })
-            const createdAt = new Date().toISOString()
-            const records: ConsolidationGroupRecord[] = settled.map(entry => {
-                const groupId = randomUUID()
-                if ('error' in entry) return {
-                    groupId,
-                    before: entry.group,
-                    status: 'failed' as const,
-                    error: entry.error
-                }
-                const oldest = [...entry.group].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]
-                const merged: Memory = {
-                    ...entry.merged,
-                    id: oldest.id,
-                    createdAt: oldest.createdAt,
-                    updatedAt: createdAt,
-                    seenCount: 1,
-                    mergedFrom: entry.group.map(item => item.id).filter(id => id !== oldest.id),
-                    source: 'consolidation'
-                }
-                return {groupId, before: entry.group, status: 'ok' as const, merged}
-            })
-            const previewId = randomUUID()
-            db.saveConsolidation({
-                id: previewId,
-                username: user,
-                createdAt,
-                status: 'preview',
-                before: items,
-                after: records
-            })
-            return {
-                previewId, failed: records.filter(record => record.status === 'failed').length, skipped,
-                groups: records.map(record => ({
-                    id: record.groupId, before: record.before,
-                    after: record.merged ? consolidationInput(record.merged) : consolidationInput(record.before[0]),
-                    status: record.status, error: record.error
-                }))
-            }
-        } finally {
-            consolidationScans.delete(user)
-        }
-    })
-
-    handle('memory:consolidate-apply', (user, input) => {
-        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('整理参数无效。')
-        const {previewId, groupIds} = input as Record<string, unknown>
-        if (typeof previewId !== 'string' || !Array.isArray(groupIds) || groupIds.some(id => typeof id !== 'string')) throw new Error('整理参数无效。')
-        const record = db.getConsolidation(user, previewId)
-        if (!record || record.status !== 'preview') throw new Error('整理预览不存在或已失效。')
-        if (Date.now() - Date.parse(record.createdAt) > consolidationTtlMs) {
-            db.setConsolidationStatus(user, previewId, 'discarded')
-            throw new Error('整理预览已过期，请重新扫描。')
-        }
-        const byId = new Map(record.after.map(group => [group.groupId, group]))
-        const groups = (groupIds as string[]).map(id => byId.get(id))
-            .filter((group): group is ConsolidationGroupRecord => !!group && group.status === 'ok' && !!group.merged)
-        if (!groups.length) throw new Error('请至少选择一组可应用的整理结果。')
-        const current = db.getMemories(user)
-        for (const group of groups) for (const before of group.before) {
-            const latest = current.find(item => item.id === before.id)
-            if (!latest || JSON.stringify(latest) !== JSON.stringify(before)) throw new Error('记忆已变化，请重新扫描。')
-        }
-        let removed = 0
-        db.transaction(() => {
-            for (const group of groups) {
-                for (const before of group.before) db.removeMemory(user, before.id)
-                db.saveMemory(user, group.merged!)
-                removed += group.before.length - 1
-            }
-            const applied = new Set(groups.map(group => group.groupId))
-            db.saveConsolidation({
-                ...record,
-                status: 'applied',
-                after: record.after.map(group => ({...group, applied: applied.has(group.groupId)}))
-            })
-        })
-        return {consolidationId: previewId, groups: groups.length, removed, state: memoryState(user)}
-    })
-
-    handle('memory:consolidate-undo', (user, input) => {
-        if (typeof input !== 'string') throw new Error('整理记录无效。')
-        const record = db.getConsolidation(user, input)
-        if (!record || record.status !== 'applied') throw new Error('可撤销的整理不存在。')
-        const current = db.getMemories(user)
-        const groups = record.after.filter(group => group.status === 'ok' && group.merged && group.applied !== false)
-        for (const group of groups) {
-            const kept = current.find(item => item.id === group.merged!.id)
-            if (!kept || JSON.stringify(kept) !== JSON.stringify(group.merged)) throw new Error('合并后的记忆已被修改，无法撤销。')
-        }
-        let restored = 0
-        db.transaction(() => {
-            for (const group of groups) {
-                db.removeMemory(user, group.merged!.id)
-                for (const before of group.before) {
-                    db.saveMemory(user, before);
-                    restored++
-                }
-            }
-            db.setConsolidationStatus(user, input, 'undone')
-        })
-        return {restored, state: memoryState(user)}
-    })
-
-    handle('memory:consolidate-discard', (user, input) => {
-        if (typeof input !== 'string') throw new Error('整理预览无效。')
-        if (db.getConsolidation(user, input)?.status === 'preview') db.setConsolidationStatus(user, input, 'discarded')
-        return memoryState(user)
-    })
-
-    handleAsync('memory:consolidate-cancel', async user => {
-        consolidationScans.get(user)?.abort(new Error('已取消整理。'))
-        return null
-    })
-
     handle('chat:get', user => snapshot(user))
 
     function startTurn(user: string, text: string) {

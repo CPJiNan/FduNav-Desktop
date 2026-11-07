@@ -33,11 +33,6 @@ const memory: MemoryAPI = {
     setEnabled: enabled => ipcRenderer.invoke('memory:set-enabled', enabled),
     importJson: (json, username) => ipcRenderer.invoke('memory:import', {json, username}),
     exportJson: () => ipcRenderer.invoke('memory:export'),
-    consolidatePreview: input => ipcRenderer.invoke('memory:consolidate-preview', input),
-    consolidateApply: input => ipcRenderer.invoke('memory:consolidate-apply', input),
-    consolidateUndo: consolidationId => ipcRenderer.invoke('memory:consolidate-undo', consolidationId),
-    consolidateDiscard: previewId => ipcRenderer.invoke('memory:consolidate-discard', previewId),
-    consolidateCancel: () => ipcRenderer.invoke('memory:consolidate-cancel'),
 }
 contextBridge.exposeInMainWorld('memory', memory)
 

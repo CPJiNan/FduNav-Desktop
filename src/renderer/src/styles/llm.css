@@ -295,19 +295,6 @@
     color: var(--color-text-muted);
 }
 
-.memory-enable {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 16px 0;
-}
-
-.memory-enable input {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--color-accent);
-}
-
 .memory-list {
     list-style: none;
     padding: 0;
@@ -317,23 +304,6 @@
 .memory-list > li {
     padding: 16px 0;
     border-bottom: 1px solid var(--color-border-subtle);
-}
-
-.memory-import {
-    cursor: pointer;
-    position: relative;
-}
-
-.memory-import input {
-    width: 1px;
-    height: 1px;
-    position: absolute;
-    opacity: 0;
-}
-
-.memory-import:focus-within {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 3px;
 }
 
 .memory-editor {
@@ -404,58 +374,6 @@
     flex-wrap: wrap;
 }
 
-.memory-consolidate {
-    display: grid;
-    gap: 12px;
-    margin: 16px 0;
-    padding: 16px;
-    border: 1px solid var(--color-border-control);
-    border-radius: 12px;
-}
-
-.memory-consolidate h4 {
-    font-size: 14px;
-}
-
-.memory-groups {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: grid;
-    gap: 12px;
-}
-
-.memory-groups > li {
-    display: grid;
-    gap: 8px;
-    padding: 12px;
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 10px;
-}
-
-.memory-groups > li[data-status="failed"] {
-    opacity: .7;
-}
-
-.memory-groups label {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    font-size: var(--font-size-sm);
-}
-
-.memory-group-old {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    color: var(--color-text-muted);
-}
-
-.memory-group-old s {
-    text-decoration: line-through;
-    overflow-wrap: anywhere;
-}
-
 .memory-diff-old {
     color: var(--color-text-muted);
     text-decoration: line-through;
@@ -463,12 +381,6 @@
 
 .memory-diff-new {
     color: var(--color-accent);
-}
-
-.memory-select {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
 }
 
 .memory-pin {
@@ -482,12 +394,4 @@
 .memory-pin .icon {
     width: 14px;
     height: 14px;
-}
-
-.memory-select input {
-    margin-top: 4px;
-    width: 16px;
-    height: 16px;
-    accent-color: var(--color-accent);
-    flex-shrink: 0;
 }
