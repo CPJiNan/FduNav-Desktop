@@ -155,15 +155,42 @@ test('invalid imports are atomic; valid imports dedupe, remap IDs and stay accou
         assert.equal((handlers.get('chat:get')!({trusted: false}) as {ok: boolean}).ok, false)
     } finally {h.restore()}
 })
-test('compaction failure is visible, does not block dialogue or retry same coverage', async () => {
+test('compaction retries twice, then keeps the last four turns and defers the next attempt', async () => {
     const h = harness()
     try {
         const turns = Array.from({length: 9}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
         h.db.saveChatConversation('alice', JSON.stringify(turns))
-        const requests = setModel([replyResponse('invalid summary'), replyResponse('继续回答')]); h.invoke('chat:send', '继续')
+        const requests = setModel([replyResponse('invalid summary'), replyResponse('invalid summary'),
+            replyResponse('invalid summary'), replyResponse('继续回答')])
+        h.invoke('chat:send', '继续')
         const turn = await h.finish()
-        assert.equal(turn.error, undefined); assert.ok(turn.trace?.some(item => item.kind === 'compaction' && item.status === 'failed'))
-        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '0'); assert.equal(requests.length, 2)
+        assert.equal(turn.error, undefined)
+        assert.ok(turn.trace?.some(item => item.kind === 'compaction' && item.status === 'failed'))
+        assert.equal(turn.trace?.filter(item => item.kind === 'retry').length, 2)
+        assert.equal(requests.length, 4)
+        // Dropped turns are covered so they are not billed again; the kept window is four turns.
+        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '4')
+        assert.equal(requests[3].messages.filter((message: any) => message.content === 'a').length, 4)
+        // Second failure keeps the same small window until it grows back to the threshold.
+        const next = setModel([replyResponse('好的')])
+        h.invoke('chat:send', '再问一句')
+        await h.finish()
+        assert.equal(next.length, 1, 'no compaction until the window grows back')
+    } finally {h.restore()}
+})
+test('compaction logs retries and still succeeds on the third attempt', async () => {
+    const h = harness()
+    try {
+        const turns = Array.from({length: 9}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
+        h.db.saveChatConversation('alice', JSON.stringify(turns))
+        const summary = JSON.stringify({facts: [], actions: [], pending: [], preferences: []})
+        const requests = setModel([replyResponse('invalid'), replyResponse('invalid'), replyResponse(summary), replyResponse('回答')])
+        h.invoke('chat:send', '继续')
+        const turn = await h.finish()
+        assert.equal(requests.length, 4)
+        assert.ok(turn.trace?.some(item => item.kind === 'compaction' && item.status === 'completed'))
+        assert.equal(turn.trace?.filter(item => item.kind === 'retry').length, 2)
+        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '0')
     } finally {h.restore()}
 })
 test('successful compaction injects a structured summary instead of escaped JSON text', async () => {
