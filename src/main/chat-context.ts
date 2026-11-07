@@ -42,7 +42,10 @@ export function parseSummary(summary: string | null | undefined): Record<string,
     if (!summary) return null
     try {
         const parsed: unknown = JSON.parse(summary)
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : summary
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return summary
+        // memories are proposal candidates, not summaries: injecting them back invites re-proposals.
+        const {memories: _memories, ...rest} = parsed as Record<string, unknown>
+        return rest
     } catch {
         return summary
     }

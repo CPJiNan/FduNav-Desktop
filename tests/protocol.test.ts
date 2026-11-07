@@ -2,7 +2,7 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {toolSuccess, toolFailure, ToolError, maxToolResultChars, redactTrace} from '../src/shared/agent.ts'
 import {validateMemory, selectMemories, type Memory} from '../src/shared/memory.ts'
-import {compactTurns, validateCompaction} from '../src/main/chat-context.ts'
+import {compactTurns, validateCompaction, parseSummary} from '../src/main/chat-context.ts'
 import {AppDatabase} from '../src/main/database.ts'
 import {createChatToolRunner} from '../src/main/chat-tools.ts'
 import {defaultToolDescriptions} from '../src/shared/llm-prompts.ts'
@@ -55,6 +55,15 @@ test('context planning keeps full turns including paired tool messages, handles 
     assert.equal(compactTurns(twelve).recent.length, 4)
     assert.equal(validateCompaction('{"facts":[],"actions":[],"pending":[],"preferences":[]}').length < 1600, true)
     assert.throws(() => validateCompaction('{"facts":["' + 'x'.repeat(1700) + '"],"actions":[],"pending":[],"preferences":[]}'))
+})
+test('injected summary drops memory candidates and keeps the four summary sections', () => {
+    const raw = JSON.stringify({facts: ['a'], actions: [], pending: [], preferences: [],
+        memories: [{kind: 'fact', text: 'x', evidence: 'y', confidence: 0.5, expiresAt: null}]})
+    const parsed = parseSummary(raw) as Record<string, unknown>
+    assert.deepEqual(parsed.facts, ['a'])
+    assert.equal('memories' in parsed, false)
+    assert.equal(parseSummary(null), null)
+    assert.equal(parseSummary('raw text'), 'raw text')
 })
 test('database isolates memories, usage and rollback; missing usage is not zero', () => {
     const db = new AppDatabase(':memory:')
