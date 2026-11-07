@@ -4,10 +4,18 @@ import type {ToolChatMessage} from './llm-connection'
 export interface ContextTurn {id: string; context: ToolChatMessage[]}
 export interface Compaction {summary: string; coversUpTo: string}
 export interface CompactPlan {older: ContextTurn[]; recent: ContextTurn[]}
+/** Turns always kept verbatim in context. */
+export const recentTurns = 8
+/**
+ * Compaction starts only above this many turns so each run summarizes a batch instead of a single
+ * turn: one summary call per message would keep the summary permanently stuck on the oldest turns.
+ */
+export const compactThreshold = 12
 /** Preserve complete turns and tool-call/result pairs; oversized single turns go into the summary. */
 export function compactTurns(turns: ContextTurn[]): CompactPlan {
     const recent = [...turns], older: ContextTurn[] = []
-    while (recent.length > 8 || (recent.length && JSON.stringify(recent.map(turn => turn.context)).length > 60000)) older.push(recent.shift()!)
+    while (recent.length && JSON.stringify(recent.map(turn => turn.context)).length > 60000) older.push(recent.shift()!)
+    if (recent.length > compactThreshold) older.push(...recent.splice(0, recent.length - recentTurns))
     return {older, recent}
 }
 export function uncompactedTurns(turns: ContextTurn[], saved: Compaction | null): ContextTurn[] {

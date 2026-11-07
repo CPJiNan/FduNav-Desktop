@@ -158,7 +158,7 @@ test('invalid imports are atomic; valid imports dedupe, remap IDs and stay accou
 test('compaction retries twice, then keeps the last four turns and defers the next attempt', async () => {
     const h = harness()
     try {
-        const turns = Array.from({length: 9}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
+        const turns = Array.from({length: 13}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
         h.db.saveChatConversation('alice', JSON.stringify(turns))
         const requests = setModel([replyResponse('invalid summary'), replyResponse('invalid summary'),
             replyResponse('invalid summary'), replyResponse('继续回答')])
@@ -169,7 +169,7 @@ test('compaction retries twice, then keeps the last four turns and defers the ne
         assert.equal(turn.trace?.filter(item => item.kind === 'retry').length, 2)
         assert.equal(requests.length, 4)
         // Dropped turns are covered so they are not billed again; the kept window is four turns.
-        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '4')
+        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '8')
         assert.equal(requests[3].messages.filter((message: any) => message.content === 'a').length, 4)
         // Second failure keeps the same small window until it grows back to the threshold.
         const next = setModel([replyResponse('好的')])
@@ -181,7 +181,7 @@ test('compaction retries twice, then keeps the last four turns and defers the ne
 test('compaction logs retries and still succeeds on the third attempt', async () => {
     const h = harness()
     try {
-        const turns = Array.from({length: 9}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
+        const turns = Array.from({length: 13}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
         h.db.saveChatConversation('alice', JSON.stringify(turns))
         const summary = JSON.stringify({facts: [], actions: [], pending: [], preferences: []})
         const requests = setModel([replyResponse('invalid'), replyResponse('invalid'), replyResponse(summary), replyResponse('回答')])
@@ -190,13 +190,13 @@ test('compaction logs retries and still succeeds on the third attempt', async ()
         assert.equal(requests.length, 4)
         assert.ok(turn.trace?.some(item => item.kind === 'compaction' && item.status === 'completed'))
         assert.equal(turn.trace?.filter(item => item.kind === 'retry').length, 2)
-        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '0')
+        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '4')
     } finally {h.restore()}
 })
 test('successful compaction injects a structured summary instead of escaped JSON text', async () => {
     const h = harness()
     try {
-        const turns = Array.from({length: 9}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
+        const turns = Array.from({length: 13}, (_, i) => ({id: String(i), user: 'u', reply: 'a', cards: [], context: [{role: 'user', content: 'u'}, {role: 'assistant', content: 'a'}]}))
         h.db.saveChatConversation('alice', JSON.stringify(turns))
         const summary = JSON.stringify({facts: ['用户是本科生'], actions: [], pending: [], preferences: []})
         const requests = setModel([replyResponse(summary), replyResponse('继续回答')])
@@ -262,7 +262,7 @@ test('successful compaction reuses the same model response for evidence-backed m
     const h = harness()
     try {
         h.invoke('memory:set-enabled', true)
-        const turns = Array.from({length: 9}, (_, i) => ({id: String(i), user: i === 0 ? '我喜欢数学' : 'u', reply: 'a', cards: [],
+        const turns = Array.from({length: 13}, (_, i) => ({id: String(i), user: i === 0 ? '我喜欢数学' : 'u', reply: 'a', cards: [],
             context: [{role: 'user', content: i === 0 ? '我喜欢数学' : 'u'}, {role: 'assistant', content: 'a'}]}))
         h.db.saveChatConversation('alice', JSON.stringify(turns))
         const summary = {facts: [], actions: [], pending: [], preferences: ['喜欢数学'], memories: [{kind: 'preference', text: '用户喜欢数学', evidence: '我喜欢数学', confidence: 1, expiresAt: null}]}
@@ -271,7 +271,7 @@ test('successful compaction reuses the same model response for evidence-backed m
         assert.equal(turn.error, undefined); assert.equal(requests.length, 2)
         assert.equal(turn.actionRequests?.[0].action.kind, 'remember'); assert.equal(turn.actionRequests?.[0].status, 'pending')
         assert.equal(h.db.getMemories('alice').length, 0)
-        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '0')
+        assert.equal(h.db.getCompaction('alice')?.coversUpTo, '4')
     } finally {h.restore()}
 })
 
