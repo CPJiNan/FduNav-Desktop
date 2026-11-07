@@ -178,7 +178,8 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
             if (result.ok) {
                 setState(result.data);
                 setError('');
-                setConfirmClear(false)
+                setConfirmClear(false);
+                setTraceTurnId(null); setSessionTrace(false); setEditingTurnId(null); setDraft('')
             } else setError(result.error)
         } catch {
             if (mounted.current) setError('清空聊天失败。')
@@ -382,7 +383,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
             </div>
         </div>
         <footer className="chat-footer">
-            <ChatStatusBar stats={state.stats}/>
+            <ChatStatusBar stats={state.turns.length || state.busy ? state.stats : undefined}/>
             {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
             {syncError && <p className="chat-error" role="alert">{syncError}</p>}
             {error && <p className="chat-error" role="alert">{error}</p>}

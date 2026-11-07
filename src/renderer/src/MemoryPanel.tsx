@@ -1,4 +1,4 @@
-import {useEffect, useState} from 'react'
+import {useEffect, useRef, useState} from 'react'
 import type {ConsolidationPreview, Memory, MemoryState} from '../../shared/memory'
 import type {Result} from '../../shared/accounts'
 import {downloadJson} from './ChatTracePanel'
@@ -21,6 +21,7 @@ export function MemoryPanel({active}: {active: boolean}) {
     const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
     const [consolidation, setConsolidation] = useState<{id: string; groups: number; removed: number} | null>(null)
+    const scanRevision = useRef(0)
     useEffect(() => {
         if (!active) return
         if (!window.memory) {setError('记忆服务未加载，请重启应用。'); return}
@@ -37,7 +38,7 @@ export function MemoryPanel({active}: {active: boolean}) {
         let current = true
         void window.llm.get().then(result => {
             if (!current || !result.ok) return
-            setLlmReady(!!result.data.baseUrl && !!result.data.model && !!result.data.hasApiKey)
+            setLlmReady(result.data.enabled && !!result.data.baseUrl && !!result.data.model)
         }).catch(() => {})
         return () => {current = false}
     }, [active])
@@ -51,9 +52,11 @@ export function MemoryPanel({active}: {active: boolean}) {
         } catch (error) {setError(error instanceof Error ? error.message : '记忆更新失败。')}
         finally {setBusy(false)}
     }
-    const canConsolidate = loaded && state.enabled && llmReady && state.items.length >= 2 && stage === 'idle' && !busy
-    const disabledReason = !state.enabled ? '请先启用长期记忆' : !llmReady ? '请先配置模型服务'
-        : state.items.length < 2 ? '至少需要 2 条有效记忆' : ''
+    const eligibleItems = state.items.filter(item => item.status === 'active' && (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()))
+    const readyStage = stage === 'idle' || stage === 'done'
+    const canConsolidate = loaded && state.enabled && llmReady && eligibleItems.length >= 2 && readyStage && !busy
+    const disabledReason = !state.enabled ? '请先启用长期记忆' : !llmReady ? '请先启用并配置模型服务'
+        : eligibleItems.length < 2 ? '至少需要 2 条有效记忆才能整理' : ''
     function toggleItem(id: string) {
         setSelectedItems(current => {
             const next = new Set(current)
@@ -63,9 +66,11 @@ export function MemoryPanel({active}: {active: boolean}) {
     }
     async function scan(ids?: string[]) {
         if (!canConsolidate || !window.memory) return
+        const revision = ++scanRevision.current
         setStage('scanning'); setError('')
         try {
             const result = await window.memory.consolidatePreview(ids ? {ids} : undefined)
+            if (revision !== scanRevision.current) return
             if (!result.ok) {setStage('idle'); setError(result.error); return}
             const data = result.data
             if (!data.previewId || !data.groups.length) {
@@ -75,10 +80,12 @@ export function MemoryPanel({active}: {active: boolean}) {
             setSelectedGroups(new Set(data.groups.filter(group => group.status === 'ok').map(group => group.id)))
             setStage('preview')
         } catch (error) {
+            if (revision !== scanRevision.current) return
             setStage('idle'); setError(error instanceof Error ? error.message : '整理记忆失败。')
         }
     }
     async function cancelScan() {
+        scanRevision.current++
         await window.memory?.consolidateCancel().catch(() => undefined)
         setStage('idle')
     }
@@ -122,7 +129,7 @@ export function MemoryPanel({active}: {active: boolean}) {
         <div className="trace-toolbar memory-toolbar">
             <button type="button" className="primary-button" disabled={!canConsolidate}
                     title={disabledReason || '调用模型扫描并合并重复记忆'}
-                    onClick={() => void scan()}><Icon name="sparkles"/>整理记忆</button>
+                    onClick={() => void scan()}><Icon name="sparkles"/>重新整理记忆</button>
             {selectedItems.size >= 2 && <button type="button" className="secondary-button" disabled={!canConsolidate}
                 onClick={() => void scan([...selectedItems])}>合并所选（{selectedItems.size}）</button>}
             <button type="button" className="secondary-button" disabled={busy || !loaded} onClick={() => {
@@ -140,6 +147,7 @@ export function MemoryPanel({active}: {active: boolean}) {
                     void update(async () => window.memory?.importJson(await file.text(), state.username))
                 }}/></label>
         </div>
+        {loaded && readyStage && <p role="status">{disabledReason || '先展示整理预览，确认后才修改记忆。'}</p>}
         {stage === 'scanning' && <div className="memory-consolidate" role="status">
             <p>正在扫描 {state.items.length} 条记忆…</p>
             <div className="trace-toolbar"><button type="button" className="secondary-button" onClick={() => void cancelScan()}>取消</button></div>
@@ -178,7 +186,7 @@ export function MemoryPanel({active}: {active: boolean}) {
         <ul className="memory-list">{state.items.map(item => <li key={item.id}>
             <div className="memory-select">
                 <input type="checkbox" aria-label="选择这条记忆" checked={selectedItems.has(item.id)}
-                    disabled={stage !== 'idle'} onChange={() => toggleItem(item.id)}/>
+                    disabled={!readyStage || !eligibleItems.some(value => value.id === item.id)} onChange={() => toggleItem(item.id)}/>
                 <div><small>{kinds[item.kind]} · {item.pinned ? '已置顶' : '未置顶'} · {item.status === 'archived' ? '已归档' : item.expiresAt && Date.parse(item.expiresAt) <= Date.now() ? '已到期' : '有效'}</small>
                     <p>{item.text}</p><small>依据：{item.evidence}</small></div>
             </div>

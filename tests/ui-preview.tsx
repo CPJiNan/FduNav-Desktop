@@ -4,7 +4,7 @@ import {createRoot} from 'react-dom/client'
 import {ChatPage} from '../src/renderer/src/ChatPage'
 import {MemoryPanel} from '../src/renderer/src/MemoryPanel'
 import {UsagePanel} from '../src/renderer/src/UsagePanel'
-import type {ChatState} from '../src/shared/chat'
+import type {ChatState, ChatPushState} from '../src/shared/chat'
 import type {ChatTraceEvent} from '../src/shared/agent'
 import type {MemoryState} from '../src/shared/memory'
 import '../src/renderer/src/styles/base.css'
@@ -58,7 +58,8 @@ const initial: ChatState = {
 }
 
 let state = structuredClone(initial)
-let listener = (_state: ChatState) => {}
+let listener = (_state: ChatPushState) => {}
+const publish = () => listener({...structuredClone(state), full: true})
 const result = <T,>(data: T) => Promise.resolve({ok: true as const, data: structuredClone(data)})
 window.chat = {
     sessionTrace: () => result(state.turns.map(turn => ({turnId: turn.id, user: turn.user, at: turn.startedAt ?? at(0), events: turn.trace ?? []}))),
@@ -68,19 +69,26 @@ window.chat = {
     }),
     send: async text => {
         state.turns.push({id: `turn-${state.turns.length + 1}`, user: text, reply: '查询结果为空。', cards: [], trace: [], startedAt: at(0)})
-        listener(structuredClone(state)); return result(state)
+        publish(); return result(state)
     },
-    clear: () => {state.turns = []; listener(state); return result(state)}, cancel: () => result(null),
+    clear: () => {
+        state = {username: 'demo', turns: [], busy: false, status: '', stats: {
+            turns: 0, steps: 0, requests: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0,
+            elapsedMs: 0, lastPromptTokens: 0, cacheHitRate: null, tokensPerSecond: null, turnElapsedMs: 0,
+        }}
+        publish(); return result(state)
+    },
+    cancel: () => {state.busy = false; state.status = ''; publish(); return result(null)},
     decideSummary: () => result(state),
     decideAction: (_turnId, requestId, allow) => {
         const request = state.turns.flatMap(turn => turn.actionRequests ?? []).find(item => item.id === requestId)!
         request.status = allow ? 'completed' : 'rejected'
         if (allow) request.checkpoint = {before: null, after: null, at: at(0)}
-        listener(structuredClone(state)); return result(state)
+        publish(); return result(state)
     },
     undo: (_turnId, requestId) => {
         state.turns.flatMap(turn => turn.actionRequests ?? []).find(item => item.id === requestId)!.status = 'undone'
-        listener(structuredClone(state)); return result(state)
+        publish(); return result(state)
     },
     onChanged: cb => {listener = cb; return () => {listener = () => {}}},
 }
@@ -89,12 +97,27 @@ window.messagePreferences = {get: () => result({identity: 'staff'})} as never
 window.timetable = {get: () => result(null)} as never
 const memories: MemoryState = {
     username: 'demo', enabled: true,
-    items: [{id: 'memory-1', text: '偏好先看具体例子，再理解抽象定义。', kind: 'preference', evidence: '请先用具体例子解释。', confidence: 1, pinned: true, expiresAt: null, status: 'active', createdAt: at(0), updatedAt: at(0)}]
+    items: ['偏好先看具体例子，再理解抽象定义。', '喜欢通过具体例子理解概念。', '当前主修数学。'].map((text, i) => ({
+        id: `memory-${i + 1}`, text, kind: 'preference', evidence: '请先用具体例子解释。', confidence: 1,
+        pinned: true, expiresAt: null, status: 'active', createdAt: at(0), updatedAt: at(0)}))
 }
+window.llm = {get: () => result({enabled: true, baseUrl: 'https://example.com/v1', model: 'preview', hasApiKey: false})} as never
+let memoryBefore = structuredClone(memories.items)
 window.memory = {get: () => result(memories), setEnabled: enabled => {memories.enabled = enabled; return result(memories)},
     save: value => {memories.items = memories.items.map(item => item.id === value.id ? {...item, ...value} : item); return result(memories)},
     remove: id => {memories.items = memories.items.filter(item => item.id !== id); return result(memories)},
-    exportJson: () => result(JSON.stringify({version: 1, memories: memories.items})), importJson: () => result(memories)}
+    exportJson: () => result(JSON.stringify({version: 1, memories: memories.items})), importJson: () => result(memories),
+    consolidatePreview: async () => result({previewId: 'preview', failed: 0, skipped: 0, groups: memories.items.length >= 3 ? [{
+        id: 'group', before: memories.items.slice(0, 2), after: {...memories.items[0], text: '偏好先看具体例子，再理解抽象概念。'}, status: 'ok' as const,
+    }] : []}),
+    consolidateApply: async () => {
+        memoryBefore = structuredClone(memories.items)
+        memories.items = [{...memories.items[0], text: '偏好先看具体例子，再理解抽象概念。'}, ...memories.items.slice(2)]
+        return result({consolidationId: 'preview', groups: 1, removed: 1, state: memories})
+    },
+    consolidateUndo: async () => {memories.items = structuredClone(memoryBefore); return result({restored: 2, state: memories})},
+    consolidateDiscard: async () => result(memories), consolidateCancel: async () => result(null),
+}
 
 function Preview() {
     const [settings, setSettings] = useState(false)
@@ -108,7 +131,7 @@ function Preview() {
         last.trace = next ? [] : structuredClone(runningTrace)
         if (next) delete last.reply
         else last.reply = '明天下午只有一门课，组会挪到 14:00 没有问题，我已经准备好日程请求'
-        listener(structuredClone(state))
+        publish()
     }
     return <div style={{height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-surface)'}}>
         <nav aria-label="UI 验证" style={{display: 'flex', flexWrap: 'wrap', gap: 12, padding: '12px 24px', borderBottom: '1px solid var(--color-border-subtle)'}}>

@@ -23,7 +23,7 @@ export function ChatStatusBar({stats}: {stats?: ChatStats}) {
             {data.turns} 轮 · {data.steps} 步
             {data.tokensPerSecond ? ` · ${data.tokensPerSecond} tok/s` : ''}
         </span>
-        <span className="chat-stat" title="本账号累计 token 与提示缓存命中率">
+        <span className="chat-stat" title="本次会话累计 token 与提示缓存命中率">
             <span className="chat-stat-icon" aria-hidden="true">⛁</span>
             {compact(tokens)} tok
             {cache !== null && ` · 缓存命中 ${cache}%`}
