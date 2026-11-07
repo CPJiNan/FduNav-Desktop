@@ -23,7 +23,7 @@ export function ChatSessionTracePanel({onClose}: {onClose: () => void}) {
         return () => {active = false}
     }, [reload])
     const steps = turns.reduce((total, turn) => total + turn.events.length, 0)
-    return <aside id="chat-trace" className="chat-trace" aria-label="会话轨迹" onKeyDown={event => {
+    return <aside id="chat-session-trace" className="chat-trace" aria-label="会话轨迹" onKeyDown={event => {
         if (event.key === 'Escape') {event.stopPropagation(); onClose()}
     }}>
         <header><div><h2>会话轨迹</h2><p>{turns.length} 轮 · {steps} 步</p></div>

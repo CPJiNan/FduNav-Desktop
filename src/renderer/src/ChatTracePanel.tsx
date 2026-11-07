@@ -31,7 +31,7 @@ export function ChatTracePanel({turn, onClose}: {turn: ChatTurn; onClose: () => 
         return () => {active = false}
     }, [turn.id, revision, reload])
     const shown = events.filter(item => filter === 'all' || (filter === 'failed' ? item.status === 'failed' || item.status === 'cancelled' : item.kind === 'tool'))
-    return <aside id="chat-trace" className="chat-trace" aria-label="执行记录" onKeyDown={event => {
+    return <aside id="chat-trace-panel" className="chat-trace" aria-label="执行记录" onKeyDown={event => {
         if (event.key === 'Escape') {event.stopPropagation(); onClose()}
     }}>
         <header><div><h2>执行记录</h2><p>本轮 {events.length} 个步骤</p></div>

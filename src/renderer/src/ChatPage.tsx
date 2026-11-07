@@ -12,6 +12,7 @@ import {ChatActionRequestCard} from './ChatActionRequestCard'
 import {ChatTracePanel} from './ChatTracePanel'
 import {ChatSessionTracePanel} from './ChatSessionTracePanel'
 import {ChatStatusBar} from './ChatStatusBar'
+import {TurnActivity} from './TurnActivity'
 import './styles/chat.css'
 import './styles/calendar.css'
 
@@ -223,6 +224,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     }
     function openTrace(turnId: string) {
         traceTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        setSessionTrace(false)
         setTraceTurnId(turnId)
     }
     function closeTrace() {setTraceTurnId(null); traceTrigger.current?.focus()}
@@ -243,13 +245,14 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     }
 
     const busy = state.busy || sending
+    const lastTurnId = state.turns.at(-1)?.id
+    const streaming = (id: string) => busy && id === lastTurnId
     const traced = state.turns.find(turn => turn.id === traceTurnId)
     return <section className="chat-workspace" aria-label="聊天"><div className="chat-page">
         <header className="chat-header">
-            <button type="button" className="secondary-button" disabled={!state.turns.length} aria-controls="chat-trace" aria-expanded={!!traced}
-                onClick={() => traced ? closeTrace() : openTrace(state.turns.at(-1)!.id)}>执行记录</button>
-            <button type="button" className="secondary-button" disabled={!state.turns.length} aria-controls="chat-trace" aria-expanded={sessionTrace}
-                onClick={() => {setTraceTurnId(null); setSessionTrace(value => !value)}}>会话轨迹</button>
+            <button type="button" className="icon-button" aria-label="会话轨迹" title="会话轨迹"
+                    aria-controls="chat-session-trace" aria-expanded={sessionTrace} disabled={!state.turns.length}
+                    onClick={() => {setTraceTurnId(null); setSessionTrace(value => !value)}}><Icon name="panel"/></button>
             {confirmClear ? <div className="chat-clear-confirm"><span>清空聊天记录？</span>
                     <button type="button" className="secondary-button" disabled={busy} onClick={() => void clear()}>清空
                     </button>
@@ -276,9 +279,12 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                                                                            }}>{text}<Icon
                             name="chevron"/></button>)}</div>
                     </div>}
-                {state.turns.map(turn => <div className="chat-turn" key={turn.id}>
+                {state.turns.map(turn => <div className="chat-turn" key={turn.id}
+                                            data-streaming={streaming(turn.id) || undefined}>
                     <article className="chat-user" aria-label="我的消息">{turn.user}</article>
                     <article className="chat-assistant" aria-label="助手回复">
+                        <TurnActivity trace={turn.trace} stage={streaming(turn.id) ? state.status : ''}
+                                      busy={streaming(turn.id)}/>
                         {turn.reply &&
                             <div className="chat-markdown"><Markdown remarkPlugins={[remarkGfm, remarkBreaks]}
                                                                      components={{
@@ -323,15 +329,23 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                                                                        onDecide={allow => void decideRequest('action', turn.id, request.id, allow)}
                                                                                        onUndo={() => void undo(turn.id, request.id)} onManageMemory={onSettings}/>)}
                         </div>}
-                        <button type="button" className="trace-turn-button" aria-controls="chat-trace"
-                            aria-expanded={traceTurnId === turn.id} onClick={() => openTrace(turn.id)}>查看执行记录 · {turn.trace?.length ?? 0} 步</button>
+                        {turn.startedAt && <div className="turn-meta">
+                            <time dateTime={turn.startedAt}>{new Date(turn.startedAt).toLocaleTimeString('zh-CN', {
+                                hour: '2-digit', minute: '2-digit', hour12: false
+                            })}</time>
+                            {turn.finishedAt && <><i className="turn-meta-dot" aria-hidden="true"/>
+                                <span>{((Date.parse(turn.finishedAt) - Date.parse(turn.startedAt)) / 1000).toFixed(1)}s</span></>}
+                            <button type="button" className="icon-button turn-meta-button" aria-label="查看执行记录"
+                                    title="查看执行记录" aria-controls="chat-trace-panel"
+                                    onClick={() => openTrace(turn.id)}><Icon name="panel"/></button>
+                        </div>}
                         {turn.error && <p className="chat-error" role="alert">{turn.error}</p>}
                     </article>
                 </div>)}
             </div>
         </div>
         <footer className="chat-footer">
-            <ChatStatusBar stats={state.stats} busy={state.busy} status={state.status}/>
+            <ChatStatusBar stats={state.stats}/>
             {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
             {syncError && <p className="chat-error" role="alert">{syncError}</p>}
             {error && <p className="chat-error" role="alert">{error}</p>}

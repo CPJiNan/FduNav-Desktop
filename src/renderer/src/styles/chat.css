@@ -205,9 +205,9 @@
 
 .chat-summary-request {
     min-width: 0;
-    padding: 18px;
+    padding: 14px;
     border: 1px solid var(--color-border-control);
-    border-radius: 16px;
+    border-radius: 13px;
     background: var(--color-bg-surface);
 }
 
@@ -291,35 +291,6 @@
 
 .chat-summary-request .chat-markdown {
     margin-top: 12px;
-}
-
-.chat-action-preview {
-    min-width: 0;
-    margin-top: 12px;
-    padding: 14px 16px;
-    border: 1px solid var(--color-border-default);
-    border-radius: 12px;
-    background: var(--color-bg-elevated);
-    color: var(--color-text-primary);
-    font-size: var(--font-size-sm);
-}
-
-.chat-action-preview dl {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 6px 12px;
-    margin: 10px 0 0;
-    font-size: var(--font-size-xs);
-}
-
-.chat-action-preview dt {
-    color: #667085;
-}
-
-.chat-action-preview dd {
-    margin: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
 }
 
 .chat-status {
@@ -434,8 +405,6 @@
 .trace-events summary {cursor: pointer; padding: 8px 0; color: var(--color-accent);}
 .trace-events pre {max-height: 360px; overflow: auto; padding: 12px; border-radius: 8px; background: var(--color-bg-hover);
     font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;}
-.trace-turn-button {margin-top: 16px; padding: 6px 0; border: 0; background: transparent; color: var(--color-text-muted); font: inherit; font-size: var(--font-size-xs); cursor: pointer;}
-.trace-turn-button:hover {color: var(--color-accent);}
 @media (max-width: 900px) {
     .chat-trace {position: absolute; z-index: 4; inset: 0 0 0 auto; width: min(100%, 440px); box-shadow: var(--shadow-sm);}
 }
@@ -487,40 +456,6 @@
     transition: width .3s ease;
 }
 
-.chat-live {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: auto;
-    color: var(--color-text-primary, #e6e6e6);
-    max-width: 60%;
-}
-
-.chat-live-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.chat-live-time {
-    opacity: .55;
-}
-
-.chat-live-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: currentColor;
-    animation: chat-live-pulse 1.1s ease-in-out infinite;
-}
-
-@keyframes chat-live-pulse {
-    0%, 100% {opacity: .25; transform: scale(.8)}
-    50% {opacity: 1; transform: scale(1)}
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .chat-live-dot {animation: none; opacity: .8}
 }
 
 /* Whole-conversation trace: one collapsible block per turn */
@@ -548,3 +483,51 @@
 }
 .trace-sessions small {color: var(--color-text-muted); white-space: nowrap; font-size: var(--font-size-xs);}
 .trace-sessions .trace-events {margin: 0 0 12px;}
+
+/* Turn activity: inline steps for the running turn, collapsed summary afterwards */
+.turn-activity {display: flex; flex-direction: column; gap: 2px; max-width: 560px; margin-bottom: 12px;}
+.turn-steps {list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px;}
+.turn-step {display: grid; grid-template-columns: 14px minmax(0, 1fr) 48px; align-items: center; gap: 9px;
+    min-height: 24px; font-size: 12px; color: var(--color-text-muted);}
+.turn-step-name {color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.turn-step[data-state="running"] .turn-step-name {color: var(--color-text-primary);}
+.turn-step[data-state="failed"] .turn-step-name {color: var(--color-danger);}
+.turn-step-time {font-size: 11px; text-align: right; font-variant-numeric: tabular-nums;}
+.turn-step-more {display: block; font-size: 11px; color: var(--color-text-muted);}
+.turn-spin {width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid currentColor;
+    border-top-color: transparent; animation: turn-spin .8s linear infinite;}
+.turn-tick {color: var(--color-success); font-size: 12px; line-height: 1;}
+.turn-cross {color: var(--color-danger); font-size: 11px; line-height: 1;}
+.turn-summary {display: inline-flex; align-items: center; gap: 7px; align-self: flex-start; margin: 0 0 2px -6px;
+    padding: 4px 8px 4px 6px; border: 0; border-radius: 8px; background: transparent;
+    color: var(--color-text-muted); font: inherit; font-size: 12px; cursor: pointer;}
+.turn-summary:hover {background: var(--color-bg-hover); color: var(--color-text-secondary);}
+.turn-summary .icon {width: 11px; height: 11px; transition: transform .15s var(--ease-standard);}
+.turn-summary[data-expanded="true"] .icon {transform: rotate(90deg);}
+.turn-meta {display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 11.5px;
+    color: var(--color-text-muted); font-variant-numeric: tabular-nums;}
+.turn-meta-dot {width: 2px; height: 2px; border-radius: 50%; background: currentColor;}
+.turn-meta-button {width: 24px; height: 24px; opacity: .35;}
+.chat-turn:hover .turn-meta-button, .turn-meta-button:focus-visible {opacity: 1;}
+.turn-meta-button .icon {width: 13px; height: 13px;}
+@keyframes turn-spin {to {transform: rotate(360deg)}}
+
+.chat-turn[data-streaming="true"] .chat-markdown > :last-child::after {
+    content: ''; display: inline-block; width: 7px; height: 15px; margin-left: 3px; vertical-align: -2px;
+    border-radius: 1px; background: var(--color-accent); animation: chat-caret 1s steps(2, start) infinite;}
+@keyframes chat-caret {50% {opacity: 0}}
+
+@media (prefers-reduced-motion: reduce) {
+    .turn-spin {animation: none; border-top-color: currentColor; opacity: .55}
+    .chat-turn[data-streaming="true"] .chat-markdown > :last-child::after {animation: none}
+    .turn-summary .icon {transition: none}
+}
+
+.chat-ghost-button {border: 0; background: transparent; color: var(--color-text-muted);}
+.chat-ghost-button:hover {background: var(--color-bg-hover); color: var(--color-text-primary);}
+.chat-action-facts {display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 10px 0 0;
+    font-size: 12.5px;}
+.chat-action-facts dt {color: var(--color-text-muted);}
+.chat-action-facts dd {margin: 0; overflow-wrap: anywhere;}
+.chat-action-title {font-weight: 400; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; max-width: 260px;}
