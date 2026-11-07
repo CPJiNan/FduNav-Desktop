@@ -267,3 +267,22 @@
         min-height: 0;
     }
 }
+
+.agent-settings {border-top: 1px solid var(--color-border-subtle); padding-top: 24px; margin-top: 28px; min-width: 0;}
+.agent-settings h3 {font-size: 16px; margin-bottom: 12px;}
+.agent-settings p, .agent-settings small {font-size: var(--font-size-sm); line-height: 1.7; overflow-wrap: anywhere;}
+.agent-settings > p, .agent-settings small {color: var(--color-text-muted);}
+.memory-enable {display: flex; align-items: center; gap: 10px; margin: 16px 0;}
+.memory-enable input {width: 18px; height: 18px; accent-color: var(--color-accent);}
+.memory-list {list-style: none; padding: 0; margin: 16px 0;}
+.memory-list > li {padding: 16px 0; border-bottom: 1px solid var(--color-border-subtle);}
+.memory-import {cursor: pointer; position: relative;}
+.memory-import input {width: 1px; height: 1px; position: absolute; opacity: 0;}
+.memory-import:focus-within {outline: 2px solid var(--color-accent); outline-offset: 3px;}
+.memory-editor {display: grid; gap: 12px; margin: 16px 0; padding: 16px; border: 1px solid var(--color-border-control); border-radius: 12px;}
+.memory-editor label {display: grid; gap: 6px; font-size: var(--font-size-sm);}
+.memory-editor textarea {min-height: 70px; resize: vertical;}
+.memory-editor :is(textarea, input, select) {width: 100%; padding: 10px; border: 1px solid var(--color-border-control); border-radius: 8px;
+    font: inherit; color: var(--color-text-primary); background: var(--color-bg-surface);}
+.usage-grid {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0;}
+@media (max-width: 600px) {.usage-grid {grid-template-columns: 1fr;}}

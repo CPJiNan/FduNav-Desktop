@@ -1,11 +1,9 @@
-import type {ChatActionRequest} from '../../shared/chat'
+import {type ChatActionRequest, chatActionTitles as titles, chatActionStatusLabels as statuses} from '../../shared/chat'
 import type {CalendarEventInput} from '../../shared/calendar'
 import type {TodoInput} from '../../shared/todos'
 import {calendarReminderOptions} from '../../shared/calendar-reminders'
 import {Icon} from './Icon'
 
-const titles = {create_event: '新增日程', create_todo: '新增待办'}
-const statuses = {pending: '等待允许', executing: '正在执行', completed: '已完成', rejected: '已拒绝', failed: '未完成'}
 
 function Preview({value}: { value: CalendarEventInput | TodoInput }) {
     const todo = 'dueDate' in value
@@ -32,20 +30,27 @@ function Preview({value}: { value: CalendarEventInput | TodoInput }) {
     </div>
 }
 
-export function ChatActionRequestCard({request, disabled, onDecide}: {
-    request: ChatActionRequest; disabled: boolean; onDecide: (allow: boolean) => void
+export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onManageMemory}: {
+    request: ChatActionRequest; disabled: boolean; onDecide: (allow: boolean) => void; onUndo: () => void; onManageMemory: () => void
 }) {
     const {action} = request
     return <section className="chat-summary-request" aria-label={`${titles[action.kind]}请求`}>
         <header><strong><Icon name={action.kind === 'create_todo' ? 'todo' : 'calendar'}/>{titles[action.kind]}</strong>
             <span role="status">{statuses[request.status]}</span></header>
-        <Preview value={action.kind === 'create_todo' ? action.todo : action.after}/>
+        {action.kind === 'remember' || action.kind === 'forget' ? <div className="chat-action-preview">
+            <strong>{action.memory.text}</strong><p>依据：{action.memory.evidence}</p>
+            <p>{action.kind === 'remember' ? '允许后保存在本机；记忆启用时可随对话发送给模型服务。' : '允许后从记忆库删除。'}</p>
+            {request.status === 'completed' && action.kind === 'remember' && <button type="button" className="secondary-button" onClick={onManageMemory}>查看或删除记忆</button>}
+        </div> : <Preview value={action.kind === 'create_todo' ? action.todo : action.after}/>}
         {request.status === 'pending' && <div className="chat-summary-actions">
             <button type="button" className="primary-button" disabled={disabled} onClick={() => onDecide(true)}>允许
             </button>
             <button type="button" className="secondary-button" disabled={disabled}
                     onClick={() => onDecide(false)}>拒绝
             </button>
+        </div>}
+        {request.status === 'completed' && request.checkpoint && <div className="chat-summary-actions">
+            <button type="button" className="secondary-button" disabled={disabled} onClick={onUndo}>撤销{titles[action.kind]}</button>
         </div>}
         {request.error && <p className="chat-error" role="alert">{request.error}</p>}
     </section>

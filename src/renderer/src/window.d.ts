@@ -9,6 +9,7 @@ import type {TodosAPI} from '../../shared/todos'
 import type {GeneralSettingsAPI} from '../../shared/general-settings'
 import type {NotificationSettingsAPI} from '../../shared/notification-settings'
 import type {AppInfoAPI} from '../../shared/app-info'
+import type {MemoryAPI} from '../../shared/memory'
 import type {ChatAPI} from '../../shared/chat'
 import type {CampusCardAPI} from '../../shared/campus-card'
 import type {LibraryAPI} from '../../shared/library'
@@ -17,6 +18,7 @@ declare global {
     interface Window {
         library?: LibraryAPI
         campusCard?: CampusCardAPI
+        memory?: MemoryAPI
         chat?: ChatAPI
         appInfo?: AppInfoAPI
         generalSettings?: GeneralSettingsAPI
