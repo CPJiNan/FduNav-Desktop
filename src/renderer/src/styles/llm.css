@@ -306,34 +306,26 @@
     border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.memory-editor {
-    display: grid;
-    gap: 12px;
-    margin: 16px 0;
-    padding: 16px;
-    border: 1px solid var(--color-border-control);
-    border-radius: 12px;
+.memory-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
 }
 
-.memory-editor label {
-    display: grid;
-    gap: 6px;
-    font-size: var(--font-size-sm);
+.memory-actions .icon-button {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
 }
 
-.memory-editor textarea {
-    min-height: 70px;
-    resize: vertical;
+.memory-actions .icon-button .icon {
+    width: 15px;
+    height: 15px;
 }
 
-.memory-editor :is(textarea, input, select) {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid var(--color-border-control);
-    border-radius: 8px;
-    font: inherit;
-    color: var(--color-text-primary);
-    background: var(--color-bg-surface);
+.memory-actions .icon-button[aria-pressed="true"] {
+    color: var(--color-accent);
 }
 
 .usage-grid {
@@ -381,17 +373,4 @@
 
 .memory-diff-new {
     color: var(--color-accent);
-}
-
-.memory-pin {
-    display: inline-flex;
-    align-items: center;
-    vertical-align: -2px;
-    margin-right: 6px;
-    color: var(--color-text-muted);
-}
-
-.memory-pin .icon {
-    width: 14px;
-    height: 14px;
 }

@@ -31,12 +31,11 @@ function Preview({value}: { value: CalendarEventInput | TodoInput }) {
     return <><p className="chat-action-title">{value.title}</p>{factRows(value)}</>
 }
 
-export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onManageMemory}: {
+export function ChatActionRequestCard({request, disabled, onDecide, onUndo}: {
     request: ChatActionRequest;
     disabled: boolean;
     onDecide: (allow: boolean) => void;
-    onUndo: () => void;
-    onManageMemory: () => void
+    onUndo: () => void
 }) {
     const {action} = request
     const payload = action.kind === 'create_todo' ? action.todo
@@ -45,18 +44,7 @@ export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onMa
                 : action.kind === 'delete_todo' || action.kind === 'delete_event' ? action.before : null
     const title = payload?.title ?? ''
     const heading = action.kind === 'remember' && action.targetId ? '更新已有记忆' : titles[action.kind]
-    const opensMemory = action.kind === 'remember' && request.status === 'completed'
-    return <section className={`chat-summary-request${opensMemory ? ' is-clickable' : ''}`}
-                    aria-label={`请求${heading}`}
-                    role={opensMemory ? 'link' : undefined}
-                    tabIndex={opensMemory ? 0 : undefined}
-                    onClick={opensMemory ? onManageMemory : undefined}
-                    onKeyDown={opensMemory ? event => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            onManageMemory()
-                        }
-                    } : undefined}>
+    return <section className="chat-summary-request" aria-label={`请求${heading}`}>
         <header><strong><Icon
             name={action.kind === 'create_todo' ? 'todo' : action.kind === 'remember' ? 'sparkles' : 'calendar'}/>{heading}
             {title && <span className="chat-action-title">{title}</span>}</strong>

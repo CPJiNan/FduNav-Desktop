@@ -3,6 +3,8 @@ import type {Memory, MemoryState} from '../../shared/memory'
 import type {Result} from '../../shared/accounts'
 import {downloadJson} from './ChatTracePanel'
 import {Icon} from './Icon'
+import {MemoryDialog} from './MemoryDialog'
+import {ConfirmDialog} from './ConfirmDialog'
 
 export function MemoryPanel({active}: { active: boolean }) {
     const [state, setState] = useState<MemoryState>({username: '', enabled: false, items: []})
@@ -55,6 +57,13 @@ export function MemoryPanel({active}: { active: boolean }) {
         } finally {
             setBusy(false)
         }
+    }
+
+    async function confirmRemove() {
+        const id = deleting
+        if (!id) return
+        await update(() => window.memory?.remove(id))
+        setDeleting('')
     }
 
     async function importFile(file: File) {
@@ -113,64 +122,29 @@ export function MemoryPanel({active}: { active: boolean }) {
         {!loaded && !error && <p role="status">正在读取记忆…</p>}
         <ul className="memory-list">{state.items.map(item => <li key={item.id}>
             <div>
-                <p>{item.pinned && <span className="memory-pin" role="img" aria-label="已置顶"><Icon
-                    name="pin"/></span>}{item.text}</p><small>依据：{item.evidence}</small></div>
-            <div className="trace-toolbar">
-                <button type="button" className="secondary-button" disabled={busy}
-                        onClick={() => setEditing({...item})}>编辑
-                </button>
-                <button type="button" className="secondary-button" disabled={busy}
+                <p>{item.text}</p><small>{item.evidence}</small></div>
+            <div className="memory-actions">
+                <button type="button" className="icon-button" title="编辑" aria-label="编辑记忆" disabled={busy}
+                        onClick={() => setEditing({...item})}><Icon name="pencil"/></button>
+                <button type="button" className="icon-button" aria-pressed={item.pinned}
+                        title={item.pinned ? '取消置顶' : '置顶'} aria-label={item.pinned ? '取消置顶' : '置顶'}
+                        disabled={busy}
                         onClick={() => void update(() => window.memory?.save({
                             ...item,
                             pinned: !item.pinned
-                        }))}>{item.pinned ? '取消置顶' : '置顶'}</button>
-                {deleting === item.id ? <><span>删除这条记忆？</span>
-                        <button type="button" className="secondary-button" disabled={busy}
-                                onClick={() => void update(() => window.memory?.remove(item.id))}>确认删除
-                        </button>
-                        <button type="button" className="secondary-button" onClick={() => setDeleting('')}>取消</button>
-                    </> :
-                    <button type="button" className="secondary-button" disabled={busy}
-                            onClick={() => setDeleting(item.id)}>删除</button>}
+                        }))}><Icon name="pin"/></button>
+                <button type="button" className="icon-button" title="删除" aria-label="删除记忆" disabled={busy}
+                        onClick={() => setDeleting(item.id)}><Icon name="trash"/></button>
             </div>
         </li>)}</ul>
-        {editing && <div className="memory-editor">
-            <label>内容<textarea value={editing.text} maxLength={600}
-                                 onChange={event => setEditing({...editing, text: event.target.value})}/></label>
-            <label>依据<textarea value={editing.evidence} maxLength={1000}
-                                 onChange={event => setEditing({...editing, evidence: event.target.value})}/></label>
-            <label>类型<select value={editing.kind}
-                               onChange={event => setEditing({...editing, kind: event.target.value as Memory['kind']})}>
-                <option value="fact">事实</option>
-                <option value="preference">偏好</option>
-                <option value="event">事项</option>
-            </select></label>
-            <label>可信度<input type="number" min={0} max={1} step={0.1} value={editing.confidence}
-                                onChange={event => setEditing({
-                                    ...editing,
-                                    confidence: Number(event.target.value)
-                                })}/></label>
-            <label>到期时间（ISO 格式，留空永久）<input type="text" value={editing.expiresAt ?? ''}
-                                                     placeholder="2026-12-31T23:59:00+08:00"
-                                                     onChange={event => setEditing({
-                                                         ...editing,
-                                                         expiresAt: event.target.value || null
-                                                     })}/></label>
-            <label>状态<select value={editing.status} onChange={event => setEditing({
-                ...editing,
-                status: event.target.value as Memory['status']
-            })}>
-                <option value="active">有效</option>
-                <option value="archived">归档</option>
-            </select></label>
-            <div className="trace-toolbar">
-                <button type="button" className="primary-button" disabled={busy}
-                        onClick={() => void update(() => window.memory?.save(editing))}>保存记忆
-                </button>
-                <button type="button" className="secondary-button" disabled={busy}
-                        onClick={() => setEditing(null)}>取消
-                </button>
-            </div>
-        </div>}
+        {deleting && <ConfirmDialog title="删除这条记忆" message="是否删除这条记忆？" confirmLabel="删除"
+                                    danger busy={busy}
+                                    onConfirm={() => void confirmRemove()}
+                                    onCancel={() => setDeleting('')}/>}
+        {editing && <MemoryDialog item={editing} onClose={() => setEditing(null)}
+                                  onSaved={next => {
+                                      setState(next);
+                                      setNotice('')
+                                  }}/>}
     </section>
 }

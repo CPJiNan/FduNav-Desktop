@@ -601,3 +601,11 @@ h2 {
         gap: var(--space-1);
     }
 }
+
+.confirm-dialog-message {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}

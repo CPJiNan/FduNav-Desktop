@@ -13,6 +13,7 @@ import {ChatTracePanel} from './ChatTracePanel'
 import {ChatSessionTracePanel} from './ChatSessionTracePanel'
 import {ChatStatusBar} from './ChatStatusBar'
 import {CopyButton} from './MessageActions'
+import {ConfirmDialog} from './ConfirmDialog'
 import {TurnActivity} from './TurnActivity'
 import './styles/chat.css'
 import './styles/calendar.css'
@@ -180,9 +181,15 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                 setSessionTrace(false);
                 setEditingTurnId(null);
                 setDraft('')
-            } else setError(result.error)
+            } else {
+                setError(result.error);
+                setConfirmClear(false)
+            }
         } catch {
-            if (mounted.current) setError('清空聊天失败。')
+            if (mounted.current) {
+                setError('清空聊天失败。');
+                setConfirmClear(false)
+            }
         } finally {
             if (mounted.current) setSending(false)
         }
@@ -296,18 +303,17 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                             setTraceTurnId(null);
                             setSessionTrace(value => !value)
                         }}><Icon name="panel"/></button>
-                {confirmClear ? <div className="chat-clear-confirm"><span>清空聊天记录？</span>
-                        <button type="button" className="secondary-button" disabled={busy} onClick={() => void clear()}>清空
-                        </button>
-                        <button type="button" className="secondary-button" onClick={() => setConfirmClear(false)}>取消
-                        </button>
-                    </div> :
-                    <button type="button" className="icon-button" aria-label="清空聊天" title="清空聊天"
-                            disabled={busy || !state.turns.length}
-                            onClick={() => setConfirmClear(true)}><Icon name="clean"/></button>}
+                <button type="button" className="icon-button" aria-label="清空聊天" title="清空聊天"
+                        disabled={busy || !state.turns.length}
+                        onClick={() => setConfirmClear(true)}><Icon name="clean"/></button>
                 <button type="button" className="icon-button" aria-label="LLM 设置" title="LLM 设置"
                         onClick={onSettings}><Icon name="settings"/></button>
             </header>
+            {confirmClear && <ConfirmDialog title="清空聊天记录"
+                                            message="是否清空聊天记录？"
+                                            confirmLabel="清空" danger busy={sending}
+                                            onConfirm={() => void clear()}
+                                            onCancel={() => setConfirmClear(false)}/>}
             <div className="chat-messages" ref={scroll} onScroll={() => {
                 const element = scroll.current
                 if (element) stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
@@ -377,8 +383,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                                                                            request={request}
                                                                                            disabled={state.busy || sending || decidingRequest}
                                                                                            onDecide={allow => void decideRequest('action', turn.id, request.id, allow)}
-                                                                                           onUndo={() => void undo(turn.id, request.id)}
-                                                                                           onManageMemory={onSettings}/>)}
+                                                                                           onUndo={() => void undo(turn.id, request.id)}/>)}
                             </div>}
                             {(turn.startedAt || turn.reply) && <div className="turn-meta">
                                 {turn.startedAt && <time
