@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('memory', memory)
 const chat: ChatAPI = {
     get: () => ipcRenderer.invoke('chat:get'),
     trace: turnId => ipcRenderer.invoke('chat:trace', turnId),
+    sessionTrace: () => ipcRenderer.invoke('chat:session-trace'),
     usage: () => ipcRenderer.invoke('chat:usage'),
     undo: (turnId, requestId) => ipcRenderer.invoke('chat:undo', {turnId, requestId}),
     send: text => ipcRenderer.invoke('chat:send', text),

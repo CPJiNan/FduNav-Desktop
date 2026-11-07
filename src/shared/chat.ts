@@ -63,9 +63,15 @@ export interface ChatStats {
     /** 0-1, null when the provider reported no cache counters. */
     cacheHitRate: number | null
     tokensPerSecond: number | null
-    contextPercent: number
     /** Elapsed time of the running turn, 0 when idle. */
     turnElapsedMs: number
+}
+
+export interface SessionTraceTurn {
+    turnId: string
+    user: string
+    at: string
+    events: ChatTraceEvent[]
 }
 
 export interface ChatState {
@@ -90,6 +96,8 @@ export interface ChatAPI {
     decideAction(turnId: string, requestId: string, allow: boolean): Promise<Result<ChatState>>
 
     trace(turnId: string): Promise<Result<ChatTraceEvent[]>>
+
+    sessionTrace(): Promise<Result<SessionTraceTurn[]>>
 
     usage(): Promise<Result<UsageSummary>>
 

@@ -114,7 +114,6 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 ? Math.min(1, raw.cacheHitTokens / raw.promptTokens) : null,
             tokensPerSecond: raw.elapsedMs > 0 && total > 0
                 ? Math.round((total / (raw.elapsedMs / 1000)) * 10) / 10 : null,
-            contextPercent: Math.min(100, Math.round((raw.lastPromptTokens / 32000) * 100)),
             turnElapsedMs: turn?.startedAt ? Date.now() - Date.parse(turn.startedAt) : 0
         }
     }
@@ -550,6 +549,22 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         if (!turn) throw new Error('执行记录不存在或已被清除。')
         const metadata = new Map(turn.trace?.map(item => [item.id, item]))
         return db.getChatTrace(user, input).map(item => ({...item, ...metadata.get(item.id)}))
+    })
+    handle('chat:session-trace', user => {
+        const turns = running.get(user)?.turns ?? load(user)
+        return turns.map(turn => ({
+            turnId: turn.id, user: turn.user, at: turn.startedAt ?? '',
+            events: db.getChatTrace(user, turn.id)
+        })).filter(item => item.events.length)
+    })
+    handle('chat:session-trace', user => {
+        const turns = running.get(user)?.turns ?? load(user)
+        const live = new Map<string, ChatTraceEvent>()
+        for (const turn of turns) for (const item of turn.trace ?? []) live.set(item.id, item)
+        return turns.map(turn => ({
+            turnId: turn.id, user: turn.user, at: turn.startedAt ?? '',
+            events: db.getChatTrace(user, turn.id).map(item => ({...item, ...live.get(item.id)}))
+        })).filter(item => item.events.length)
     })
     handle('chat:usage', user => db.getUsage(user))
     handle('chat:undo', (user, input) => {

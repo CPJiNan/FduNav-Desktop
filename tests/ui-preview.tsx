@@ -32,6 +32,7 @@ let state = structuredClone(initial)
 let listener = (_state: ChatState) => {}
 const result = <T,>(data: T) => Promise.resolve({ok: true as const, data: structuredClone(data)})
 window.chat = {
+    sessionTrace: () => result([{turnId: 'turn-1', user: '查一下我的待办，再添加一项：阅读 LoRA 论文。', at, events}]),
     get: () => result(state), trace: () => result(events), usage: () => result({today: {promptTokens: 1200, completionTokens: 280, requests: 2, missingUsage: 1, elapsedMs: 1520}, month: {promptTokens: 8900, completionTokens: 1200, requests: 15, missingUsage: 2, elapsedMs: 12030}}),
     send: async text => {state.turns.push({id: `turn-${state.turns.length + 1}`, user: text, reply: '查询结果为空。可缩小关键词范围或刷新数据后再试。', cards: [], trace: []}); listener(structuredClone(state)); return result(state)},
     clear: () => {state.turns = []; listener(state); return result(state)}, cancel: () => result(null),

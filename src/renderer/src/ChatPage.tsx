@@ -10,6 +10,7 @@ import {Icon} from './Icon'
 import {ChatSummaryRequestCard} from './ChatSummaryRequestCard'
 import {ChatActionRequestCard} from './ChatActionRequestCard'
 import {ChatTracePanel} from './ChatTracePanel'
+import {ChatSessionTracePanel} from './ChatSessionTracePanel'
 import {ChatStatusBar} from './ChatStatusBar'
 import './styles/chat.css'
 import './styles/calendar.css'
@@ -30,6 +31,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const [decidingRequest, setDecidingRequest] = useState(false)
     const [confirmClear, setConfirmClear] = useState(false)
     const [traceTurnId, setTraceTurnId] = useState<string | null>(null)
+    const [sessionTrace, setSessionTrace] = useState(false)
     const traceTrigger = useRef<HTMLElement | null>(null)
     const [editor, setEditor] = useState<CalendarOccurrence | null>(null)
     const scroll = useRef<HTMLDivElement>(null)
@@ -246,6 +248,8 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         <header className="chat-header">
             <button type="button" className="secondary-button" disabled={!state.turns.length} aria-controls="chat-trace" aria-expanded={!!traced}
                 onClick={() => traced ? closeTrace() : openTrace(state.turns.at(-1)!.id)}>执行记录</button>
+            <button type="button" className="secondary-button" disabled={!state.turns.length} aria-controls="chat-trace" aria-expanded={sessionTrace}
+                onClick={() => {setTraceTurnId(null); setSessionTrace(value => !value)}}>会话轨迹</button>
             {confirmClear ? <div className="chat-clear-confirm"><span>清空聊天记录？</span>
                     <button type="button" className="secondary-button" disabled={busy} onClick={() => void clear()}>清空
                     </button>
@@ -350,5 +354,6 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         </footer>
         {editor && <CalendarEventDialog date={editor.date} item={editor} create={false} onClose={closeEditor}
                                         onSaved={() => void refreshCards()} onRemoved={() => void refreshCards()}/>}
-    </div>{traced && <ChatTracePanel key={traced.id} turn={traced} onClose={closeTrace}/>}</section>
+    </div>{traced && <ChatTracePanel key={traced.id} turn={traced} onClose={closeTrace}/>}
+        {sessionTrace && <ChatSessionTracePanel onClose={() => setSessionTrace(false)}/>}</section>
 }

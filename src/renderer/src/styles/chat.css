@@ -522,3 +522,29 @@
 @media (prefers-reduced-motion: reduce) {
     .chat-live-dot {animation: none; opacity: .8}
 }
+
+/* Whole-conversation trace: one collapsible block per turn */
+.trace-sessions {list-style: none; margin: 16px 0 0; padding: 0;}
+.trace-sessions > li {border-top: 1px solid var(--color-border-subtle);}
+.trace-sessions summary {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 12px 0;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    list-style: none;
+}
+.trace-sessions summary::-webkit-details-marker {display: none;}
+.trace-sessions summary:hover .trace-session-question {color: var(--color-text-primary);}
+.trace-session-index {color: var(--color-text-muted); font-variant-numeric: tabular-nums; font-size: var(--font-size-xs);}
+.trace-session-question {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text-secondary);
+}
+.trace-sessions small {color: var(--color-text-muted); white-space: nowrap; font-size: var(--font-size-xs);}
+.trace-sessions .trace-events {margin: 0 0 12px;}

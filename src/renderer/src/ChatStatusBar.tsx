@@ -26,27 +26,29 @@ export function ChatStatusBar({stats, busy, status}: {stats?: ChatStats; busy: b
         setBase({elapsed: stats?.turnElapsedMs ?? 0, at: Date.now()})
     }, [stats?.turnElapsedMs])
 
-    if (!stats || !stats.requests) return null
-    const tokens = stats.promptTokens + stats.completionTokens
+    const empty: ChatStats = {
+        turns: 0, steps: 0, requests: 0, promptTokens: 0, completionTokens: 0, cacheHitTokens: 0,
+        elapsedMs: 0, lastPromptTokens: 0, cacheHitRate: null, tokensPerSecond: null, turnElapsedMs: 0
+    }
+    const data = stats ?? empty
+    const tokens = data.promptTokens + data.completionTokens
     const elapsed = busy ? Math.max(0, base.elapsed + (now - base.at)) : 0
-    const cache = stats.cacheHitRate === null ? null : Math.round(stats.cacheHitRate * 1000) / 10
+    const cache = data.cacheHitRate === null ? null : Math.round(data.cacheHitRate * 1000) / 10
 
     return <div className="chat-status-bar" role="status" aria-live="polite">
         <span className="chat-stat" title="对话轮次 · 工具调用步数 · 平均吞吐">
             <span className="chat-stat-icon" aria-hidden="true">◷</span>
-            {stats.turns} 轮 · {stats.steps} 步
-            {stats.tokensPerSecond ? ` · ${stats.tokensPerSecond} tok/s` : ''}
+            {data.turns} 轮 · {data.steps} 步
+            {data.tokensPerSecond ? ` · ${data.tokensPerSecond} tok/s` : ''}
         </span>
         <span className="chat-stat" title="本账号累计 token 与提示缓存命中率">
             <span className="chat-stat-icon" aria-hidden="true">⛁</span>
             {compact(tokens)} tok
             {cache !== null && ` · 缓存命中 ${cache}%`}
         </span>
-        <span className="chat-stat chat-stat-meter" title="最近一次请求的上下文占用，按 32k token 估算">
-            <span className="chat-meter" aria-hidden="true">
-                <span className="chat-meter-fill" style={{width: `${Math.max(2, stats.contextPercent)}%`}}/>
-            </span>
-            {stats.contextPercent}%
+        <span className="chat-stat" title="最近一次请求发送的上下文 token 数">
+            <span className="chat-stat-icon" aria-hidden="true">▤</span>
+            上下文 {compact(data.lastPromptTokens)}
         </span>
         {busy && <span className="chat-live">
             <span className="chat-live-dot" aria-hidden="true"/>
