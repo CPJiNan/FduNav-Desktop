@@ -193,6 +193,21 @@ test('compaction logs retries and still succeeds on the third attempt', async ()
         assert.equal(h.db.getCompaction('alice')?.coversUpTo, '8')
     } finally {h.restore()}
 })
+test('approving an action keeps the compaction boundary', async () => {
+    const h = harness()
+    try {
+        h.db.saveCompaction('alice', {summary: '{"facts":[],"actions":[],"pending":[],"preferences":[]}', coversUpTo: 'turn-1'})
+        const turn = {
+            id: 'turn-2', user: 'u', reply: '', cards: [], context: [],
+            actionRequests: [{id: 'req-1', status: 'pending', action: {kind: 'create_todo', todo: {
+                title: '买书', notes: '', dueDate: '', dueTime: '00:00', reminderMinutes: -1, completed: false}}}]
+        }
+        h.db.saveChatConversation('alice', JSON.stringify([turn]))
+        const result = h.invoke('chat:decide-action', {turnId: 'turn-2', requestId: 'req-1', allow: false})
+        assert.equal(result.ok, true)
+        assert.equal(h.db.getCompaction('alice')?.coversUpTo, 'turn-1', 'approval must not reset compaction')
+    } finally {h.restore()}
+})
 test('successful compaction injects a structured summary instead of escaped JSON text', async () => {
     const h = harness()
     try {

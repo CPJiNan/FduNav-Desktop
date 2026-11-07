@@ -389,7 +389,6 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         const request = turn?.summaryRequests?.find(item => item.id === requestId)
         if (!turn || !request) return
         update(request)
-        db.saveCompaction(user, null)
         trace(turn, 'approval', `摘要请求：${chatSummaryStatusLabels[request.status]}`, {requestId, status: request.status, error: request.error})
         for (const message of turn.context) {
             if (message.role !== 'tool') continue
@@ -462,7 +461,6 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         const request = turn?.actionRequests?.find(item => item.id === requestId)
         if (!turn || !request) throw new Error('操作请求不存在或已被清除。')
         update(request)
-        db.saveCompaction(user, null)
         trace(turn, request.status === 'undone' ? 'undo' : 'approval', `${chatActionTitles[request.action.kind]}：${chatActionStatusLabels[request.status]}`, {requestId, action: request.action, status: request.status, result: request.result, error: request.error})
         for (const message of turn.context) {
             if (message.role !== 'tool') continue
