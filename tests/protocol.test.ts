@@ -6,6 +6,7 @@ import {compactTurns, validateCompaction, parseSummary} from '../src/main/chat-c
 import {AppDatabase} from '../src/main/database.ts'
 import {createChatToolRunner} from '../src/main/chat-tools.ts'
 import {defaultToolDescriptions} from '../src/shared/llm-prompts.ts'
+import {readUsage} from '../src/main/llm-stream.ts'
 
 const budget = {rounds: 3, calls: 10}
 test('tool envelope retains small data, bounds oversized result and identifies failure', () => {

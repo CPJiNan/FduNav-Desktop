@@ -1,6 +1,6 @@
 import type {ChatTool, Connection, ToolCall, ToolChatMessage} from './llm-connection'
 
-export interface LlmUsage {promptTokens: number | null; completionTokens: number | null}
+export interface LlmUsage {promptTokens: number | null; completionTokens: number | null; cacheHitTokens: number | null; cacheMissTokens: number | null}
 export interface StreamOptions {
     request?: typeof fetch
     idleMs?: number
@@ -16,7 +16,8 @@ class HttpError extends Error {
 export function readUsage(value: unknown): LlmUsage {
     const v = value && typeof value === 'object' ? value as Record<string, unknown> : {}
     const count = (key: string) => typeof v[key] === 'number' && Number.isSafeInteger(v[key]) && (v[key] as number) >= 0 ? v[key] as number : null
-    return {promptTokens: count('prompt_tokens'), completionTokens: count('completion_tokens')}
+    return {promptTokens: count('prompt_tokens'), completionTokens: count('completion_tokens'),
+        cacheHitTokens: count('prompt_cache_hit_tokens'), cacheMissTokens: count('prompt_cache_miss_tokens')}
 }
 export function validateAssistant(content: unknown, calls: unknown): Extract<ToolChatMessage, {role: 'assistant'}> {
     if (content !== null && content !== undefined && typeof content !== 'string') throw new Error('模型文本格式无效。')
@@ -43,7 +44,7 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 export async function streamLlmWithTools(connection: Connection, messages: ToolChatMessage[], tools: ChatTool[],
                                         enabledSignal: AbortSignal, options: StreamOptions = {}) {
     const started = performance.now()
-    let usage: LlmUsage = {promptTokens: null, completionTokens: null}
+    let usage: LlmUsage = {promptTokens: null, completionTokens: null, cacheHitTokens: null, cacheMissTokens: null}
     let idle: ReturnType<typeof setTimeout> | undefined
     let controller = new AbortController()
     const resetIdle = () => {

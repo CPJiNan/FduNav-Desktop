@@ -19,7 +19,12 @@ const events: ChatTraceEvent[] = [
     {id: 'usage', kind: 'usage', label: '模型用量与耗时', at, status: 'completed', details: {promptTokens: 1034, completionTokens: 142, elapsedMs: 831}},
     {id: 'finish', kind: 'finish', label: '本轮回复完成', at, status: 'completed', details: {pendingApprovals: 1}},
 ]
-const initial: ChatState = {username: 'demo', busy: false, status: '', turns: [{id: 'turn-1', user: '查一下我的待办，再添加一项：阅读 LoRA 论文。',
+const stats = {
+    turns: 32, steps: 263, requests: 41, promptTokens: 45_200_000, completionTokens: 120_000,
+    cacheHitTokens: 44_064_400, elapsedMs: 780_000, lastPromptTokens: 8_600,
+    cacheHitRate: 0.975, tokensPerSecond: 58.1, contextPercent: 27, turnElapsedMs: 0
+}
+const initial: ChatState = {username: 'demo', busy: true, status: '正在查询待办', stats, turns: [{id: 'turn-1', user: '查一下我的待办，再添加一项：阅读 LoRA 论文。',
     reply: '你目前有 1 条待办：**读论文**。\n\n我已准备好“阅读 LoRA 论文”的新增请求，请核对后允许保存。', cards: [],
     trace: events.map(({details, ...item}) => item),
     actionRequests: [{id: 'request-1', status: 'pending', action: {kind: 'create_todo', todo: {title: '阅读 LoRA 论文', notes: '', dueDate: '', dueTime: '00:00', completed: false, reminderMinutes: -1}}}]}]}

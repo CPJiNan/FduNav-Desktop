@@ -58,6 +58,7 @@ export class AppDatabase {
             CREATE TABLE IF NOT EXISTS llm_usage (
                 id INTEGER PRIMARY KEY, username TEXT NOT NULL, turn_id TEXT NOT NULL,
                 model TEXT NOT NULL, prompt_tokens INTEGER, completion_tokens INTEGER,
+                cache_hit_tokens INTEGER, cache_miss_tokens INTEGER,
                 elapsed_ms INTEGER NOT NULL, created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS llm_usage_owner_time ON llm_usage (username, created_at);
@@ -148,6 +149,7 @@ export class AppDatabase {
             );
         `)
         this.db.exec('PRAGMA foreign_keys = ON;')
+        this.ensureUsageColumns()
         this.initializeSources()
     }
 
@@ -228,9 +230,37 @@ export class AppDatabase {
             .run(username, JSON.stringify(value))
     }
 
-    recordLlmUsage(username: string, turnId: string, model: string, usage: {promptTokens: number | null; completionTokens: number | null}, elapsedMs: number) {
-        this.db.prepare('INSERT INTO llm_usage (username, turn_id, model, prompt_tokens, completion_tokens, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .run(username, turnId, model, usage.promptTokens, usage.completionTokens, Math.round(elapsedMs), new Date().toISOString())
+    private ensureUsageColumns() {
+        const columns = new Set(this.db.prepare('PRAGMA table_info(llm_usage)').all().map(row => String(row.name)))
+        for (const column of ['cache_hit_tokens', 'cache_miss_tokens']) {
+            if (!columns.has(column)) this.db.exec(`ALTER TABLE llm_usage ADD COLUMN ${column} INTEGER`)
+        }
+    }
+
+    recordLlmUsage(username: string, turnId: string, model: string,
+                   usage: {promptTokens: number | null; completionTokens: number | null;
+                           cacheHitTokens?: number | null; cacheMissTokens?: number | null}, elapsedMs: number) {
+        this.db.prepare('INSERT INTO llm_usage (username, turn_id, model, prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(username, turnId, model, usage.promptTokens, usage.completionTokens,
+                usage.cacheHitTokens ?? null, usage.cacheMissTokens ?? null, Math.round(elapsedMs), new Date().toISOString())
+    }
+
+    /** Session-wide counters for the status bar; steps come from persisted tool traces. */
+    getChatStats(username: string) {
+        const usage = this.db.prepare(`SELECT COUNT(*) AS requests,
+                COALESCE(SUM(prompt_tokens), 0) AS prompt, COALESCE(SUM(completion_tokens), 0) AS completion,
+                COALESCE(SUM(cache_hit_tokens), 0) AS cache_hit, COALESCE(SUM(elapsed_ms), 0) AS elapsed
+            FROM llm_usage WHERE username = ?`).get(username)!
+        const last = this.db.prepare('SELECT prompt_tokens FROM llm_usage WHERE username = ? ORDER BY id DESC LIMIT 1').get(username)
+        const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND data LIKE '%\"kind\":\"tool\"%'").get(username)!
+        const saved = this.db.prepare('SELECT data FROM chat_conversations WHERE username = ?').get(username)
+        const turns = saved ? (JSON.parse(String(saved.data)) as unknown[]).length : 0
+        return {
+            turns, steps: Number(steps.n), requests: Number(usage.requests),
+            promptTokens: Number(usage.prompt), completionTokens: Number(usage.completion),
+            cacheHitTokens: Number(usage.cache_hit), elapsedMs: Number(usage.elapsed),
+            lastPromptTokens: last ? Number(last.prompt_tokens ?? 0) : 0
+        }
     }
 
     getUsage(username: string, now = new Date()): UsageSummary {

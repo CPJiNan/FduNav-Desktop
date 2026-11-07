@@ -10,6 +10,7 @@ import {Icon} from './Icon'
 import {ChatSummaryRequestCard} from './ChatSummaryRequestCard'
 import {ChatActionRequestCard} from './ChatActionRequestCard'
 import {ChatTracePanel} from './ChatTracePanel'
+import {ChatStatusBar} from './ChatStatusBar'
 import './styles/chat.css'
 import './styles/calendar.css'
 
@@ -323,11 +324,10 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                         {turn.error && <p className="chat-error" role="alert">{turn.error}</p>}
                     </article>
                 </div>)}
-                {state.busy &&
-                    <p className="chat-status" role="status"><span className="chat-status-dot"/>{state.status}…</p>}
             </div>
         </div>
         <footer className="chat-footer">
+            <ChatStatusBar stats={state.stats} busy={state.busy} status={state.status}/>
             {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
             {syncError && <p className="chat-error" role="alert">{syncError}</p>}
             {error && <p className="chat-error" role="alert">{error}</p>}

@@ -15,14 +15,14 @@ test('SSE assembles UTF8 text and indexed tool argument fragments; accepts usage
         onDelta: value => {text += value}, onUsage: value => {used = value}})
     assert.equal(text, '查询数学。'); assert.equal(result.tool_calls?.[0].function.name, 'list_todos')
     assert.deepEqual(JSON.parse(result.tool_calls![0].function.arguments), {query: '数学'})
-    assert.deepEqual(used, {promptTokens: 12, completionTokens: 6})
+    assert.deepEqual(used, {promptTokens: 12, completionTokens: 6, cacheHitTokens: null, cacheMissTokens: null})
 })
 test('retries 429/5xx before output only; bounded retries and null usage', async () => {
     let calls = 0, usage: unknown
     const result = await streamLlmWithTools(connection, [], [], new AbortController().signal, {delays: [0, 0],
         request: async () => ++calls < 3 ? new Response('', {status: calls === 1 ? 429 : 503}) : replyResponse(),
         onUsage: value => {usage = value}})
-    assert.equal(calls, 3); assert.ok(result.content); assert.deepEqual(usage, {promptTokens: null, completionTokens: null})
+    assert.equal(calls, 3); assert.ok(result.content); assert.deepEqual(usage, {promptTokens: null, completionTokens: null, cacheHitTokens: null, cacheMissTokens: null})
     calls = 0
     await assert.rejects(streamLlmWithTools(connection, [], [], new AbortController().signal, {delays: [0, 0], request: async () => {calls++; return new Response('', {status: 500})}}))
     assert.equal(calls, 3)

@@ -98,7 +98,24 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     return event ? {kind: 'event' as const, event} : {...card, deleted: true}
                 }),
             })),
-            busy: !!active, status: active?.status ?? ''
+            busy: !!active, status: active?.status ?? '',
+            stats: chatStats(user, active)
+        }
+    }
+
+    /** Session counters plus live turn timing for the status bar. */
+    function chatStats(user: string, active: RunningChat | undefined) {
+        const raw = db.getChatStats(user)
+        const total = raw.promptTokens + raw.completionTokens
+        const turn = active?.turns.at(-1)
+        return {
+            ...raw,
+            cacheHitRate: raw.promptTokens > 0 && raw.cacheHitTokens > 0
+                ? Math.min(1, raw.cacheHitTokens / raw.promptTokens) : null,
+            tokensPerSecond: raw.elapsedMs > 0 && total > 0
+                ? Math.round((total / (raw.elapsedMs / 1000)) * 10) / 10 : null,
+            contextPercent: Math.min(100, Math.round((raw.lastPromptTokens / 32000) * 100)),
+            turnElapsedMs: turn?.startedAt ? Date.now() - Date.parse(turn.startedAt) : 0
         }
     }
 
@@ -202,6 +219,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             let compacted = db.getCompaction(user)
             const history = compactTurns(uncompactedTurns(previous, compacted))
             if (history.older.length) {
+                active.status = '压缩上下文中'
                 const event = record('compaction', '压缩较早对话', {turnIds: history.older.map(item => item.id)}, 'running')
                 const compactStarted = performance.now()
                 persist(user, active); publish(user)
@@ -303,7 +321,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             for (let round = 0; round <= 8; round++) {
                 assertCurrent()
                 const final = round === 8 || calls >= 24 || JSON.stringify(context).length > 120000
-                active.status = final ? '正在整理已有结果' : '正在思考'
+                active.status = final ? '整理已有结果' : '思考中'
                 if (final) context.push({role: 'user', content: '本轮工具或上下文预算已耗尽。不要调用工具。请基于已有结果明确总结完成、待批准与未完成的部分，并说明下一步。'})
                 const availableTools = final ? [] : configuredChatTools(llm.get().toolDescriptions)
                 const event = record('model', final ? '汇总已有结果（不再调用工具）' : `模型调用 ${round + 1}`,
@@ -320,7 +338,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                             assertCurrent()
                             if (first && turn.reply) turn.reply += '\n\n'
                             first = false; turn.reply += delta
-                            active.status = '正在回复'
+                            active.status = '生成回复中'
                             if (performance.now() - lastPersist > 1000) {persist(user, active); lastPersist = performance.now()}
                             if (performance.now() - lastPublish > 80) {publish(user); lastPublish = performance.now()}
                         },
@@ -339,7 +357,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     assertCurrent()
                     const toolEvent = record('tool', chatToolLabels[call.function.name]?.replace(/^正在/, '') ?? call.function.name,
                         {callId: call.id, name: call.function.name, arguments: call.function.arguments}, 'running')
-                    active.status = chatToolLabels[call.function.name] ?? '正在处理'
+                    active.status = chatToolLabels[call.function.name] ?? '执行工具中'
                     persist(user, active); publish(user)
                     const started = performance.now()
                     let raw: unknown, result: import('../shared/agent').ToolResult
@@ -624,7 +642,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         }
         const active: RunningChat = {
             turns: [...load(user), turn],
-            status: '正在思考',
+            status: '思考中',
             controller: new AbortController()
         }
         persist(user, active)

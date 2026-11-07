@@ -51,11 +51,29 @@ export interface ChatTurn {
 export interface UsageTotals {promptTokens: number; completionTokens: number; elapsedMs: number; requests: number; missingUsage: number}
 export interface UsageSummary {today: UsageTotals; month: UsageTotals}
 
+export interface ChatStats {
+    turns: number
+    steps: number
+    requests: number
+    promptTokens: number
+    completionTokens: number
+    cacheHitTokens: number
+    elapsedMs: number
+    lastPromptTokens: number
+    /** 0-1, null when the provider reported no cache counters. */
+    cacheHitRate: number | null
+    tokensPerSecond: number | null
+    contextPercent: number
+    /** Elapsed time of the running turn, 0 when idle. */
+    turnElapsedMs: number
+}
+
 export interface ChatState {
     username: string
     turns: ChatTurn[]
     busy: boolean
     status: string
+    stats?: ChatStats
 }
 
 export interface ChatAPI {
