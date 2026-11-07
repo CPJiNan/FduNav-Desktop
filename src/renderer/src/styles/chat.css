@@ -531,3 +531,16 @@
 .chat-action-facts dd {margin: 0; overflow-wrap: anywhere;}
 .chat-action-title {font-weight: 400; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; max-width: 260px;}
+
+.chat-message-actions {display: flex; gap: 4px; margin-top: 4px; opacity: 0; transition: opacity .15s;}
+.chat-turn:hover .chat-message-actions,
+.chat-message-actions:focus-within {opacity: 1;}
+.chat-user-actions {justify-content: flex-end;}
+.chat-assistant-actions {justify-content: flex-start;}
+@media (hover: none) {.chat-message-actions {opacity: 1;}}
+.chat-message-action {border: 0; background: transparent; color: var(--color-text-muted);
+    font: inherit; font-size: 12px; line-height: 1.4; padding: 3px 8px; border-radius: 6px; cursor: pointer;}
+.chat-message-action:hover,
+.chat-message-action:focus-visible {background: var(--color-bg-hover); color: var(--color-text-primary);}
+.chat-edit-hint {display: flex; align-items: center; gap: 10px; margin: 0 0 8px;
+    font-size: var(--font-size-sm); color: var(--color-text-muted);}

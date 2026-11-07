@@ -110,6 +110,9 @@ export interface ChatAPI {
 
     send(text: string): Promise<Result<ChatState>>
 
+    /** Edit and resend the last turn after it failed. */
+    retry(turnId: string, text: string): Promise<Result<ChatState>>
+
     cancel(): Promise<Result<null>>
 
     clear(): Promise<Result<ChatState>>

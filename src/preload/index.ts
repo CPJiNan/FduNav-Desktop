@@ -49,6 +49,7 @@ const chat: ChatAPI = {
     usage: () => ipcRenderer.invoke('chat:usage'),
     undo: (turnId, requestId) => ipcRenderer.invoke('chat:undo', {turnId, requestId}),
     send: text => ipcRenderer.invoke('chat:send', text),
+    retry: (turnId, text) => ipcRenderer.invoke('chat:retry', {turnId, text}),
     cancel: () => ipcRenderer.invoke('chat:cancel'),
     clear: () => ipcRenderer.invoke('chat:clear'),
     decideSummary: (turnId, requestId, allow) => ipcRenderer.invoke('chat:decide-summary', {turnId, requestId, allow}),

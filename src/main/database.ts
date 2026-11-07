@@ -234,6 +234,13 @@ export class AppDatabase {
         this.db.prepare('DELETE FROM chat_trace_stats WHERE username = ?').run(username)
     }
 
+    removeChatTrace(username: string, turnId: string) {
+        this.db.prepare('DELETE FROM chat_traces WHERE username = ? AND turn_id = ?').run(username, turnId)
+        const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND kind = 'tool'").get(username)!
+        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps) VALUES (?, ?)
+            ON CONFLICT(username) DO UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
+    }
+
     /** Roll the trace so at most `keepTurns` turns stay stored, then resync the step counter. */
     pruneChatTrace(username: string, keepTurns = 50) {
         this.db.prepare(`DELETE FROM chat_traces WHERE username = ? AND turn_id NOT IN (

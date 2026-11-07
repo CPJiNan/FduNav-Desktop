@@ -906,3 +906,52 @@ test('a second consolidation scan is rejected while the first is running', async
         assert.equal(finished.ok, true, finished.error)
     } finally {h.restore()}
 })
+
+test('editing a failed message replaces it and resends the edited text', async () => {
+    const h = harness()
+    try {
+        globalThis.fetch = async () => new Response('bad request', {status: 400})
+        h.invoke('chat:send', '原始问题')
+        let turn = await h.finish()
+        assert.ok(turn.error, 'the turn fails')
+        const failedId = turn.id
+        assert.ok(h.invoke('chat:trace', failedId).ok, 'failed turn has a trace')
+
+        const requests = setModel([replyResponse('修改后的回答')])
+        const result = h.invoke('chat:retry', {turnId: failedId, text: '修改后的问题'}) as any
+        assert.equal(result.ok, true, result.error)
+        turn = await h.finish()
+        assert.equal(turn.user, '修改后的问题')
+        assert.notEqual(turn.id, failedId)
+        assert.equal(h.state().turns.length, 1, 'the failed turn is replaced, not appended')
+        assert.equal(h.invoke('chat:trace', failedId).ok, false, 'its trace is removed with it')
+        assert.ok(requests[0].messages.some((message: any) => message.content === '修改后的问题'))
+    } finally {h.restore()}
+})
+
+test('retry only accepts the last failed turn', async () => {
+    const h = harness()
+    try {
+        setModel([replyResponse('正常回答')])
+        h.invoke('chat:send', '正常问题')
+        const ok = await h.finish()
+        const notFailed = h.invoke('chat:retry', {turnId: ok.id, text: '改一下'}) as any
+        assert.equal(notFailed.ok, false)
+        assert.match(notFailed.error, /只有失败/)
+
+        globalThis.fetch = async () => new Response('bad request', {status: 400})
+        h.invoke('chat:send', '会失败的')
+        const failed = await h.finish()
+        assert.ok(failed.error)
+
+        setModel([replyResponse('第二条正常回答')])
+        h.invoke('chat:send', '后续问题')
+        await h.finish()
+        const stale = h.invoke('chat:retry', {turnId: failed.id, text: '补救'}) as any
+        assert.equal(stale.ok, false)
+        assert.match(stale.error, /最近一条/)
+
+        const empty = h.invoke('chat:retry', {turnId: failed.id, text: '   '}) as any
+        assert.equal(empty.ok, false)
+    } finally {h.restore()}
+})

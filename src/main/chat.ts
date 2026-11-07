@@ -1112,19 +1112,18 @@ function applyActionDecision(user: string, turnId: string, requestId: string, al
     })
 
     handle('chat:get', user => snapshot(user))
-    handle('chat:send', (user, input) => {
-        if (running.has(user)) throw new Error('请等待当前回复完成，或先停止回复。')
-        if (typeof input !== 'string' || !input.trim() || input.length > 8000) throw new Error('请输入 1–8000 个字符。')
+    /** Start a turn with an already validated user message; shared by send and retry. */
+    function startTurn(user: string, text: string) {
         llm.getRequestSignal()
         const settings = llm.get()
         if (!settings.baseUrl || !settings.model) throw new Error('请先在 LLM 设置中配置接口和模型。')
         const turn: StoredTurn = {
             id: randomUUID(),
             startedAt: new Date().toISOString(), trace: [],
-            user: input.trim(),
+            user: text,
             reply: '',
             cards: [],
-            context: [{role: 'user', content: input.trim()}]
+            context: [{role: 'user', content: text}]
         }
         const active: RunningChat = {
             turns: [...load(user), turn],
@@ -1138,6 +1137,36 @@ function applyActionDecision(user: string, turnId: string, requestId: string, al
         void run(user, active).catch(() => {
         })
         return snapshot(user)
+    }
+
+    handle('chat:send', (user, input) => {
+        if (running.has(user)) throw new Error('请等待当前回复完成，或先停止回复。')
+        if (typeof input !== 'string' || !input.trim() || input.length > 8000) throw new Error('请输入 1–8000 个字符。')
+        return startTurn(user, input.trim())
+    })
+    /** Edit-and-resend for the last turn, only when it failed. The failed turn is replaced. */
+    handle('chat:retry', (user, input) => {
+        if (running.has(user)) throw new Error('请等待当前回复完成，或先停止回复。')
+        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('重发参数无效。')
+        const {turnId, text} = input as Record<string, unknown>
+        if (typeof turnId !== 'string' || typeof text !== 'string' || !text.trim() || text.length > 8000) {
+            throw new Error('请输入 1–8000 个字符。')
+        }
+        const turns = load(user)
+        const index = turns.findIndex(turn => turn.id === turnId)
+        if (index < 0) throw new Error('这条消息不存在或已被清除。')
+        if (index !== turns.length - 1) throw new Error('只能编辑最近一条消息。')
+        if (!turns[index].error) throw new Error('只有失败的回复可以编辑重发。')
+        const remaining = turns.filter(turn => turn.id !== turnId)
+        db.transaction(() => {
+            // Replace the failed turn: its trace and any pending approvals go with it.
+            db.saveChatConversation(user, JSON.stringify(remaining.map(turn => serializeTurn(turn, false))))
+            db.removeChatTrace(user, turnId)
+            db.clearRunningTurn(user)
+            if (db.getCompaction(user)?.coversUpTo === turnId) db.saveCompaction(user, null)
+        })
+        publish(user)
+        return startTurn(user, text.trim())
     })
     handle('chat:cancel', user => {
         running.get(user)?.controller.abort('user');

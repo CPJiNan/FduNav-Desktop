@@ -12,6 +12,7 @@ import {ChatActionRequestCard} from './ChatActionRequestCard'
 import {ChatTracePanel} from './ChatTracePanel'
 import {ChatSessionTracePanel} from './ChatSessionTracePanel'
 import {ChatStatusBar} from './ChatStatusBar'
+import {CopyButton} from './MessageActions'
 import {TurnActivity} from './TurnActivity'
 import './styles/chat.css'
 import './styles/calendar.css'
@@ -44,6 +45,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const [decidingRequest, setDecidingRequest] = useState(false)
     const [confirmClear, setConfirmClear] = useState(false)
     const [traceTurnId, setTraceTurnId] = useState<string | null>(null)
+    const [editingTurnId, setEditingTurnId] = useState<string | null>(null)
     const [sessionTrace, setSessionTrace] = useState(false)
     const traceTrigger = useRef<HTMLElement | null>(null)
     const [editor, setEditor] = useState<CalendarOccurrence | null>(null)
@@ -126,12 +128,14 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         setConfirmClear(false);
         stickToBottom.current = true
         try {
-            const result = await window.chat.send(text)
+            // While editing a failed turn, re-send it instead of appending a new message.
+            const result = editingTurnId ? await window.chat.retry(editingTurnId, text) : await window.chat.send(text)
             if (!mounted.current) return
             if (!result.ok) setError(result.error)
             else {
                 setState(result.data);
-                setDraft('')
+                setDraft('');
+                setEditingTurnId(null)
             }
         } catch {
             if (mounted.current) setError('发送失败，请重试。')
@@ -141,6 +145,19 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                 input.current?.focus()
             }
         }
+    }
+
+    /** Put a failed message back into the composer so it can be fixed and resent. */
+    function startEdit(turn: {id: string; user: string}) {
+        setEditingTurnId(turn.id)
+        setDraft(turn.user)
+        setError('')
+        setTimeout(() => input.current?.focus(), 0)
+    }
+
+    function cancelEdit() {
+        setEditingTurnId(null)
+        input.current?.focus()
     }
 
     async function cancel() {
@@ -294,6 +311,11 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                 {state.turns.map(turn => <div className="chat-turn" key={turn.id}
                                             data-streaming={streaming(turn.id) || undefined}>
                     <article className="chat-user" aria-label="我的消息">{turn.user}</article>
+                    <div className="chat-message-actions chat-user-actions">
+                        <CopyButton text={turn.user} label="复制这条消息"/>
+                        {turn.error && turn.id === state.turns.at(-1)?.id && !busy &&
+                            <button type="button" className="chat-message-action" onClick={() => startEdit(turn)}>编辑并重发</button>}
+                    </div>
                     <article className="chat-assistant" aria-label="助手回复">
                         <TurnActivity trace={turn.trace} stage={streaming(turn.id) ? state.status : ''}
                                       busy={streaming(turn.id)}/>
@@ -352,6 +374,9 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                     onClick={() => openTrace(turn.id)}><Icon name="panel"/></button>
                         </div>}
                         {turn.error && <p className="chat-error" role="alert">{turn.error}</p>}
+                        {turn.reply && <div className="chat-message-actions chat-assistant-actions">
+                            <CopyButton text={turn.reply} label="复制回复"/>
+                        </div>}
                     </article>
                 </div>)}
             </div>
@@ -361,6 +386,10 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
             {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
             {syncError && <p className="chat-error" role="alert">{syncError}</p>}
             {error && <p className="chat-error" role="alert">{error}</p>}
+            {editingTurnId && <div className="chat-edit-hint" role="status">
+                <span>正在编辑最近一条失败消息，发送后会替换它。</span>
+                <button type="button" className="secondary-button" onClick={cancelEdit}>取消编辑</button>
+            </div>}
             <form className="chat-composer" onSubmit={event => void send(event)}>
                 <textarea ref={input} value={draft} maxLength={8000} rows={2} aria-label="聊天消息"
                           placeholder="发送消息…"
@@ -373,7 +402,8 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                 <div className="chat-composer-actions">
                     {state.busy ? <button type="button" className="icon-button" title="停止回复" aria-label="停止回复"
                                           onClick={() => void cancel()}><Icon name="stop"/></button> :
-                        <button type="submit" className="icon-button chat-send" title="发送" aria-label="发送"
+                        <button type="submit" className="icon-button chat-send" title={editingTurnId ? '重新发送' : '发送'}
+                                aria-label={editingTurnId ? '重新发送' : '发送'}
                                 disabled={busy || loading || syncing || !draft.trim()}><Icon name="send"/></button>}
                 </div>
             </form>
