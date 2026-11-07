@@ -1,12 +1,13 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {toolSuccess, toolFailure, ToolError, maxToolResultChars, redactTrace} from '../src/shared/agent.ts'
-import {validateMemory, selectMemories, type Memory} from '../src/shared/memory.ts'
-import {compactTurns, compactionChunks, validateCompaction, parseSummary} from '../src/main/chat-context.ts'
+import {validateMemory, selectMemories, memoryLine, memoryLineBudget, type Memory} from '../src/shared/memory.ts'
+import {compactTurns, compactionChunks, extractCompactionMemories, foldToolMessages, foldedToolResult, validateCompaction, parseSummary} from '../src/main/chat-context.ts'
 import {AppDatabase} from '../src/main/database.ts'
 import {chatTools, createChatToolRunner} from '../src/main/chat-tools.ts'
 import {defaultToolDescriptions} from '../src/shared/llm-prompts.ts'
 import {readUsage} from '../src/main/llm-stream.ts'
+import {abortError, awaitWithAbort} from '../src/main/abortable.ts'
 
 const budget = {rounds: 3, calls: 10}
 test('tool envelope retains small data, bounds oversized result and identifies failure', () => {
@@ -33,13 +34,16 @@ test('memory validates input and rejects missing evidence, NaN and bad expiry', 
         assert.equal(validateMemory({...memory('a'), ...patch}).ok, false)
     }
 })
-test('memory selection excludes archived/expired, ranks pins, caps exact injected JSON', () => {
+test('memory selection excludes archived/expired, ranks pins, caps injected lines', () => {
     const items = [memory('old', {updatedAt: '2025-01-01T00:00:00Z'}), memory('expired', {expiresAt: '2026-01-01T00:00:00Z'}),
         memory('archived', {status: 'archived'}), memory('pinned', {pinned: true}), ...Array.from({length: 30}, (_, i) => memory(String(i)))]
     const selected = selectMemories(items, '数学', Date.parse('2026-11-07T01:00:00Z'))
     assert.equal(selected[0].id, 'pinned'); assert.ok(!selected.some(item => ['expired', 'archived'].includes(item.id)))
-    assert.ok(JSON.stringify(selected).length <= 1200); assert.ok(selected.filter(item => !item.pinned).length <= 8)
+    assert.ok(selected.map(memoryLine).join('\n').length <= memoryLineBudget)
+    assert.ok(selected.filter(item => !item.pinned).length <= 8)
     assert.deepEqual(selectMemories([items[0]], '无关', Date.parse('2026-11-07T01:00:00Z')), [])
+    // Recency alone is not relevance: a fresh but unrelated memory stays out of the prompt.
+    assert.deepEqual(selectMemories([memory('fresh', {updatedAt: '2026-11-07T00:30:00Z'})], '无关', Date.parse('2026-11-07T01:00:00Z')), [])
 })
 test('context planning keeps full turns including paired tool messages, handles oversized single turn', () => {
     assert.deepEqual(compactTurns([]), {older: [], recent: []})
@@ -270,4 +274,78 @@ test('trace steps are counted incrementally instead of scanning data with LIKE',
         db.clearChatTrace('alice')
         assert.equal(db.getChatStats('alice').steps, 0)
     } finally {db.close()}
+})
+
+test('recall supports offset/limit pagination like other list tools', async () => {
+    const db = new AppDatabase(':memory:')
+    db.setMemoryEnabled('alice', true)
+    for (let i = 0; i < 7; i++) db.saveMemory('alice', memory(`id-${i}`, {text: `记忆${i} 数学`}))
+    const run = createChatToolRunner(db, 'alice', {list: () => ({items: []}), detail: async () => ({content: ''})} as never,
+        () => {}, () => {}, () => ({}), () => ({}))
+    try {
+        const first = await run('recall', JSON.stringify({query: '数学', limit: 3})) as {total: number; hasMore: boolean; items: unknown[]}
+        assert.equal(first.total, 7); assert.equal(first.items.length, 3); assert.equal(first.hasMore, true)
+        const second = await run('recall', JSON.stringify({query: '数学', limit: 3, offset: 6})) as {hasMore: boolean; items: unknown[]}
+        assert.equal(second.items.length, 1); assert.equal(second.hasMore, false)
+        await assert.rejects(run('recall', JSON.stringify({limit: 11})), {code: 'invalid_args'})
+    } finally {db.close()}
+})
+
+test('one malformed compaction memory candidate does not discard valid siblings', () => {
+    const raw = JSON.stringify({facts: [], actions: [], pending: [], preferences: [], memories: [
+        {kind: 'fact', text: '', evidence: 'x', confidence: 1, expiresAt: null},
+        {kind: 'fact', text: '用户主修数学', evidence: '我喜欢数学', confidence: 1, expiresAt: null},
+    ]})
+    const accepted = extractCompactionMemories(raw, ['我喜欢数学'])
+    assert.deepEqual(accepted.map(item => item.text), ['用户主修数学'])
+})
+
+test('compaction budget counts content, not the JSON skeleton', () => {
+    const line = '字'.repeat(10)
+    const many = {facts: Array.from({length: 150}, () => line), actions: [], pending: [], preferences: []}
+    const summary = validateCompaction(JSON.stringify(many))
+    assert.ok(summary.length > 1600, 'serialized JSON is larger than the budget')
+    const tooMuch = {...many, facts: Array.from({length: 161}, () => line)}
+    assert.throws(() => validateCompaction(JSON.stringify(tooMuch)), /1600/)
+})
+
+test('aborted work rejects with an Error so instanceof and message checks work', async () => {
+    assert.equal(abortError('user').message, 'user')
+    assert.ok(abortError(undefined) instanceof Error)
+    const controller = new AbortController()
+    const pending = awaitWithAbort(new Promise(() => {}), controller.signal)
+    controller.abort('user')
+    await assert.rejects(pending, (error: any) => error instanceof Error && error.message === 'user')
+})
+
+test('clearing usage and pruning the trace keep session counters consistent', () => {
+    const db = new AppDatabase(':memory:')
+    try {
+        db.recordLlmUsage('alice', 'turn', 'model', {promptTokens: 10, completionTokens: 5}, 10)
+        assert.equal(db.getUsage('alice').today.requests, 1)
+        db.clearLlmUsage('alice')
+        assert.equal(db.getUsage('alice').today.requests, 0)
+        for (let i = 0; i < 55; i++) db.saveChatTrace('alice', `turn-${i}`, [
+            {id: `event-${i}`, kind: 'tool', label: '工具', at: `2026-11-07T00:${String(i).padStart(2, '0')}:00Z`, status: 'completed'},
+        ])
+        db.pruneChatTrace('alice', 50)
+        const remaining = db.getChatStats('alice').steps
+        assert.equal(remaining, 50)
+        assert.equal(db.getChatTrace('alice', 'turn-0').length, 0, 'the oldest turn is rolled out')
+        assert.equal(db.getChatTrace('alice', 'turn-54').length, 1, 'the newest turn is kept')
+    } finally {db.close()}
+})
+
+test('old tool results fold to a placeholder while tool_call ids stay paired', () => {
+    const call = (id: string) => ({role: 'assistant' as const, content: null,
+        tool_calls: [{id, type: 'function' as const, function: {name: 'x', arguments: '{}'}}]})
+    const messages = [call('a'), {role: 'tool' as const, tool_call_id: 'a', content: 'x'.repeat(9000)},
+        call('b'), {role: 'tool' as const, tool_call_id: 'b', content: 'y'.repeat(9000)},
+        {role: 'tool' as const, tool_call_id: 'c', content: 'z'}]
+    const folded = foldToolMessages(messages, 2)
+    assert.equal(folded[1].content, foldedToolResult)
+    assert.equal((folded[1] as {tool_call_id: string}).tool_call_id, 'a')
+    assert.equal(folded[3].content, 'y'.repeat(9000))
+    assert.equal(folded[4].content, 'z')
+    assert.equal((messages[1] as {content: string}).content.length, 9000, 'the stored turn is not mutated')
 })

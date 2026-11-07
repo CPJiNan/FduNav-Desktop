@@ -12,7 +12,6 @@ export function ChatTracePanel({turn, onClose}: {turn: ChatTurn; onClose: () => 
     const [loading, setLoading] = useState(true)
     const [reload, setReload] = useState(0)
     const close = useRef<HTMLButtonElement>(null)
-    const revision = (turn.trace ?? []).map(item => `${item.id}:${item.status}`).join('|')
     useEffect(() => {close.current?.focus()}, [])
     useEffect(() => {
         if (!window.chat) {setError('聊天服务未加载，请重启应用。'); setLoading(false); return}
@@ -25,7 +24,9 @@ export function ChatTracePanel({turn, onClose}: {turn: ChatTurn; onClose: () => 
         }).catch(() => {if (active) setError('无法读取执行记录，请重试。')})
             .finally(() => {if (active) setLoading(false)})
         return () => {active = false}
-    }, [turn.id, revision, reload])
+        // Reload when the panel opens and when the turn finishes; per-event churn would refetch
+        // the whole trace every time a step changes status.
+    }, [turn.id, turn.finishedAt, reload])
     const shown = events.filter(item => filter === 'all' || (filter === 'failed' ? item.status === 'failed' || item.status === 'cancelled' : item.kind === 'tool'))
     return <aside id="chat-trace-panel" className="chat-trace" aria-label="执行记录" onKeyDown={event => {
         if (event.key === 'Escape') {event.stopPropagation(); onClose()}

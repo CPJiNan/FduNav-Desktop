@@ -555,3 +555,96 @@ test('session trace lists metadata only and loads details per event on demand', 
         assert.equal('messages' in modelDetail.details, false)
     } finally {h.restore()}
 })
+
+test('forget ignores edits to non-text fields but refuses a changed memory text', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const seed = {kind: 'preference' as const, text: '用户偏好数学', evidence: '我喜欢数学', confidence: 1, pinned: true,
+            expiresAt: null, status: 'active' as const, id: 'abcdef12-3456-7890-abcd-ef1234567890',
+            createdAt: '2026-11-07T00:00:00Z', updatedAt: '2026-11-07T00:00:00Z'}
+        h.db.saveMemory('alice', seed)
+        setModel([callResponse('forget', {id: seed.id}), replyResponse('请允许删除。')])
+        h.invoke('chat:send', '忘记这个偏好')
+        let turn = await h.finish()
+        let request = turn.actionRequests![0]
+        // Editing only pin state must not invalidate the approval card.
+        h.db.saveMemory('alice', {...h.db.getMemories('alice')[0], pinned: false})
+        h.invoke('chat:decide-action', {turnId: turn.id, requestId: request.id, allow: true})
+        assert.equal(h.db.getMemories('alice').length, 0)
+
+        h.db.saveMemory('alice', seed)
+        setModel([callResponse('forget', {id: seed.id}), replyResponse('请允许删除。')])
+        h.invoke('chat:send', '再忘记一次')
+        turn = await h.finish(); request = turn.actionRequests![0]
+        h.db.saveMemory('alice', {...h.db.getMemories('alice')[0], text: '用户偏好物理'})
+        h.invoke('chat:decide-action', {turnId: turn.id, requestId: request.id, allow: true})
+        const failed = h.state().turns.at(-1)!.actionRequests![0]
+        assert.equal(failed.status, 'failed')
+        assert.match(failed.error!, /记忆内容已变化/)
+        assert.equal(h.db.getMemories('alice').length, 1)
+    } finally {h.restore()}
+})
+
+test('older turns fold their tool results before being replayed to the model', async () => {
+    const h = harness()
+    try {
+        const turns = [0, 1, 2].map(i => ({id: `t${i}`, user: `问题${i}`, reply: 'a', cards: [], context: [
+            {role: 'user', content: `问题${i}`},
+            {role: 'assistant', content: null, tool_calls: [{id: `c${i}`, type: 'function', function: {name: 'list_todos', arguments: '{}'}}]},
+            {role: 'tool', tool_call_id: `c${i}`, content: JSON.stringify({ok: true, data: {big: 'x'.repeat(5000)}})},
+            {role: 'assistant', content: '答'},
+        ]}))
+        h.db.saveChatConversation('alice', JSON.stringify(turns))
+        const requests = setModel([replyResponse('新回答')])
+        h.invoke('chat:send', '再问')
+        await h.finish()
+        const tools = requests[0].messages.filter((message: any) => message.role === 'tool')
+        assert.ok(tools[0].content.includes('已折叠'), 'the oldest turn folds')
+        assert.ok(tools.at(-1).content.includes('"big"'), 'the newest turn keeps the original')
+    } finally {h.restore()}
+})
+
+test('a single turn folds older tool results once the in-turn budget is exceeded', async () => {
+    const h = harness()
+    try {
+        h.notices.detail = async () => ({content: 'x'.repeat(11000)})
+        const responses = [callResponse('search_notices', {})]
+        for (let i = 0; i < 6; i++) responses.push(callResponse('get_notice',
+            {sourceId: h.notice.sourceId, url: h.notice.url}, `n-${i}`))
+        responses.push(replyResponse('完成'))
+        const requests = setModel(responses)
+        h.invoke('chat:send', '读六次通知')
+        const turn = await h.finish()
+        assert.equal(turn.error, undefined)
+        const tools = requests.at(-1).messages.filter((message: any) => message.role === 'tool')
+        assert.ok(tools.some((message: any) => message.content.includes('已折叠')), 'older results fold within the turn')
+        assert.ok(tools.slice(-2).every((message: any) => !message.content.includes('已折叠')), 'the newest results stay verbatim')
+    } finally {h.restore()}
+})
+
+test('approvals clicked while streaming are queued and applied after the turn ends', async () => {
+    const h = harness()
+    try {
+        let release: (() => void) | undefined
+        let call = 0
+        globalThis.fetch = async () => {
+            call++
+            if (call === 1) return callResponse('create_todo', {title: '排队待办'})
+            return new Promise<Response>(resolve => {release = () => resolve(replyResponse('请允许。'))})
+        }
+        h.invoke('chat:send', '创建待办')
+        const until = Date.now() + 1000
+        while ((!h.state().turns.at(-1)?.actionRequests?.length || !release) && Date.now() < until) {
+            await new Promise(resolve => setTimeout(resolve, 5))
+        }
+        const turn = h.state().turns.at(-1)!
+        const request = turn.actionRequests![0]
+        const result = h.invoke('chat:decide-action', {turnId: turn.id, requestId: request.id, allow: true})
+        assert.equal(result.ok, true, 'the click is queued instead of rejected while streaming')
+        assert.equal(h.db.getTodos('alice').length, 0, 'nothing is written before the turn ends')
+        release!()
+        await h.finish()
+        assert.equal(h.db.getTodos('alice').length, 1, 'the queued approval runs once the turn ends')
+    } finally {h.restore()}
+})

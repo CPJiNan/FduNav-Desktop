@@ -38,21 +38,27 @@ export const memoryShortId = (id: string) => id.slice(0, 8)
 export const memoryLine = (item: Pick<Memory, 'id' | 'kind' | 'text'>) => `- [${item.kind}] ${item.text} #${memoryShortId(item.id)}`
 /** Model-facing memory record shared by recall and forget. */
 export const presentMemory = (item: Memory) => ({id: memoryShortId(item.id), kind: item.kind, text: item.text})
-/** Character budget applies to the exact JSON injected, including metadata. */
+/** Budget for the compact lines actually injected; stored records are never sent. */
+export const memoryLineBudget = 1200
+/**
+ * Only pinned or keyword-matched memories are injected: recency alone is not relevance, and a
+ * memory last edited within 30 days used to be pushed even for unrelated questions.
+ */
 export function selectMemories(items: Memory[], query: string, now = Date.now()): Memory[] {
     const phrases = query.toLocaleLowerCase().match(/[a-z0-9_]+|[\p{Script=Han}]+/gu) ?? []
     const words = [...new Set(phrases.flatMap(word => /^[\p{Script=Han}]+$/u.test(word) && word.length > 2
         ? Array.from({length: word.length - 1}, (_, index) => word.slice(index, index + 2)) : [word]))]
     const active = items.filter(item => item.status === 'active' && (!item.expiresAt || Date.parse(item.expiresAt) > now))
     const score = (item: Memory) => words.filter(word => item.text.toLocaleLowerCase().includes(word)).length
-    const sorted = active.filter(item => item.pinned || score(item) > 0 || now - Date.parse(item.updatedAt) < 30 * 86400000)
+    const sorted = active.filter(item => item.pinned || score(item) > 0)
         .sort((a, b) => Number(b.pinned) - Number(a.pinned) || score(b) - score(a) || b.confidence - a.confidence || b.updatedAt.localeCompare(a.updatedAt))
     const selected: Memory[] = []
-    let unpinned = 0
+    let unpinned = 0, chars = 0
     for (const item of sorted) {
         if (!item.pinned && unpinned >= 8) continue
-        if (JSON.stringify([...selected, item]).length > 1200) continue
-        selected.push(item)
+        const line = memoryLine(item).length + 1
+        if (chars + line > memoryLineBudget) continue
+        selected.push(item); chars += line
         if (!item.pinned) unpinned++
     }
     return selected

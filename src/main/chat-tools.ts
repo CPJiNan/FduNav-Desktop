@@ -42,7 +42,7 @@ function tool(name: ChatToolName, properties: Fields, required: string[] = []): 
 }
 
 export const chatTools: ChatTool[] = [
-    tool('recall', {query: str('记忆关键词，可留空')}),
+    tool('recall', {query: str('记忆关键词，可留空'), ...pagination}),
     tool('remember', {kind: {type: 'string', enum: ['fact', 'preference', 'event']}, text: str('长期事实或偏好，最多 600 字'),
         evidence: str('用户明确陈述的原话与上下文，不得猜测'),
         confidence: {type: 'number', minimum: 0, maximum: 1, description: '0–1，省略按 0.6 处理'},
@@ -224,7 +224,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             if (name === 'recall') {
                 const query = textArg(input, 'query').toLocaleLowerCase()
                 const result = page(db.getMemories(username).filter(item => item.status === 'active' &&
-                    (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()) && item.text.toLocaleLowerCase().includes(query)), {})
+                    (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()) && item.text.toLocaleLowerCase().includes(query)), input)
                 return {...result, items: result.items.map(presentMemory)}
             }
             if (name === 'forget') {

@@ -10,6 +10,28 @@ export const recentTurns = 4
 export const compactThreshold = 12
 /** Character cap for one compaction request; older turns are folded in several chunks. */
 export const compactionChunkChars = 24000
+/** Placeholder for a tool result that was dropped from the prompt (the trace keeps the original). */
+export const foldedToolResult = JSON.stringify({ok: true, data: {folded: true,
+    note: '较早的工具结果已折叠以节省上下文；需要时请重新查询，原文可在执行记录中查看。'}})
+
+/**
+ * Replace older tool results with a short placeholder, keeping the last `keep` verbatim and every
+ * tool_call_id intact so the assistant/tool pairing stays valid. Mutates only when `inPlace` is set.
+ */
+export function foldToolMessages(messages: ToolChatMessage[], keep = 2, inPlace = false): ToolChatMessage[] {
+    const tools: number[] = []
+    messages.forEach((message, index) => {if (message.role === 'tool') tools.push(index)})
+    const folded = new Set(tools.slice(0, Math.max(0, tools.length - keep)))
+    return messages.map((message, index) => {
+        if (!folded.has(index)) return message
+        if (inPlace) {
+            (message as {content: string}).content = foldedToolResult
+            return message
+        }
+        return {...message, content: foldedToolResult}
+    })
+}
+
 /** Split compaction input on turn boundaries so a single request stays within the model window. */
 export function compactionChunks(turns: ContextTurn[]): ContextTurn[][] {
     const chunks: ContextTurn[][] = []
@@ -61,9 +83,13 @@ export function validateCompaction(raw: string): string {
         if (!Array.isArray(record.memories)) throw new Error('摘要记忆候选格式无效。')
         summary.memories = record.memories
     }
-    const result = JSON.stringify(summary)
-    if (result.length > 1600) throw new Error('摘要超过 1600 字符。')
-    return result
+    // The budget applies to the text the model reads, not to the JSON skeleton around it.
+    const contentChars = summaryKeys.reduce((total, key) => total +
+        (summary[key] as string[]).reduce((count, item) => count + item.length, 0), 0) +
+        (Array.isArray(summary.memories) ? (summary.memories as Array<{text?: unknown}>).reduce((count, item) =>
+            count + (typeof item?.text === 'string' ? item.text.length : 0), 0) : 0)
+    if (contentChars > 1600) throw new Error('摘要超过 1600 字符。')
+    return JSON.stringify(summary)
 }
 
 /**
@@ -88,10 +114,13 @@ export function extractCompactionMemories(summary: string, userMessages: string[
     const raw = JSON.parse(summary).memories
     if (raw === undefined) return []
     if (!Array.isArray(raw) || raw.length > 3) throw new Error('摘要记忆候选格式无效。')
-    return raw.map(item => {
+    const accepted: MemoryInput[] = []
+    for (const item of raw) {
+        // Per-candidate isolation: one malformed proposal must not discard its valid siblings.
         const result = validateMemory({...item, status: 'active', pinned: false})
-        if (!result.ok) throw new Error(result.error)
-        if (!userMessages.some(text => text.includes(result.data.evidence))) throw new Error('记忆依据不在用户原话中。')
-        return result.data
-    })
+        if (!result.ok) continue
+        if (!userMessages.some(text => text.includes(result.data.evidence))) continue
+        accepted.push(result.data)
+    }
+    return accepted
 }

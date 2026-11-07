@@ -211,6 +211,16 @@ export class AppDatabase {
         this.db.prepare('DELETE FROM chat_trace_stats WHERE username = ?').run(username)
     }
 
+    /** Roll the trace so at most `keepTurns` turns stay stored, then resync the step counter. */
+    pruneChatTrace(username: string, keepTurns = 50) {
+        this.db.prepare(`DELETE FROM chat_traces WHERE username = ? AND turn_id NOT IN (
+            SELECT turn_id FROM (SELECT turn_id, MAX(rowid) AS last FROM chat_traces WHERE username = ?
+                GROUP BY turn_id ORDER BY last DESC LIMIT ?))`).run(username, username, keepTurns)
+        const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND kind = 'tool'").get(username)!
+        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps) VALUES (?, ?)
+            ON CONFLICT(username) DO UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
+    }
+
     /** The turn currently streaming, persisted on its own so a crash keeps only the increment. */
     saveRunningTurn(username: string, turnId: string, position: number, data: string) {
         this.db.prepare(`INSERT INTO chat_running_turns (username, turn_id, position, data) VALUES (?, ?, ?, ?)
@@ -293,6 +303,10 @@ export class AppDatabase {
         for (const column of ['cache_hit_tokens', 'cache_miss_tokens']) {
             if (!columns.has(column)) this.db.exec(`ALTER TABLE llm_usage ADD COLUMN ${column} INTEGER`)
         }
+    }
+
+    clearLlmUsage(username: string) {
+        this.db.prepare('DELETE FROM llm_usage WHERE username = ?').run(username)
     }
 
     recordLlmUsage(username: string, turnId: string, model: string,

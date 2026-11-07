@@ -1,4 +1,5 @@
 import type {ChatTool, Connection, ToolCall, ToolChatMessage} from './llm-connection'
+import {abortError} from './abortable'
 
 export interface LlmUsage {promptTokens: number | null; completionTokens: number | null; cacheHitTokens: number | null; cacheMissTokens: number | null}
 export interface StreamOptions {
@@ -40,7 +41,7 @@ export function validateAssistant(content: unknown, calls: unknown): Extract<Too
 function wait(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
         signal.throwIfAborted()
-        const abort = () => {clearTimeout(timer); reject(signal.reason)}
+        const abort = () => {clearTimeout(timer); reject(abortError(signal.reason))}
         const timer = setTimeout(() => {signal.removeEventListener('abort', abort); resolve()}, ms)
         signal.addEventListener('abort', abort, {once: true})
     })
@@ -96,7 +97,7 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
                 break
             } catch (error) {
                 enabledSignal.throwIfAborted()
-                if (controller.signal.aborted) throw controller.signal.reason
+                if (controller.signal.aborted) throw abortError(controller.signal.reason)
                 const transient = error instanceof TypeError || (error instanceof HttpError && (error.status === 429 || error.status >= 500))
                 if (!transient || attempts >= delays.length) throw error
                 clearTimeout(idle)
@@ -200,7 +201,7 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
             return validateAssistant(content || null, ordered.map(([, call]) => call))
         } catch (error) {
             options.onPartialResponse?.({content, tool_calls: [...calls.values()], finishReason, responseTail: buffer.slice(-2000)})
-            if (signal.aborted) throw signal.reason
+            if (signal.aborted) throw abortError(signal.reason)
             throw error
         } finally {
             signal.removeEventListener('abort', stopReading)
