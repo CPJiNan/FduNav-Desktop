@@ -1,3 +1,5 @@
+import {ToolError} from '../shared/agent'
+import {validateMemory} from '../shared/memory'
 import {type ChatToolName, defaultToolDescriptions} from '../shared/llm-prompts'
 import {
     calendarDate,
@@ -40,6 +42,12 @@ function tool(name: ChatToolName, properties: Fields, required: string[] = []): 
 }
 
 export const chatTools: ChatTool[] = [
+    tool('recall', {query: str('记忆关键词，可留空')}),
+    tool('remember', {kind: {type: 'string', enum: ['fact', 'preference', 'event']}, text: str('长期事实或偏好，最多 600 字'),
+        evidence: str('用户明确陈述的原话与上下文，不得猜测'), confidence: {type: 'number', minimum: 0, maximum: 1},
+        pinned: {type: 'boolean'}, expiresAt: {type: ['string', 'null'], description: 'ISO 到期时间，或 null'}},
+        ['kind', 'text', 'evidence', 'confidence', 'pinned', 'expiresAt']),
+    tool('forget', {id: str('记忆 ID，必须来自 recall')}, ['id']),
     tool('search_notices', {
         query: str('标题或来源关键词，空字符串查询最新通知'), sourceId: str('可选来源 ID'),
         from: str('最早发布日期 YYYY-MM-DD'), to: str('最晚发布日期 YYYY-MM-DD'),
@@ -68,12 +76,13 @@ export function configuredChatTools(descriptions: Record<ChatToolName, string>):
     return chatTools.map(item => ({
         ...item, function: {
             ...item.function,
-            description: descriptions[item.function.name as ChatToolName],
+            description: descriptions[item.function.name as ChatToolName] ?? item.function.description,
         }
     }))
 }
 
 export const chatToolLabels: Record<string, string> = {
+    remember: '正在请求保存记忆', recall: '正在查询记忆', forget: '正在请求删除记忆',
     search_notices: '正在检索通知', get_notice: '正在读取通知',
     generate_notice_summary: '正在请求通知摘要',
     list_events: '正在获取日程', get_event: '正在读取日程', create_event: '正在请求新增日程',
@@ -83,20 +92,20 @@ export const chatToolLabels: Record<string, string> = {
 function textArg(args: Fields, key: string, required = false, max = 500): string {
     const value = args[key]
     if (value === undefined && !required) return ''
-    if (typeof value !== 'string' || value.length > max || (required && !value.trim())) throw new Error(`${key} 参数无效。`)
+    if (typeof value !== 'string' || value.length > max || (required && !value.trim())) throw new ToolError('invalid_args', `${key} 参数无效。`)
     return value.trim()
 }
 
 function range(args: Fields) {
     const from = textArg(args, 'from'), to = textArg(args, 'to')
-    if ((from && !calendarDate(from)) || (to && !calendarDate(to)) || (from && to && from > to)) throw new Error('日期范围无效。')
+    if ((from && !calendarDate(from)) || (to && !calendarDate(to)) || (from && to && from > to)) throw new ToolError('invalid_args', '日期范围无效。')
     return {from, to}
 }
 
 function page<T>(items: T[], args: Fields) {
     const offset = args.offset ?? 0, limit = args.limit ?? 5
     if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 ||
-        typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error('分页参数无效。')
+        typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 10) throw new ToolError('invalid_args', '分页参数无效。')
     return {total: items.length, items: items.slice(offset, offset + limit), hasMore: offset + limit < items.length}
 }
 
@@ -119,17 +128,18 @@ export function createChatToolRunner(db: AppDatabase, username: string,
     function knownNotice(args: Fields) {
         const sourceId = textArg(args, 'sourceId', true), url = textArg(args, 'url', true, 2048)
         const notice = notices.list().items.find(item => item.sourceId === sourceId && item.url === url)
-        if (!notice || !seenNotices.has(noticeKey(notice))) throw new Error('请先检索这条通知，再进行读取或摘要。')
+        if (!notice) throw new ToolError('not_found', '通知不存在或来源已停用。')
+        if (!seenNotices.has(noticeKey(notice))) throw new ToolError('forbidden', '请先检索这条通知，再进行读取或摘要。')
         return notice
     }
 
     function getEvent(args: Fields) {
         const id = textArg(args, 'id', true)
-        if (id.startsWith('course:')) throw new Error('课表课程只读，请使用日程查询获取课程安排，不能修改或删除。')
+        if (id.startsWith('course:')) throw new ToolError('invalid_args', '课表课程只读，请使用日程查询获取课程安排，不能修改或删除。')
         const event = db.getCalendarEvents(username).find(item => item.id === id)
         if (!event) {
-            if (db.getTodo(username, id)) throw new Error('该 ID 属于待办，不能使用日程工具操作。请使用待办查询工具。')
-            throw new Error('日程不存在或已被删除。')
+            if (db.getTodo(username, id)) throw new ToolError('invalid_args', '该 ID 属于待办，不能使用日程工具操作。请使用待办查询工具。')
+            throw new ToolError('not_found', '日程不存在或已被删除。')
         }
         return event
     }
@@ -137,16 +147,42 @@ export function createChatToolRunner(db: AppDatabase, username: string,
     return async (name: string, raw: string): Promise<unknown> => {
         assertCurrent()
         const schema = chatTools.find(item => item.function.name === name)?.function.parameters
-        if (!schema) throw new Error('不支持的工具。')
-        const args: unknown = JSON.parse(raw)
-        if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('工具参数必须是对象。')
+        if (!schema) throw new ToolError('forbidden', '不支持的工具。')
+        let args: unknown
+        try {args = JSON.parse(raw)} catch {throw new ToolError('invalid_args', '工具参数不是有效 JSON。')}
+        if (!args || typeof args !== 'object' || Array.isArray(args)) throw new ToolError('invalid_args', '工具参数必须是对象。')
         const input = args as Fields
         const properties = schema.properties as Fields
-        if (Object.keys(input).some(key => !Object.hasOwn(properties, key)) || (schema.required as string[]).some(key => !Object.hasOwn(input, key))) throw new Error('工具参数缺失或包含未知字段。')
+        if (Object.keys(input).some(key => !Object.hasOwn(properties, key)) || (schema.required as string[]).some(key => !Object.hasOwn(input, key))) throw new ToolError('invalid_args', '工具参数缺失或包含未知字段。')
+        for (const [key, value] of Object.entries(input)) {
+            const rule = properties[key] as {type?: string | string[]; enum?: unknown[]; minimum?: number; maximum?: number}
+            const types = Array.isArray(rule.type) ? rule.type : [rule.type]
+            const valid = types.some(type => type === 'null' ? value === null : type === 'integer' ? Number.isSafeInteger(value) : typeof value === type)
+            if (!valid || (rule.enum && !rule.enum.includes(value)) ||
+                (typeof value === 'number' && (!Number.isFinite(value) || (rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)))) {
+                throw new ToolError('invalid_args', `${key} 参数类型或范围无效。`)
+            }
+        }
+        if (name === 'recall' || name === 'remember' || name === 'forget') {
+            if (!db.getMemoryEnabled(username)) throw new ToolError('forbidden', '记忆已关闭，可在设置中管理。')
+            if (name === 'recall') {
+                const query = textArg(input, 'query').toLocaleLowerCase()
+                return page(db.getMemories(username).filter(item => item.status === 'active' &&
+                    (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()) && item.text.toLocaleLowerCase().includes(query)), {})
+            }
+            if (name === 'forget') {
+                const memory = db.getMemories(username).find(item => item.id === textArg(input, 'id', true))
+                if (!memory) throw new ToolError('not_found', '记忆不存在。')
+                return requestAction({kind: 'forget', memory})
+            }
+            const result = validateMemory({...input, status: 'active'})
+            if (!result.ok) throw new ToolError('invalid_args', result.error)
+            return requestAction({kind: 'remember', memory: result.data})
+        }
         if (name === 'search_notices') {
             const words = textArg(input, 'query').toLocaleLowerCase().split(/\s+/).filter(Boolean)
             const sourceId = textArg(input, 'sourceId'), {from, to} = range(input)
-            if (input.relevance !== undefined && !['related', 'maybe', 'none'].includes(String(input.relevance))) throw new Error('相关性参数无效。')
+            if (input.relevance !== undefined && !['related', 'maybe', 'none'].includes(String(input.relevance))) throw new ToolError('invalid_args', '相关性参数无效。')
             const items = notices.list().items.filter(item => (!sourceId || item.sourceId === sourceId) &&
                 (!from || item.published >= from) && (!to || item.published <= to) &&
                 (input.relevance === undefined || (item.relevance || 'none') === input.relevance) &&
@@ -160,9 +196,9 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             const notice = knownNotice(input)
             const detail = await notices.detail(notice)
             assertCurrent()
-            if (detail.requiresLogin) throw new Error('通知需要登录，请在通知详情中登录后再试。')
+            if (detail.requiresLogin) throw new ToolError('forbidden', '通知需要登录，请在通知详情中登录后再试。')
             noticeCard(notice)
-            return {notice, content: detail.content.slice(0, 12000), truncated: detail.content.length > 12000}
+            return {notice, content: detail.content}
         }
         if (name === 'generate_notice_summary') {
             const notice = knownNotice(input)
@@ -216,33 +252,33 @@ export function createChatToolRunner(db: AppDatabase, username: string,
         }
         if (name === 'create_event') {
             if (input.allDay === false && (input.startTime === undefined || input.endTime === undefined)) {
-                throw new Error('请先明确日程的起止时间。')
+                throw new ToolError('invalid_args', '请先明确日程的起止时间。')
             }
             const checked = validateCalendarEvent({
                 startTime: '00:00', endTime: '00:00', location: '', notes: '',
                 reminderMinutes: db.getCalendarDefaultReminder(), ...input,
             })
-            if (!checked.ok) throw new Error(checked.error)
+            if (!checked.ok) throw new ToolError('invalid_args', checked.error)
             return requestAction({kind: 'create_event', after: checked.data})
         }
         if (name === 'list_todos') {
             const query = textArg(input, 'query').toLocaleLowerCase()
-            if (input.completed !== undefined && typeof input.completed !== 'boolean') throw new Error('待办状态无效。')
+            if (input.completed !== undefined && typeof input.completed !== 'boolean') throw new ToolError('invalid_args', '待办状态无效。')
             const result = page(db.getTodos(username).filter(todo =>
                 (input.completed === undefined || todo.completed === input.completed) &&
                 `${todo.title} ${todo.notes}`.toLocaleLowerCase().includes(query)), input)
             return {...result, items: result.items.map(todo => ({...todo, kind: 'todo'}))}
         }
         if (name === 'create_todo') {
-            if (input.dueDate && input.dueTime === undefined) throw new Error('请先明确待办截止时间（时、分）。')
-            if (!input.dueDate && input.dueTime) throw new Error('请先明确待办截止日期。')
+            if (input.dueDate && input.dueTime === undefined) throw new ToolError('invalid_args', '请先明确待办截止时间（时、分）。')
+            if (!input.dueDate && input.dueTime) throw new ToolError('invalid_args', '请先明确待办截止日期。')
             const checked = validateTodo({
                 notes: '', dueDate: '', dueTime: '00:00',
                 reminderMinutes: db.getTodoDefaultReminder(), ...input, completed: false
             })
-            if (!checked.ok) throw new Error(checked.error)
+            if (!checked.ok) throw new ToolError('invalid_args', checked.error)
             return requestAction({kind: 'create_todo', todo: checked.data})
         }
-        throw new Error('不支持的工具。')
+        throw new ToolError('forbidden', '不支持的工具。')
     }
 }

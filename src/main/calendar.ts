@@ -33,14 +33,14 @@ export function registerCalendarHandlers(db: AppDatabase, accounts: AccountServi
         if (result.data.id && !db.hasCalendarEvent(username, result.data.id)) throw new AuthError('日程不存在或已被删除。')
         const event = {...result.data, id: result.data.id ?? randomUUID()}
         db.saveCalendarEvent(username, event)
-        reminders.changed(username, event.id)
+        db.afterCommit(() => reminders.changed(username, event.id))
         return event
     }
 
     function remove(username: string, input: unknown) {
         if (typeof input !== 'string' || !db.hasCalendarEvent(username, input)) throw new AuthError('日程不存在或已被删除。')
         db.removeCalendarEvent(username, input)
-        reminders.changed(username, input)
+        db.afterCommit(() => reminders.changed(username, input))
         return null
     }
 

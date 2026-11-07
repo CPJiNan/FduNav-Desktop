@@ -1,3 +1,5 @@
+import type {ChatCancelReason, ChatTraceEvent} from './agent'
+import type {Memory, MemoryInput} from './memory'
 import type {Result} from './accounts'
 import type {Notice, NoticeSummary} from './notices'
 import type {CalendarEvent, CalendarEventInput, CalendarOccurrence} from './calendar'
@@ -16,13 +18,19 @@ export interface ChatSummaryRequest {
 }
 
 export type ChatAction = { kind: 'create_event'; after: CalendarEventInput } |
-    { kind: 'create_todo'; todo: TodoInput }
+    { kind: 'create_todo'; todo: TodoInput } |
+    {kind: 'remember'; memory: MemoryInput} | {kind: 'forget'; memory: Memory}
+
+export const chatActionTitles = {create_event: '新增日程', create_todo: '新增待办', remember: '保存记忆', forget: '删除记忆'} as const
+export const chatActionStatusLabels = {pending: '等待允许', executing: '正在执行', completed: '已完成', rejected: '已拒绝', failed: '未完成', undone: '已撤销'} as const
+export const chatSummaryStatusLabels = {pending: '等待允许', generating: '正在生成', completed: '已完成', rejected: '已拒绝', failed: '未完成'} as const
 
 export interface ChatActionRequest {
     id: string
     action: ChatAction
-    status: 'pending' | 'executing' | 'completed' | 'rejected' | 'failed'
-    result?: CalendarEvent | Todo
+    status: 'pending' | 'executing' | 'completed' | 'rejected' | 'failed' | 'undone'
+    checkpoint?: {before: Memory | null; after: CalendarEvent | Todo | Memory | null; at: string}
+    result?: CalendarEvent | Todo | Memory
     error?: string
 }
 
@@ -34,7 +42,14 @@ export interface ChatTurn {
     summaryRequests?: ChatSummaryRequest[]
     actionRequests?: ChatActionRequest[]
     error?: string
+    cancelReason?: ChatCancelReason
+    trace?: ChatTraceEvent[]
+    startedAt?: string
+    finishedAt?: string
 }
+
+export interface UsageTotals {promptTokens: number; completionTokens: number; elapsedMs: number; requests: number; missingUsage: number}
+export interface UsageSummary {today: UsageTotals; month: UsageTotals}
 
 export interface ChatState {
     username: string
@@ -55,6 +70,12 @@ export interface ChatAPI {
     decideSummary(turnId: string, requestId: string, allow: boolean): Promise<Result<ChatState>>
 
     decideAction(turnId: string, requestId: string, allow: boolean): Promise<Result<ChatState>>
+
+    trace(turnId: string): Promise<Result<ChatTraceEvent[]>>
+
+    usage(): Promise<Result<UsageSummary>>
+
+    undo(turnId: string, requestId: string): Promise<Result<ChatState>>
 
     onChanged(callback: (state: ChatState) => void): () => void
 }

@@ -10,6 +10,7 @@ import type {TodosAPI} from '../shared/todos'
 import type {GeneralSettingsAPI} from '../shared/general-settings'
 import type {NotificationSettingsAPI} from '../shared/notification-settings'
 import type {AppInfoAPI} from '../shared/app-info'
+import type {MemoryAPI} from '../shared/memory'
 import type {ChatAPI, ChatState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
@@ -25,8 +26,21 @@ const campusCard: CampusCardAPI = {
 }
 contextBridge.exposeInMainWorld('campusCard', campusCard)
 
+const memory: MemoryAPI = {
+    get: () => ipcRenderer.invoke('memory:get'),
+    save: input => ipcRenderer.invoke('memory:save', input),
+    remove: id => ipcRenderer.invoke('memory:remove', id),
+    setEnabled: enabled => ipcRenderer.invoke('memory:set-enabled', enabled),
+    importJson: (json, username) => ipcRenderer.invoke('memory:import', {json, username}),
+    exportJson: () => ipcRenderer.invoke('memory:export'),
+}
+contextBridge.exposeInMainWorld('memory', memory)
+
 const chat: ChatAPI = {
     get: () => ipcRenderer.invoke('chat:get'),
+    trace: turnId => ipcRenderer.invoke('chat:trace', turnId),
+    usage: () => ipcRenderer.invoke('chat:usage'),
+    undo: (turnId, requestId) => ipcRenderer.invoke('chat:undo', {turnId, requestId}),
     send: text => ipcRenderer.invoke('chat:send', text),
     cancel: () => ipcRenderer.invoke('chat:cancel'),
     clear: () => ipcRenderer.invoke('chat:clear'),

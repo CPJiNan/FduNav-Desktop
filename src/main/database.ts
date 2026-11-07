@@ -1,3 +1,7 @@
+import type {ChatTraceEvent} from '../shared/agent'
+import type {Memory} from '../shared/memory'
+import {validateMemory} from '../shared/memory'
+import type {UsageSummary, UsageTotals} from '../shared/chat'
 import {DatabaseSync} from 'node:sqlite'
 import {type AdditionalLlmPrompts, readAdditionalLlmPrompts} from '../shared/llm-prompts'
 import type {Theme} from '../shared/accounts'
@@ -38,6 +42,8 @@ export interface SavedLlmSettings extends AdditionalLlmPrompts {
 
 export class AppDatabase {
     private db: DatabaseSync
+    private transactionDepth = 0
+    private commitCallbacks: (() => void)[] = []
 
     constructor(path: string) {
         this.db = new DatabaseSync(path)
@@ -45,6 +51,22 @@ export class AppDatabase {
             PRAGMA journal_mode = WAL;
             PRAGMA busy_timeout = 5000;
             PRAGMA secure_delete = ON;
+            CREATE TABLE IF NOT EXISTS memories (
+                username TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL,
+                PRIMARY KEY (username, id)
+            );
+            CREATE TABLE IF NOT EXISTS llm_usage (
+                id INTEGER PRIMARY KEY, username TEXT NOT NULL, turn_id TEXT NOT NULL,
+                model TEXT NOT NULL, prompt_tokens INTEGER, completion_tokens INTEGER,
+                elapsed_ms INTEGER NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS llm_usage_owner_time ON llm_usage (username, created_at);
+            CREATE TABLE IF NOT EXISTS chat_traces (
+                username TEXT NOT NULL, turn_id TEXT NOT NULL, event_id TEXT NOT NULL,
+                position INTEGER NOT NULL, data TEXT NOT NULL, details TEXT,
+                PRIMARY KEY (username, turn_id, event_id)
+            );
+            CREATE TABLE IF NOT EXISTS chat_compactions (username TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_conversations (username TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS timetable_cache (
@@ -127,6 +149,102 @@ export class AppDatabase {
         `)
         this.db.exec('PRAGMA foreign_keys = ON;')
         this.initializeSources()
+    }
+
+    saveChatTrace(username: string, turnId: string, events: ChatTraceEvent[]) {
+        const save = this.db.prepare(`INSERT INTO chat_traces (username, turn_id, event_id, position, data, details)
+            VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(username, turn_id, event_id) DO UPDATE SET
+            data = excluded.data, details = COALESCE(excluded.details, chat_traces.details)`)
+        events.forEach(({details, ...event}, index) => save.run(username, turnId, event.id, index,
+            JSON.stringify(event), details === undefined ? null : JSON.stringify(details)))
+    }
+
+    getChatTrace(username: string, turnId: string): ChatTraceEvent[] {
+        return this.db.prepare('SELECT data, details FROM chat_traces WHERE username = ? AND turn_id = ? ORDER BY position')
+            .all(username, turnId).map(row => ({...JSON.parse(String(row.data)),
+                ...(row.details === null ? {} : {details: JSON.parse(String(row.details))})}))
+    }
+
+    clearChatTrace(username: string) {this.db.prepare('DELETE FROM chat_traces WHERE username = ?').run(username)}
+
+    afterCommit(action: () => void) {
+        if (this.transactionDepth) this.commitCallbacks.push(action)
+        else action()
+    }
+
+    transaction<T>(action: () => T): T {
+        const start = this.commitCallbacks.length
+        this.db.exec('SAVEPOINT agent_write')
+        this.transactionDepth++
+        let result: T
+        try {
+            result = action()
+            this.db.exec('RELEASE agent_write')
+        } catch (error) {
+            this.db.exec('ROLLBACK TO agent_write'); this.db.exec('RELEASE agent_write')
+            this.commitCallbacks.splice(start); this.transactionDepth--
+            throw error
+        }
+        this.transactionDepth--
+        if (!this.transactionDepth) for (const callback of this.commitCallbacks.splice(0)) {
+            try {callback()} catch {console.warn('数据已保存，提醒刷新失败，将在下次定时检查时重试。')}
+        }
+        return result
+    }
+
+    getMemories(username: string): Memory[] {
+        return this.db.prepare('SELECT data FROM memories WHERE username = ? ORDER BY id').all(username)
+            .map(row => JSON.parse(String(row.data)) as Memory)
+    }
+
+    getMemoryEnabled(username: string): boolean {
+        return this.db.prepare('SELECT value FROM preferences WHERE key = ?').get(`memory_enabled:${username}`)?.value === 'true'
+    }
+
+    setMemoryEnabled(username: string, enabled: boolean) {
+        this.db.prepare('INSERT INTO preferences (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .run(`memory_enabled:${username}`, JSON.stringify(enabled))
+    }
+
+    saveMemory(username: string, memory: Memory) {
+        const checked = validateMemory(memory)
+        if (!checked.ok) throw new Error(checked.error)
+        this.db.prepare('INSERT INTO memories (username, id, data) VALUES (?, ?, ?) ON CONFLICT(username, id) DO UPDATE SET data = excluded.data')
+            .run(username, memory.id, JSON.stringify(memory))
+    }
+
+    removeMemory(username: string, id: string) {
+        this.db.prepare('DELETE FROM memories WHERE username = ? AND id = ?').run(username, id)
+    }
+
+    getCompaction(username: string): {summary: string; coversUpTo: string} | null {
+        const row = this.db.prepare('SELECT data FROM chat_compactions WHERE username = ?').get(username)
+        return row ? JSON.parse(String(row.data)) : null
+    }
+
+    saveCompaction(username: string, value: {summary: string; coversUpTo: string} | null) {
+        if (!value) this.db.prepare('DELETE FROM chat_compactions WHERE username = ?').run(username)
+        else this.db.prepare('INSERT INTO chat_compactions (username, data) VALUES (?, ?) ON CONFLICT(username) DO UPDATE SET data = excluded.data')
+            .run(username, JSON.stringify(value))
+    }
+
+    recordLlmUsage(username: string, turnId: string, model: string, usage: {promptTokens: number | null; completionTokens: number | null}, elapsedMs: number) {
+        this.db.prepare('INSERT INTO llm_usage (username, turn_id, model, prompt_tokens, completion_tokens, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(username, turnId, model, usage.promptTokens, usage.completionTokens, Math.round(elapsedMs), new Date().toISOString())
+    }
+
+    getUsage(username: string, now = new Date()): UsageSummary {
+        const date = now.toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'})
+        const rows = this.db.prepare('SELECT prompt_tokens, completion_tokens, elapsed_ms, created_at FROM llm_usage WHERE username = ? AND created_at >= ?')
+            .all(username, new Date(`${date.slice(0, 7)}-01T00:00:00+08:00`).toISOString())
+        const sum = (today: boolean): UsageTotals => rows.reduce<UsageTotals>((total, row) => {
+            if (today && new Date(String(row.created_at)).toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'}) !== date) return total
+            total.requests++; total.elapsedMs += Number(row.elapsed_ms)
+            total.promptTokens += Number(row.prompt_tokens ?? 0); total.completionTokens += Number(row.completion_tokens ?? 0)
+            if (row.prompt_tokens === null || row.completion_tokens === null) total.missingUsage++
+            return total
+        }, {promptTokens: 0, completionTokens: 0, elapsedMs: 0, requests: 0, missingUsage: 0})
+        return {today: sum(true), month: sum(false)}
     }
 
     getTodos(username: string): Todo[] {

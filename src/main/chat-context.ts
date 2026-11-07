@@ -1,0 +1,40 @@
+import {validateMemory, type MemoryInput} from '../shared/memory'
+import type {ToolChatMessage} from './llm-connection'
+
+export interface ContextTurn {id: string; context: ToolChatMessage[]}
+export interface Compaction {summary: string; coversUpTo: string}
+export interface CompactPlan {older: ContextTurn[]; recent: ContextTurn[]}
+/** Preserve complete turns and tool-call/result pairs; oversized single turns go into the summary. */
+export function compactTurns(turns: ContextTurn[]): CompactPlan {
+    const recent = [...turns], older: ContextTurn[] = []
+    while (recent.length > 8 || (recent.length && JSON.stringify(recent.map(turn => turn.context)).length > 60000)) older.push(recent.shift()!)
+    return {older, recent}
+}
+export function uncompactedTurns(turns: ContextTurn[], saved: Compaction | null): ContextTurn[] {
+    if (!saved) return turns
+    const index = turns.findIndex(turn => turn.id === saved.coversUpTo)
+    // Missing coverage marker means the conversation changed; do not silently drop history.
+    return index < 0 ? turns : turns.slice(index + 1)
+}
+export function validateCompaction(raw: string): string {
+    const parsed = JSON.parse(raw)
+    const keys = ['facts', 'actions', 'pending', 'preferences']
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || keys.some(key => !Array.isArray(parsed[key]) ||
+        parsed[key].some((item: unknown) => typeof item !== 'string')) || Object.keys(parsed).some(key => ![...keys, 'memories'].includes(key))) throw new Error('摘要结构无效。')
+    const summary = JSON.stringify(parsed)
+    if (summary.length > 800) throw new Error('摘要超过 800 字符。')
+    return summary
+}
+
+/** Reuse the compaction response for memory suggestions; every write still requires approval. */
+export function extractCompactionMemories(summary: string, userMessages: string[]): MemoryInput[] {
+    const raw = JSON.parse(summary).memories
+    if (raw === undefined) return []
+    if (!Array.isArray(raw) || raw.length > 3) throw new Error('摘要记忆候选格式无效。')
+    return raw.map(item => {
+        const result = validateMemory({...item, status: 'active', pinned: false})
+        if (!result.ok) throw new Error(result.error)
+        if (!userMessages.some(text => text.includes(result.data.evidence))) throw new Error('记忆依据不在用户原话中。')
+        return result.data
+    })
+}
