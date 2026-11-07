@@ -1,6 +1,7 @@
 import {useEffect, useRef, useState} from 'react'
 import type {SessionTraceTurn} from '../../shared/chat'
 import {TracePayload} from './TracePayload'
+import {Icon} from './Icon'
 
 const statusLabels = {running: '进行中', completed: '完成', failed: '失败', cancelled: '已停止'}
 
@@ -70,9 +71,8 @@ export function ChatSessionTracePanel({onClose}: { onClose: () => void }) {
     }}>
         <header>
             <div><h2>会话轨迹</h2><p>{turns.length} 轮 · {steps} 步</p></div>
-            <button type="button" ref={close} className="secondary-button" onClick={onClose}
-                    aria-label="关闭会话轨迹">关闭
-            </button>
+            <button type="button" ref={close} className="icon-button" title="关闭会话轨迹"
+                    aria-label="关闭会话轨迹" onClick={onClose}><Icon name="close"/></button>
         </header>
         <p className="trace-help">从对话开始至今的全部轮次，包含每轮的工具调用与模型请求。压缩只影响发给模型的上下文，不会删除这里的记录。</p>
         {error && <div role="alert"><p className="chat-error">{error}</p>

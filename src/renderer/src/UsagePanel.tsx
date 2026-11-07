@@ -23,7 +23,7 @@ export function UsagePanel({active}: { active: boolean }) {
             current = false
         }
     }, [active, retry])
-    return <section className="agent-settings" aria-label="模型用量"><h3>聊天用量</h3>
+    return <section className="agent-settings" aria-label="用量"><h3>用量</h3>
         {usage ? <div className="usage-grid">{(['today', 'month'] as const).map(key => <div key={key}>
             <h4>{key === 'today' ? '今日' : '本月'}</h4>
             <p>{(usage[key].promptTokens + usage[key].completionTokens).toLocaleString()} 已报告 token</p>

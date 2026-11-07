@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from 'react'
 import type {ChatTurn} from '../../shared/chat'
 import type {ChatTraceEvent} from '../../shared/agent'
 import {downloadJson, TracePayload} from './TracePayload'
+import {Icon} from './Icon'
 
 const statusLabels = {running: '进行中', completed: '完成', failed: '失败', cancelled: '已停止'}
 export {downloadJson}
@@ -49,19 +50,17 @@ export function ChatTracePanel({turn, onClose}: { turn: ChatTurn; onClose: () =>
         }
     }}>
         <header>
-            <div><h2>执行记录</h2><p>本轮 {events.length} 个步骤</p></div>
-            <button type="button" ref={close} className="secondary-button" onClick={onClose}
-                    aria-label="关闭执行记录">关闭
-            </button>
+            <div><h2>执行记录</h2></div>
+            <button type="button" ref={close} className="icon-button" title="关闭执行记录"
+                    aria-label="关闭执行记录" onClick={onClose}><Icon name="close"/></button>
         </header>
         <p className="trace-question">{turn.user}</p>
-        <p className="trace-help">查看实际调用、工具原始响应与发送给模型的结果。这里不包含模型的隐藏思考。导出文件可能包含个人信息。</p>
         <div className="trace-toolbar">
-            <label>筛选 <select value={filter} onChange={event => setFilter(event.target.value)}>
+            <select aria-label="筛选步骤" value={filter} onChange={event => setFilter(event.target.value)}>
                 <option value="all">全部步骤</option>
                 <option value="tool">工具调用</option>
                 <option value="failed">失败与停止</option>
-            </select></label>
+            </select>
             <button type="button" className="secondary-button" disabled={loading || !!error || !events.length}
                     onClick={() => downloadJson({
                         version: 1,

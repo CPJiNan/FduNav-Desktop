@@ -18,9 +18,11 @@ export function TracePayload({value, filename}: { value: unknown; filename: stri
     const shown = truncated && !expanded ? `${text.slice(0, previewChars)}\n…（已截断，共 ${text.length} 字符）` : text
     return <>
         <pre tabIndex={0}>{shown}</pre>
-        {truncated && <button type="button" className="secondary-button" onClick={() => setExpanded(value => !value)}>
-            {expanded ? '收起' : '显示全部'}</button>}
-        <button type="button" className="secondary-button" onClick={() => downloadJson(value, filename)}>下载 JSON
-        </button>
+        <div className="trace-payload-actions">
+            {truncated && <button type="button" className="secondary-button" aria-expanded={expanded}
+                                  onClick={() => setExpanded(value => !value)}>{expanded ? '收起' : '展开'}</button>}
+            <button type="button" className="secondary-button" onClick={() => downloadJson(value, filename)}>下载 JSON
+            </button>
+        </div>
     </>
 }

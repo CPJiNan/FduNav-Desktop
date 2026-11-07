@@ -79,8 +79,6 @@ export function MemoryPanel({active}: { active: boolean }) {
     const eligibleItems = state.items.filter(item => item.status === 'active' && (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()))
     const readyStage = stage === 'idle' || stage === 'done'
     const canConsolidate = loaded && state.enabled && llmReady && eligibleItems.length >= 2 && readyStage && !busy
-    const disabledReason = !state.enabled ? '' : !llmReady ? '请先启用并配置模型服务'
-        : eligibleItems.length < 2 ? '至少需要 2 条有效记忆才能整理' : ''
 
     function toggleItem(id: string) {
         setSelectedItems(current => {
@@ -187,10 +185,9 @@ export function MemoryPanel({active}: { active: boolean }) {
         <h3>记忆</h3>
         <label className="memory-enable"><input type="checkbox" checked={state.enabled} disabled={busy || !loaded}
                                                 onChange={event => void update(() => window.memory?.setEnabled(event.target.checked))}/>启用长期记忆</label>
-        <p>关闭后聊天不再读取或新增记忆，仍可在这里管理。关闭或删除记忆不会清除旧会话中已有的副本；需要时可同时清空聊天记录。</p>
         <div className="trace-toolbar memory-toolbar">
             <button type="button" className="primary-button" disabled={!canConsolidate}
-                    title={disabledReason || '调用模型扫描并合并重复记忆'}
+                    title="调用模型扫描并合并重复记忆"
                     onClick={() => void scan()}><Icon name="sparkles"/>重新整理记忆
             </button>
             {selectedItems.size >= 2 && <button type="button" className="secondary-button" disabled={!canConsolidate}
@@ -217,8 +214,6 @@ export function MemoryPanel({active}: { active: boolean }) {
                                                                                   void update(async () => window.memory?.importJson(await file.text(), state.username))
                                                                               }}/></label>
         </div>
-        {loaded && readyStage && state.enabled &&
-            <p role="status">{disabledReason || '先展示整理预览，确认后才修改记忆。'}</p>}
         {stage === 'scanning' && <div className="memory-consolidate" role="status">
             <p>正在扫描 {state.items.length} 条记忆…</p>
             <div className="trace-toolbar">

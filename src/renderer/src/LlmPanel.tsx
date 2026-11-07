@@ -49,7 +49,6 @@ export function LlmPanel({active}: { active: boolean }) {
     const [testResult, setTestResult] = useState('')
     const [models, setModels] = useState<string[] | null>(null)
     const [fetchingModels, setFetchingModels] = useState(false)
-    const [modelStatus, setModelStatus] = useState('')
     const initialModelsRequested = useRef(false)
     const requestVersion = useRef(0)
     const [retry, setRetry] = useState(0)
@@ -86,8 +85,7 @@ export function LlmPanel({active}: { active: boolean }) {
 
     function edited() {
         setError('');
-        setTestResult('');
-        setModelStatus('')
+        setTestResult('')
     }
 
     async function toggleEnabled() {
@@ -133,7 +131,6 @@ export function LlmPanel({active}: { active: boolean }) {
             if (response.ok) {
                 setModels(response.data)
                 setSettings(value => ({...value, model: response.data.includes(value.model) ? value.model : ''}))
-                setModelStatus(`已获取 ${response.data.length} 个模型`)
             } else setError(response.error)
         } catch {
             if (version === requestVersion.current) setError('获取模型失败，请重试。')
@@ -202,6 +199,7 @@ export function LlmPanel({active}: { active: boolean }) {
 
     return <div className="llm-settings">
         <form className="llm-panel" onSubmit={save} aria-busy={busy || toggling}>
+            <h3 className="llm-section-heading">常规</h3>
             <div className="llm-field llm-enable-field">
                 <label id="llm-enable-label" htmlFor="llm-enable">启用</label>
                 <button id="llm-enable" type="button" role="switch" className="llm-switch"
@@ -318,7 +316,6 @@ export function LlmPanel({active}: { active: boolean }) {
             {busy && !loaded && <p className="llm-status" role="status">读取中…</p>}
             {testing && <p className="llm-status" role="status">正在测试连接…</p>}
             {fetchingModels && <p className="llm-status" role="status">正在获取模型…</p>}
-            {modelStatus && <p className="llm-status" role="status">{modelStatus}</p>}
             {testResult && <p className="llm-status" role="status">{testResult}</p>}
             {error && <div><p className="account-error" role="alert">{error}</p>
                 {!loaded && api && <button type="button" className="secondary-button" disabled={busy}

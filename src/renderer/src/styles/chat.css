@@ -410,13 +410,21 @@
 .chat-trace > header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
+    min-height: 32px;
+}
+
+.chat-trace > header .icon-button {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-xs);
 }
 
 .chat-trace h2 {
     margin: 0;
     font-size: 18px;
+    line-height: 1.4;
 }
 
 .chat-trace header p, .trace-help, .trace-time {
@@ -510,6 +518,13 @@
     line-height: 1.6;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+.trace-payload-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
 }
 
 @media (max-width: 900px) {
