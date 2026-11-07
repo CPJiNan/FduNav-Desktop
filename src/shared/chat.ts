@@ -23,7 +23,8 @@ export type ChatAction = { kind: 'create_event'; after: CalendarEventInput } |
     {kind: 'update_todo'; before: Todo; after: TodoInput} |
     {kind: 'delete_event'; before: CalendarEvent} |
     {kind: 'delete_todo'; before: Todo} |
-    {kind: 'remember'; memory: MemoryInput} | {kind: 'forget'; memory: Memory}
+    {kind: 'remember'; memory: MemoryInput; targetId?: string; previousText?: string} |
+    {kind: 'forget'; memory: Memory}
 
 export const chatActionTitles = {
     create_event: '新增日程', create_todo: '新增待办', remember: '保存记忆', forget: '删除记忆',

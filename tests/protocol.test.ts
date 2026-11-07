@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {toolSuccess, toolFailure, ToolError, maxToolResultChars, redactTrace} from '../src/shared/agent.ts'
-import {validateMemory, selectMemories, memoryLine, memoryLineBudget, type Memory} from '../src/shared/memory.ts'
+import {validateMemory, selectMemories, memoryLine, memoryLineBudget, buildMemoryDigest, normalizeMemoryText, diceCoefficient, clusterMemories, mergeConsolidationGroup, memoryShortId, type Memory} from '../src/shared/memory.ts'
 import {compactTurns, compactionChunks, extractCompactionMemories, foldToolMessages, foldedToolResult, validateCompaction, parseSummary} from '../src/main/chat-context.ts'
 import {AppDatabase} from '../src/main/database.ts'
 import {chatTools, createChatToolRunner} from '../src/main/chat-tools.ts'
@@ -296,8 +296,9 @@ test('one malformed compaction memory candidate does not discard valid siblings'
         {kind: 'fact', text: '', evidence: 'x', confidence: 1, expiresAt: null},
         {kind: 'fact', text: '用户主修数学', evidence: '我喜欢数学', confidence: 1, expiresAt: null},
     ]})
-    const accepted = extractCompactionMemories(raw, ['我喜欢数学'])
-    assert.deepEqual(accepted.map(item => item.text), ['用户主修数学'])
+    const scan = extractCompactionMemories(raw, ['我喜欢数学'])
+    assert.deepEqual(scan.candidates.map(item => item.memory.text), ['用户主修数学'])
+    assert.equal(scan.dropped, 1)
 })
 
 test('compaction budget counts content, not the JSON skeleton', () => {
@@ -348,4 +349,110 @@ test('old tool results fold to a placeholder while tool_call ids stay paired', (
     assert.equal(folded[3].content, 'y'.repeat(9000))
     assert.equal(folded[4].content, 'z')
     assert.equal((messages[1] as {content: string}).content.length, 9000, 'the stored turn is not mutated')
+})
+
+test('memory digest prioritizes pinned and related entries and stays within budget', () => {
+    const base = new Date('2026-11-07T00:00:00Z').getTime()
+    const pinned = Array.from({length: 10}, (_, index) => memory(`pin-${index}`, {pinned: true,
+        text: `置顶记忆${index}`, updatedAt: new Date(base - index * 1000).toISOString()}))
+    const related = memory('rel-1', {text: '用户住在邯郸校区', createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z'})
+    const recent = memory('fresh-1', {text: '用户喜欢篮球', createdAt: new Date(base - 86400000).toISOString(),
+        updatedAt: new Date(base - 86400000).toISOString()})
+    const digest = buildMemoryDigest([...pinned, related, recent], [{user: '我住在邯郸校区附近，数学作业什么时候交'}], base)
+    assert.equal(digest[0].id, 'pin-0', 'newest pinned entry first')
+    assert.ok(digest.some(entry => entry.id === 'rel-1'), 'matched by shared Han characters')
+    assert.ok(digest.some(entry => entry.id === 'fresh-1'), 'recent entry fills the tail')
+    assert.ok(digest.length <= 20)
+    assert.ok(JSON.stringify(digest).length <= 800)
+    assert.equal(JSON.stringify(digest).includes('evidence'), false)
+    assert.equal(JSON.stringify(digest).includes('createdAt'), false)
+    const long = memory('long', {text: '字'.repeat(60)})
+    const truncated = buildMemoryDigest([long], [], base)[0]
+    assert.equal(truncated.text.length, 41)
+    assert.ok(truncated.text.endsWith('…'))
+    // Expired or archived entries never reach the digest.
+    assert.deepEqual(buildMemoryDigest([memory('old', {expiresAt: '2026-01-01T00:00:00Z'}),
+        memory('archived', {status: 'archived'})], [], base), [])
+})
+
+test('normalization and Dice match the reference values from the design doc', () => {
+    const dice = (left: string, right: string) => diceCoefficient(normalizeMemoryText(left), normalizeMemoryText(right))
+    assert.equal(dice('用户偏好数学', '用户偏好数学。'), 1)
+    assert.ok(Math.abs(dice('用户住在邯郸校区', '用户在邯郸校区') - 0.77) < 0.01)
+    assert.ok(Math.abs(dice('用户是本科生', '用户是一名本科生') - 0.67) < 0.01)
+    assert.ok(Math.abs(dice('用户偏好数学', '用户喜欢数学') - 0.40) < 0.01)
+    assert.equal(dice('', '用户偏好数学'), 0)
+})
+
+test('clustering groups identical or similar memories and caps groups', () => {
+    const items = [memory('a', {text: '用户偏好数学'}), memory('b', {text: '用户偏好数学。'}),
+        memory('c', {text: '用户喜欢篮球'}), memory('d', {text: '用户住在邯郸校区'}), memory('e', {text: '用户在邯郸校区'})]
+    const clusters = clusterMemories(items)
+    assert.deepEqual(clusters.map(cluster => cluster.items.map(item => item.id).sort()).sort(),
+        [['a', 'b'], ['d', 'e']])
+    assert.equal(clusters[0].score, 1)
+    assert.ok(clusters[1].score >= 0.55)
+    const many = Array.from({length: 14}, (_, index) => memory(`m-${index}`, {text: '用户偏好数学'}))
+    assert.equal(clusterMemories(many)[0].items.length, 12, 'a group is capped at 12 items')
+})
+
+test('compaction candidates support update and skip, and downgrade fabricated targets', () => {
+    const existing = [memory('3f2a91c0-1111-2222-3333-444455556666', {text: '用户是数学科学学院本科生'})]
+    const raw = JSON.stringify({memories: [
+        {op: 'update', targetId: '3f2a91c0', kind: 'fact', text: '用户是数学科学学院 2026 级本科生', confidence: 0.9, expiresAt: null}
+    ]})
+    const updated = extractCompactionMemories(raw, [], existing)
+    assert.equal(updated.candidates.length, 1)
+    assert.equal(updated.candidates[0].op, 'update')
+    assert.equal((updated.candidates[0] as any).targetId, existing[0].id)
+    assert.equal(updated.candidates[0].memory.evidence, existing[0].evidence, 'evidence is inherited from the target')
+
+    const mixed = JSON.stringify({memories: [
+        {op: 'skip', kind: 'fact', text: '重复'},
+        {op: 'update', targetId: 'deadbeef', kind: 'fact', text: '新事实', evidence: '我今年大二', confidence: 0.9, expiresAt: null},
+    ]})
+    const scan = extractCompactionMemories(mixed, ['我今年大二'], existing)
+    assert.equal(scan.candidates.length, 1)
+    assert.equal(scan.candidates[0].op, 'add', 'unknown target downgrades to add')
+    assert.deepEqual(scan.errors, ['压缩候选引用了不存在的记忆'])
+    assert.equal(scan.dropped, 1, 'skip is counted as dropped')
+
+    const four = JSON.stringify({memories: [1, 2, 3, 4].map(() => (
+        {kind: 'fact', text: '事实', evidence: '我说过', confidence: 1, expiresAt: null}))})
+    assert.equal(extractCompactionMemories(four, ['我说过']).candidates.length, 3)
+    assert.equal(extractCompactionMemories(four, ['我说过']).dropped, 1)
+})
+
+test('consolidation merge rules ignore the model for metadata and validate keepIds', () => {
+    const before = [
+        memory('aaaa1111-1111-1111-1111-111111111111', {kind: 'fact', text: '用户喜欢数学', pinned: true,
+            confidence: 0.6, evidence: '我喜欢数学', expiresAt: '2027-01-01T00:00:00Z'}),
+        memory('bbbb2222-2222-2222-2222-222222222222', {kind: 'preference', text: '用户偏好数学', pinned: false,
+            confidence: 0.9, evidence: '我偏爱数学', expiresAt: null}),
+    ]
+    const merged = mergeConsolidationGroup(before, {text: '用户喜欢并偏好数学', kind: 'event',
+        keepIds: [memoryShortId(before[0].id), memoryShortId(before[1].id)]})
+    assert.equal(merged.ok, true)
+    const data = (merged as any).data
+    assert.equal(data.kind, 'fact', 'tie keeps the first entry kind')
+    assert.equal(data.pinned, true)
+    assert.equal(data.confidence, 0.9)
+    assert.equal(data.expiresAt, '2027-01-01T00:00:00Z')
+    assert.ok(data.evidence.includes('我喜欢数学') && data.evidence.includes('我偏爱数学'))
+    assert.equal(mergeConsolidationGroup(before, {text: 'x', keepIds: []}).ok, false)
+    assert.equal(mergeConsolidationGroup(before, {text: 'x', keepIds: ['zzzzzzzz']}).ok, false)
+    assert.equal(mergeConsolidationGroup(before, {text: '   ', keepIds: [memoryShortId(before[0].id)]}).ok, false)
+})
+
+test('consolidation previews survive a database reopen and expire lazily', () => {
+    const db = new AppDatabase(':memory:')
+    try {
+        const before = [memory('a'), memory('b')]
+        db.saveConsolidation({id: 'p1', username: 'alice', createdAt: '2026-11-07T00:00:00Z', status: 'preview',
+            before, after: [{groupId: 'g1', before, status: 'ok', merged: {...memory('a'), mergedFrom: ['b'], source: 'consolidation'}}]})
+        assert.equal(db.findConsolidationPreview('alice')?.id, 'p1')
+        assert.equal(db.getConsolidation('alice', 'p1')?.after[0].merged?.source, 'consolidation')
+        db.pruneConsolidations('alice', '2026-11-07T00:01:00Z')
+        assert.equal(db.getConsolidation('alice', 'p1'), null)
+    } finally {db.close()}
 })

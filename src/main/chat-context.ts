@@ -1,4 +1,4 @@
-import {validateMemory, type MemoryInput} from '../shared/memory'
+import {validateMemory, memoryShortId, type Memory, type MemoryInput} from '../shared/memory'
 import type {ToolChatMessage} from './llm-connection'
 
 export interface ContextTurn {id: string; context: ToolChatMessage[]}
@@ -110,17 +110,57 @@ export function parseSummary(summary: string | null | undefined): Record<string,
 }
 
 /** Reuse the compaction response for memory suggestions; every write still requires approval. */
-export function extractCompactionMemories(summary: string, userMessages: string[]): MemoryInput[] {
+/** A compaction memory proposal after server-side validation. */
+export type MemoryCandidate =
+    {op: 'add'; memory: MemoryInput} |
+    {op: 'update'; targetId: string; memory: MemoryInput}
+
+export interface CompactionMemoryScan {
+    candidates: MemoryCandidate[]
+    /** Candidates silently dropped (skip, invalid fields, fabricated evidence). */
+    dropped: number
+    /** Problems worth a trace event, e.g. an unknown targetId that was downgraded to add. */
+    errors: string[]
+}
+
+/**
+ * Validate the compaction response's memory proposals against existing memories. A proposal may be
+ * `skip`ped, update a known target (`targetId`, 8-char handle or full id) or add a new memory.
+ * One invalid proposal never discards its valid siblings.
+ */
+export function extractCompactionMemories(summary: string, userMessages: string[], existing: Memory[] = []): CompactionMemoryScan {
     const raw = JSON.parse(summary).memories
-    if (raw === undefined) return []
-    if (!Array.isArray(raw) || raw.length > 3) throw new Error('摘要记忆候选格式无效。')
-    const accepted: MemoryInput[] = []
-    for (const item of raw) {
-        // Per-candidate isolation: one malformed proposal must not discard its valid siblings.
-        const result = validateMemory({...item, status: 'active', pinned: false})
-        if (!result.ok) continue
-        if (!userMessages.some(text => text.includes(result.data.evidence))) continue
-        accepted.push(result.data)
+    if (raw === undefined) return {candidates: [], dropped: 0, errors: []}
+    if (!Array.isArray(raw)) throw new Error('摘要记忆候选格式无效。')
+    const scan: CompactionMemoryScan = {candidates: [], dropped: 0, errors: []}
+    for (const item of raw.slice(0, 3)) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {scan.dropped++; continue}
+        const value = item as Record<string, unknown>
+        if (value.op === 'skip') {scan.dropped++; continue}
+        const op = value.op === 'update' ? 'update' : 'add'
+        let target: Memory | undefined
+        if (op === 'update') {
+            const handle = typeof value.targetId === 'string' ? value.targetId : ''
+            const matches = handle ? existing.filter(memory => memory.id === handle || memory.id.startsWith(handle)) : []
+            if (matches.length === 1) target = matches[0]
+            else scan.errors.push('压缩候选引用了不存在的记忆')
+        }
+        const checked = validateMemory({
+            kind: value.kind, text: value.text,
+            evidence: typeof value.evidence === 'string' && value.evidence.trim() ? value.evidence : target?.evidence,
+            confidence: value.confidence ?? target?.confidence ?? 0.6,
+            pinned: target?.pinned ?? false,
+            expiresAt: value.expiresAt === undefined ? target?.expiresAt ?? null : value.expiresAt,
+            status: 'active',
+        })
+        if (!checked.ok) {scan.dropped++; continue}
+        // `update` keeps the target; a fabricated or ambiguous target downgrades to add.
+        if (op === 'update' && target) scan.candidates.push({op: 'update', targetId: target.id, memory: checked.data})
+        else {
+            if (!userMessages.some(text => text.includes(checked.data.evidence))) {scan.dropped++; continue}
+            scan.candidates.push({op: 'add', memory: checked.data})
+        }
     }
-    return accepted
+    if (raw.length > 3) scan.dropped += raw.length - 3
+    return scan
 }

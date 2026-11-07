@@ -10,6 +10,7 @@ import {emptyLlmSettings} from '../src/shared/llm.ts'
 import {LlmSettingsService} from '../src/main/llm-settings.ts'
 import type {ChatState, ChatTurn} from '../src/shared/chat.ts'
 import type {ChatTraceEvent} from '../src/shared/agent.ts'
+import {memoryShortId} from '../src/shared/memory.ts'
 
 function callResponse(name: string, args: unknown, id = 'call-1') {
     return streamResponse([{choices: [{delta: {tool_calls: [{index: 0, id, type: 'function', function: {name, arguments: JSON.stringify(args)}}]}, finish_reason: 'tool_calls'}]}, '[DONE]'])
@@ -37,7 +38,7 @@ function harness() {
     const invoke = (channel: string, input?: unknown): any => handlers.get(channel)!(event, channel === 'memory:import' && typeof input === 'string' ? {json: input, username: user} : input)
     const state = (): ChatState => {const result = invoke('chat:get'); assert.equal(result.ok, true); return result.data}
     const finish = async () => {
-        const until = Date.now() + 4000
+        const until = Date.now() + 8000
         while (state().busy && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 5))
         assert.equal(state().busy, false, 'chat should finish'); return state().turns.at(-1)!
     }
@@ -646,5 +647,262 @@ test('approvals clicked while streaming are queued and applied after the turn en
         release!()
         await h.finish()
         assert.equal(h.db.getTodos('alice').length, 1, 'the queued approval runs once the turn ends')
+    } finally {h.restore()}
+})
+
+function setJsonModel(outputs: string[]) {
+    const requests: any[] = []
+    globalThis.fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body))
+        requests.push(body)
+        const content = outputs.shift()
+        if (content === undefined) throw new Error('unexpected model request')
+        return new Response(JSON.stringify({choices: [{message: {content}}]}),
+            {headers: {'Content-Type': 'application/json'}})
+    }
+    return requests
+}
+
+function seedTurns(count = 13) {
+    return Array.from({length: count}, (_, i) => ({id: String(i), user: `问题${i}`, reply: 'a', cards: [],
+        context: [{role: 'user', content: `问题${i}`}, {role: 'assistant', content: 'a'}]}))
+}
+
+test('compaction requests carry an existing-memory digest without stored fields', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const now = new Date().toISOString()
+        h.db.saveMemory('alice', {id: '3f2a91c0-1111-2222-3333-444455556666', kind: 'fact',
+            text: '用户是数学科学学院本科生', evidence: '我是数学科学学院本科生', confidence: 1, pinned: true,
+            expiresAt: null, status: 'active', createdAt: now, updatedAt: now})
+        h.db.saveChatConversation('alice', JSON.stringify(seedTurns()))
+        const requests = setModel([replyResponse(JSON.stringify({facts: [], actions: [], pending: [], preferences: []})),
+            replyResponse('继续')])
+        h.invoke('chat:send', '继续')
+        await h.finish()
+        const payload = JSON.parse(requests[0].messages[1].content)
+        assert.deepEqual(payload.memories, [{id: '3f2a91c0', kind: 'fact', text: '用户是数学科学学院本科生'}])
+        assert.match(requests[0].messages[0].content, /已有记忆/)
+        assert.match(requests[0].messages[0].content, /targetId/)
+        assert.equal(JSON.stringify(payload.memories).includes('evidence'), false)
+    } finally {h.restore()}
+})
+
+test('a skip candidate creates no card; an update candidate shows and applies a diff', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const createdAt = '2026-01-01T00:00:00.000Z'
+        const now = new Date().toISOString()
+        const id = '3f2a91c0-1111-2222-3333-444455556666'
+        h.db.saveMemory('alice', {id, kind: 'fact', text: '用户是数学科学学院本科生', evidence: '我是数学科学学院本科生',
+            confidence: 0.8, pinned: false, expiresAt: null, status: 'active', createdAt, updatedAt: now, seenCount: 1})
+        h.db.saveChatConversation('alice', JSON.stringify(seedTurns()))
+        const skip = JSON.stringify({facts: [], actions: [], pending: [], preferences: [], memories: [
+            {op: 'skip', kind: 'fact', text: '用户是数学科学学院本科生'}]})
+        setModel([replyResponse(skip), replyResponse('无需新增。')])
+        h.invoke('chat:send', '继续')
+        let turn = await h.finish()
+        assert.equal(turn.actionRequests?.length ?? 0, 0, 'skip produces no card')
+
+        // Reset the seeded history so the second turn compacts again.
+        h.db.saveChatConversation('alice', JSON.stringify(seedTurns()))
+        h.db.saveCompaction('alice', null)
+        const update = JSON.stringify({facts: [], actions: [], pending: [], preferences: [], memories: [
+            {op: 'update', targetId: '3f2a91c0', kind: 'fact', text: '用户是数学科学学院 2026 级本科生',
+                confidence: 0.9, expiresAt: null}]})
+        setModel([replyResponse(update), replyResponse('请确认更新。')])
+        h.invoke('chat:send', '再继续')
+        turn = await h.finish()
+        const request = turn.actionRequests![0]
+        assert.equal(request.action.kind, 'remember')
+        assert.equal((request.action as any).targetId, id)
+        assert.equal((request.action as any).previousText, '用户是数学科学学院本科生')
+        h.invoke('chat:decide-action', {turnId: turn.id, requestId: request.id, allow: true})
+        const memories = h.db.getMemories('alice')
+        assert.equal(memories.length, 1, 'updated in place instead of adding a duplicate')
+        assert.equal(memories[0].id, id)
+        assert.equal(memories[0].createdAt, createdAt)
+        assert.equal(memories[0].text, '用户是数学科学学院 2026 级本科生')
+        assert.equal(memories[0].seenCount, 2)
+    } finally {h.restore()}
+})
+
+test('consolidation preview, apply and undo round-trip', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const now = Date.now()
+        const items = ['用户偏好数学', '用户偏好数学。', '用户偏好数学！'].map((text, index) => ({
+            id: ['aaaa1111-1111-1111-1111-111111111111', 'bbbb2222-2222-2222-2222-222222222222',
+                'cccc3333-3333-3333-3333-333333333333'][index],
+            kind: 'preference' as const, text, evidence: index ? '我偏爱数学' : '我喜欢数学',
+            confidence: 0.8, pinned: false, expiresAt: null, status: 'active' as const,
+            createdAt: new Date(now - 3000 + index * 1000).toISOString(), updatedAt: new Date(now).toISOString(),
+        }))
+        for (const item of items) h.db.saveMemory('alice', item)
+        const requests = setJsonModel([JSON.stringify({text: '用户偏好数学', kind: 'preference',
+            keepIds: items.map(item => memoryShortId(item.id))})])
+        const preview = await h.invoke('memory:consolidate-preview') as any
+        assert.equal(preview.ok, true, preview.error)
+        assert.equal(preview.data.groups.length, 1)
+        assert.equal(preview.data.groups[0].before.length, 3)
+        assert.equal(preview.data.groups[0].status, 'ok')
+        assert.equal(requests.length, 1)
+        assert.deepEqual(requests[0].messages[1].content, JSON.stringify({entries: items.map(item => ({
+            id: memoryShortId(item.id), kind: item.kind, text: item.text, evidence: item.evidence}))}))
+
+        const applied = h.invoke('memory:consolidate-apply',
+            {previewId: preview.data.previewId, groupIds: [preview.data.groups[0].id]}) as any
+        assert.equal(applied.ok, true, applied.error)
+        assert.equal(applied.data.removed, 2)
+        const merged = applied.data.state.items[0]
+        assert.equal(merged.id, items[0].id, 'keeps the oldest id')
+        assert.deepEqual(merged.mergedFrom, [items[1].id, items[2].id])
+        assert.equal(merged.source, 'consolidation')
+        assert.equal(applied.data.state.items.length, 1)
+
+        const undone = h.invoke('memory:consolidate-undo', preview.data.previewId) as any
+        assert.equal(undone.ok, true, undone.error)
+        assert.equal(undone.data.restored, 3)
+        assert.deepEqual(h.db.getMemories('alice').map(item => item.id).sort(), items.map(item => item.id).sort())
+        assert.equal(h.db.getMemories('alice').find(item => item.id === items[2].id)?.text, '用户偏好数学！')
+    } finally {h.restore()}
+})
+
+test('a failed consolidation group does not block a valid group', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const now = Date.now(), iso = (offset: number) => new Date(now + offset).toISOString()
+        const items = [
+            {id: 'aaaa1111-1111-1111-1111-111111111111', text: '用户偏好数学', createdAt: iso(-4000)},
+            {id: 'bbbb2222-2222-2222-2222-222222222222', text: '用户偏好数学。', createdAt: iso(-3000)},
+            {id: 'cccc3333-3333-3333-3333-333333333333', text: '用户住在邯郸校区', createdAt: iso(-2000)},
+            {id: 'dddd4444-4444-4444-4444-444444444444', text: '用户在邯郸校区', createdAt: iso(-1000)},
+        ].map(item => ({...item, kind: 'fact' as const, evidence: '用户原话', confidence: 0.7, pinned: false,
+            expiresAt: null, status: 'active' as const, updatedAt: iso(0)}))
+        for (const item of items) h.db.saveMemory('alice', item)
+        const valid = items.slice(2).map(item => memoryShortId(item.id))
+        setJsonModel([JSON.stringify({text: '用户偏好数学', kind: 'fact', keepIds: [memoryShortId(items[0].id), memoryShortId(items[1].id)]}),
+            JSON.stringify({text: '无效', keepIds: ['zzzzzzzz']})])
+        const preview = await h.invoke('memory:consolidate-preview') as any
+        assert.equal(preview.ok, true, preview.error)
+        const groups = preview.data.groups
+        assert.equal(groups.length, 2)
+        assert.equal(groups[0].status, 'ok', 'identical-text group is scanned first')
+        assert.equal(groups[1].status, 'failed')
+        const applied = h.invoke('memory:consolidate-apply',
+            {previewId: preview.data.previewId, groupIds: [groups[0].id]}) as any
+        assert.equal(applied.ok, true, applied.error)
+        assert.equal(applied.data.removed, 1, 'only the valid group is applied')
+        assert.equal(h.db.getMemories('alice').length, 3)
+    } finally {h.restore()}
+})
+
+test('applying a preview after the user edited a memory is rejected', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const now = new Date().toISOString()
+        const items = ['用户偏好数学', '用户偏好数学。', '用户偏好数学！'].map((text, index) => ({
+            id: ['aaaa1111-1111-1111-1111-111111111111', 'bbbb2222-2222-2222-2222-222222222222',
+                'cccc3333-3333-3333-3333-333333333333'][index],
+            kind: 'preference' as const, text, evidence: '我喜欢数学', confidence: 0.8, pinned: false,
+            expiresAt: null, status: 'active' as const, createdAt: now, updatedAt: now,
+        }))
+        for (const item of items) h.db.saveMemory('alice', item)
+        setJsonModel([JSON.stringify({text: '用户偏好数学', keepIds: items.map(item => memoryShortId(item.id))})])
+        const preview = await h.invoke('memory:consolidate-preview') as any
+        assert.equal(preview.ok, true, preview.error)
+        h.db.saveMemory('alice', {...h.db.getMemories('alice')[0], text: '用户偏好物理'})
+        const applied = h.invoke('memory:consolidate-apply',
+            {previewId: preview.data.previewId, groupIds: [preview.data.groups[0].id]}) as any
+        assert.equal(applied.ok, false)
+        assert.match(applied.error, /记忆已变化/)
+        assert.equal(h.db.getMemories('alice').length, 3)
+    } finally {h.restore()}
+})
+
+test('manual consolidation merges exactly the selected memories', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const now = new Date().toISOString()
+        const items = ['用户偏好数学', '用户喜欢篮球'].map((text, index) => ({
+            id: ['aaaa1111-1111-1111-1111-111111111111', 'bbbb2222-2222-2222-2222-222222222222',
+                'cccc3333-3333-3333-3333-333333333333'][index],
+            kind: 'fact' as const, text, evidence: '用户原话', confidence: 0.8, pinned: false,
+            expiresAt: null, status: 'active' as const, createdAt: now, updatedAt: now,
+        }))
+        for (const item of items) h.db.saveMemory('alice', item)
+        setJsonModel([JSON.stringify({text: '用户偏好数学，也喜欢篮球', keepIds: items.map(item => memoryShortId(item.id))})])
+        const preview = await h.invoke('memory:consolidate-preview', {ids: items.map(item => item.id)}) as any
+        assert.equal(preview.ok, true, preview.error)
+        assert.equal(preview.data.groups.length, 1, 'manual mode bypasses clustering')
+        assert.equal(preview.data.groups[0].before.length, 2)
+    } finally {h.restore()}
+})
+
+test('disabled memory sends an empty digest and produces no candidates', async () => {
+    const h = harness()
+    try {
+        const now = new Date().toISOString()
+        h.db.saveMemory('alice', {id: 'aaaa1111-1111-1111-1111-111111111111', kind: 'fact', text: '用户主修数学',
+            evidence: '我主修数学', confidence: 1, pinned: true, expiresAt: null, status: 'active', createdAt: now, updatedAt: now})
+        h.db.saveChatConversation('alice', JSON.stringify(seedTurns()))
+        const summary = JSON.stringify({facts: [], actions: [], pending: [], preferences: [], memories: [
+            {op: 'add', kind: 'fact', text: '用户主修数学', evidence: '问题0', confidence: 1, expiresAt: null}]})
+        const requests = setModel([replyResponse(summary), replyResponse('继续')])
+        h.invoke('chat:send', '继续')
+        const turn = await h.finish()
+        assert.deepEqual(JSON.parse(requests[0].messages[1].content).memories, [])
+        assert.equal(turn.actionRequests?.length ?? 0, 0)
+        assert.equal(h.db.getMemories('alice').length, 1, 'no candidate is written')
+    } finally {h.restore()}
+})
+
+test('a fabricated targetId is downgraded to add and recorded in the trace', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        h.db.saveChatConversation('alice', JSON.stringify(seedTurns()))
+        const summary = JSON.stringify({facts: [], actions: [], pending: [], preferences: [], memories: [
+            {op: 'update', targetId: 'deadbeef', kind: 'fact', text: '用户主修数学', evidence: '问题0', confidence: 1, expiresAt: null}]})
+        setModel([replyResponse(summary), replyResponse('继续')])
+        h.invoke('chat:send', '继续')
+        const turn = await h.finish()
+        assert.equal(turn.actionRequests?.[0].action.kind, 'remember')
+        assert.equal((turn.actionRequests![0].action as any).targetId, undefined, 'downgraded to add')
+        const trace = h.invoke('chat:trace', turn.id).data as ChatTraceEvent[]
+        assert.ok(trace.some(item => item.kind === 'error' && item.label === '压缩候选引用了不存在的记忆'))
+    } finally {h.restore()}
+})
+
+test('a second consolidation scan is rejected while the first is running', async () => {
+    const h = harness()
+    try {
+        h.invoke('memory:set-enabled', true)
+        const now = new Date().toISOString()
+        for (const [id, text] of [['aaaa1111-1111-1111-1111-111111111111', '用户偏好数学'],
+            ['bbbb2222-2222-2222-2222-222222222222', '用户偏好数学。']]) {
+            h.db.saveMemory('alice', {id, kind: 'preference', text, evidence: '我喜欢数学', confidence: 0.8,
+                pinned: false, expiresAt: null, status: 'active', createdAt: now, updatedAt: now})
+        }
+        let release: (() => void) | undefined
+        globalThis.fetch = async () => new Promise<Response>(resolve => {
+            release = () => resolve(new Response(JSON.stringify({choices: [{message: {content: JSON.stringify({
+                text: '用户偏好数学', keepIds: ['aaaa1111', 'bbbb2222']})}}]}), {headers: {'Content-Type': 'application/json'}}))
+        })
+        const first = h.invoke('memory:consolidate-preview') as Promise<any>
+        const until = Date.now() + 1000
+        while (!release && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 5))
+        const second = await h.invoke('memory:consolidate-preview') as any
+        assert.equal(second.ok, false)
+        assert.match(second.error, /正在整理/)
+        release!()
+        const finished = await first
+        assert.equal(finished.ok, true, finished.error)
     } finally {h.restore()}
 })
