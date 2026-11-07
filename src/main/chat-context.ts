@@ -4,18 +4,18 @@ import type {ToolChatMessage} from './llm-connection'
 export interface ContextTurn {id: string; context: ToolChatMessage[]}
 export interface Compaction {summary: string; coversUpTo: string}
 export interface CompactPlan {older: ContextTurn[]; recent: ContextTurn[]}
-/** Turns always kept verbatim in context. */
-export const recentTurns = 8
-/**
- * Compaction starts only above this many turns so each run summarizes a batch instead of a single
- * turn: one summary call per message would keep the summary permanently stuck on the oldest turns.
- */
+/** Turns always kept verbatim in context after a compaction. */
+export const recentTurns = 4
+/** Reaching this many turns compacts everything older than the kept window. */
 export const compactThreshold = 12
 /** Preserve complete turns and tool-call/result pairs; oversized single turns go into the summary. */
 export function compactTurns(turns: ContextTurn[]): CompactPlan {
     const recent = [...turns], older: ContextTurn[] = []
     while (recent.length && JSON.stringify(recent.map(turn => turn.context)).length > 60000) older.push(recent.shift()!)
-    if (recent.length > compactThreshold) older.push(...recent.splice(0, recent.length - recentTurns))
+    // At the threshold, drop the oldest turns and keep the newest four verbatim.
+    if (turns.length >= compactThreshold && recent.length > recentTurns) {
+        older.push(...recent.splice(0, recent.length - recentTurns))
+    }
     return {older, recent}
 }
 export function uncompactedTurns(turns: ContextTurn[], saved: Compaction | null): ContextTurn[] {
@@ -30,7 +30,7 @@ export function validateCompaction(raw: string): string {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || keys.some(key => !Array.isArray(parsed[key]) ||
         parsed[key].some((item: unknown) => typeof item !== 'string')) || Object.keys(parsed).some(key => ![...keys, 'memories'].includes(key))) throw new Error('摘要结构无效。')
     const summary = JSON.stringify(parsed)
-    if (summary.length > 800) throw new Error('摘要超过 800 字符。')
+    if (summary.length > 1600) throw new Error('摘要超过 1600 字符。')
     return summary
 }
 
