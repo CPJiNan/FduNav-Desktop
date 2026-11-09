@@ -14,6 +14,7 @@
     "node": "^22.13.0 || >=24.0.0"
   },
   "scripts": {
+    "test:mail": "tsc --noEmit -p tsconfig.mail-tests.json && node --experimental-transform-types --import ./tests/register.mjs --test tests/mail*.test.ts",
     "dev": "electron-vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "npm run typecheck && electron-vite build",
@@ -22,6 +23,7 @@
   },
   "dependencies": {
     "cheerio": "^1.2.0",
+    "imapflow": "2.11.0",
     "pdfjs-dist": "^6.4.299",
     "react": "19.3.1",
     "react-dom": "19.3.1",
