@@ -14,6 +14,31 @@ import type {MemoryAPI} from '../shared/memory'
 import type {ChatAPI, ChatPushState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
+import type {MailAPI} from '../shared/mail'
+
+const mail: MailAPI = {
+    accounts: () => ipcRenderer.invoke('mail:accounts'),
+    saveAccount: input => ipcRenderer.invoke('mail:save-account', input),
+    testAccount: input => ipcRenderer.invoke('mail:test-account', input),
+    cancelSetup: () => ipcRenderer.invoke('mail:cancel-setup'),
+    setAgentAccess: input => ipcRenderer.invoke('mail:set-agent-access', input),
+    removeAccount: id => ipcRenderer.invoke('mail:remove-account', id),
+    folders: ids => ipcRenderer.invoke('mail:folders', ids),
+    messages: input => ipcRenderer.invoke('mail:messages', input),
+    message: input => ipcRenderer.invoke('mail:message', input),
+    setFlags: input => ipcRenderer.invoke('mail:set-flags', input),
+    moveToTrash: id => ipcRenderer.invoke('mail:trash', id),
+    downloadAttachment: input => ipcRenderer.invoke('mail:download-attachment', input),
+    readAttachment: input => ipcRenderer.invoke('mail:read-attachment', input),
+    drafts: () => ipcRenderer.invoke('mail:drafts'),
+    draft: id => ipcRenderer.invoke('mail:draft', id),
+    saveDraft: input => ipcRenderer.invoke('mail:save-draft', input),
+    releaseDraft: id => ipcRenderer.invoke('mail:release-draft', id),
+    deleteDraft: id => ipcRenderer.invoke('mail:delete-draft', id),
+    send: input => ipcRenderer.invoke('mail:send', input),
+    openLink: url => ipcRenderer.invoke('mail:open-link', url),
+}
+contextBridge.exposeInMainWorld('mail', mail)
 
 const library: LibraryAPI = {
     crowding: refresh => ipcRenderer.invoke('library:crowding', refresh),

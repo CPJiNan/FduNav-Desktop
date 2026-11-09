@@ -5,7 +5,7 @@ import type {UsageSummary, UsageTotals} from '../shared/chat'
 import {DatabaseSync} from 'node:sqlite'
 import {createHash} from 'node:crypto'
 import type {Compaction} from './chat-context'
-import {type AdditionalLlmPrompts} from '../shared/llm-prompts'
+import {type AdditionalLlmPrompts, readAdditionalLlmPrompts} from '../shared/llm-prompts'
 import type {Theme} from '../shared/accounts'
 import {type CloseAction, isCloseAction} from '../shared/general-settings'
 import {
@@ -115,6 +115,17 @@ export class AppDatabase {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 username TEXT NOT NULL, cookies BLOB NOT NULL,
                 target TEXT NOT NULL, last_login TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS mail_connections (
+                username TEXT PRIMARY KEY, encrypted_configuration BLOB NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS mail_drafts (
+                username TEXT NOT NULL, id TEXT NOT NULL, encrypted_data BLOB NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY (username, id)
+            );
+            CREATE TABLE IF NOT EXISTS mail_sends (
+                username TEXT NOT NULL, id TEXT NOT NULL, encrypted_data BLOB NOT NULL,
+                PRIMARY KEY (username, id)
             );
             CREATE TABLE IF NOT EXISTS message_sources (
                 id TEXT PRIMARY KEY,
@@ -484,8 +495,12 @@ export class AppDatabase {
         const saved = this.db.prepare('SELECT base_url AS baseUrl, model, api_key AS encryptedApiKey, summary_prompt AS summaryPrompt FROM llm_settings WHERE id = 1')
             .get() as unknown as SavedLlmSettings | undefined
         if (!saved) return null
-        const prompts = JSON.parse(String(this.db.prepare("SELECT value FROM preferences WHERE key = 'llm_prompts'").get()?.value)) as AdditionalLlmPrompts
-        return {...saved, ...prompts}
+        let prompts: unknown
+        try {
+            prompts = JSON.parse(String(this.db.prepare("SELECT value FROM preferences WHERE key = 'llm_prompts'").get()?.value ?? 'null'))
+        } catch {
+        }
+        return {...saved, ...readAdditionalLlmPrompts(prompts)}
     }
 
     getLlmEnabled(): boolean {
@@ -518,6 +533,33 @@ export class AppDatabase {
 
     getAccount(): SavedAccount | null {
         return (this.db.prepare('SELECT username, cookies, target, last_login FROM account WHERE id = 1').get() as unknown as SavedAccount) ?? null
+    }
+
+    getMailConfiguration(username: string): Uint8Array | null {
+        const row = this.db.prepare('SELECT encrypted_configuration AS configuration FROM mail_connections WHERE username = ?').get(username)
+        return row ? row.configuration as Uint8Array : null
+    }
+    saveMailConfiguration(username: string, configuration: Uint8Array) {
+        this.db.prepare('INSERT INTO mail_connections (username, encrypted_configuration) VALUES (?, ?) ON CONFLICT(username) DO UPDATE SET encrypted_configuration = excluded.encrypted_configuration').run(username, configuration)
+    }
+    clearMailConfiguration(username: string) {
+        this.db.prepare('DELETE FROM mail_connections WHERE username = ?').run(username)
+    }
+    listMailDraftIds(username: string): string[] {
+        return (this.db.prepare('SELECT id FROM mail_drafts WHERE username = ? ORDER BY updated_at DESC LIMIT 1000').all(username) as {id: string}[]).map(row => row.id)
+    }
+    getMailDraft(username: string, id: string): Uint8Array | null {
+        return (this.db.prepare('SELECT encrypted_data FROM mail_drafts WHERE username = ? AND id = ?').get(username, id)?.encrypted_data as Uint8Array) ?? null
+    }
+    saveMailDraft(username: string, id: string, value: Uint8Array, updatedAt: string) {
+        this.db.prepare('INSERT INTO mail_drafts (username,id,encrypted_data,updated_at) VALUES (?,?,?,?) ON CONFLICT(username,id) DO UPDATE SET encrypted_data=excluded.encrypted_data,updated_at=excluded.updated_at').run(username, id, value, updatedAt)
+    }
+    deleteMailDraft(username: string, id: string) {this.db.prepare('DELETE FROM mail_drafts WHERE username=? AND id=?').run(username, id)}
+    getMailSend(username: string, id: string): Uint8Array | null {
+        return (this.db.prepare('SELECT encrypted_data FROM mail_sends WHERE username=? AND id=?').get(username, id)?.encrypted_data as Uint8Array) ?? null
+    }
+    saveMailSend(username: string, id: string, value: Uint8Array) {
+        this.db.prepare('INSERT INTO mail_sends (username,id,encrypted_data) VALUES (?,?,?) ON CONFLICT(username,id) DO UPDATE SET encrypted_data=excluded.encrypted_data').run(username, id, value)
     }
 
     saveAccount(account: SavedAccount) {

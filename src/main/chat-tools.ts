@@ -15,6 +15,7 @@ import type {Notice} from '../shared/notices'
 import type {AppDatabase} from './database'
 import type {registerNoticeHandlers} from './notices'
 import type {ChatTool} from './llm-connection'
+import {MailError, type MailService} from './mail-service'
 
 type Fields = Record<string, unknown>
 const str = (description: string) => ({type: 'string', description})
@@ -62,6 +63,19 @@ export const chatTools: ChatTool[] = [
         ...ref, offset: {type: 'integer', minimum: 0, description: '正文字符偏移，首次省略；后续使用 nextOffset'},
         limit: {type: 'integer', minimum: 1, maximum: 8000, description: '正文片段最大字符数，默认 6000'}
     }, ['sourceId', 'url']),
+    tool('list_emails', {
+        account: str('可选，完整邮箱地址或账号 ID；省略时查询所有已授权邮箱，结果包含来源邮箱'),
+        days: {type: 'integer', minimum: 1, maximum: 365, description: '最近多少天，默认 30；与 from/to 互斥'},
+        from: str('开始收件日期 YYYY-MM-DD，与 to 一起填写；最多 365 天'),
+        to: str('结束收件日期 YYYY-MM-DD，包含这一天'),
+        limit: {type: 'integer', minimum: 1, maximum: 10, description: '最多返回几封，默认 5'},
+        cursor: str('上一页的 nextCursor；继续分页时只填 cursor 和可选 limit'),
+    }),
+    tool('get_email', {
+        id: str('来自 list_emails 的邮件 ID，不要猜测'),
+        offset: {type: 'integer', minimum: 0, maximum: 100000, description: '正文字符偏移，默认 0；后续使用 nextOffset'},
+        limit: {type: 'integer', minimum: 1, maximum: 6000, description: '正文片段字符上限，默认 6000'},
+    }, ['id']),
     tool('generate_notice_summary', ref, ['sourceId', 'url']),
     tool('list_events', {
         from: str('开始日期 YYYY-MM-DD'),
@@ -106,6 +120,7 @@ export function configuredChatTools(descriptions: Record<ChatToolName, string>):
 export const chatToolLabels: Record<string, string> = {
     remember: '请求保存记忆', recall: '查询记忆', forget: '请求删除记忆',
     search_notices: '检索通知', get_notice: '读取通知',
+    list_emails: '列出收件箱邮件', get_email: '读取邮件正文',
     generate_notice_summary: '请求通知摘要',
     list_events: '获取日程', get_event: '读取日程', create_event: '请求新增日程',
     list_todos: '查询待办', create_todo: '请求新增待办',
@@ -205,7 +220,8 @@ function page<T>(items: T[], args: Fields) {
 export function createChatToolRunner(db: AppDatabase, username: string,
                                      notices: ReturnType<typeof registerNoticeHandlers>,
                                      addCard: (card: ChatCard) => void, assertCurrent: () => void,
-                                     requestSummary: (notice: Notice) => unknown, requestAction: (action: ChatAction) => unknown) {
+                                     requestSummary: (notice: Notice) => unknown, requestAction: (action: ChatAction) => unknown,
+                                     mail: Pick<MailService, 'list' | 'read'>, signal?: AbortSignal) {
     const seenNotices = new Set<string>()
     const noticeKey = (item: { sourceId: string; url: string }) => JSON.stringify([item.sourceId, item.url])
 
@@ -263,6 +279,17 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             if (!valid || (rule.enum && !rule.enum.includes(value)) ||
                 (typeof value === 'number' && (!Number.isFinite(value) || (rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)))) {
                 throw new ToolError('invalid_args', `${key} 参数类型或范围无效。`)
+            }
+        }
+        if (name === 'list_emails' || name === 'get_email') {
+            try {
+                const result = name === 'list_emails' ? await mail.list(username, input, signal)
+                    : await mail.read(username, {id: textArg(input, 'id', true), offset: input.offset as number | undefined,
+                        limit: input.limit as number | undefined}, signal)
+                assertCurrent(); return result
+            } catch (error) {
+                if (error instanceof MailError) throw new ToolError(error.code === 'send_unknown' ? 'transient' : error.code, error.message)
+                throw new ToolError('internal', '邮箱读取未完成，请重试。')
             }
         }
         if (name === 'recall' || name === 'remember' || name === 'forget') {
