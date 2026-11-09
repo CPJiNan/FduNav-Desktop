@@ -1,5 +1,5 @@
 import {type FormEvent, useEffect, useRef, useState} from 'react'
-import {validateMailInput, type MailInput, type MailSettings, mailPresets} from '../../shared/mail'
+import {validateMailInput, type MailInput, type MailSettings, mailPresets, fudanStudentMail} from '../../shared/mail'
 import {ConfirmDialog} from './ConfirmDialog'
 import {Icon} from './Icon'
 
@@ -7,7 +7,7 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
     settings: MailSettings; campusUsername?: string; onClose: () => void; onSaved: (settings: MailSettings) => void
 }) {
     const [initial] = useState<MailInput>(() => ({...settings, enabled: settings.configured ? settings.enabled : true,
-        host: settings.host || 'mail.fudan.edu.cn', address: settings.address || (campusUsername ? campusUsername + '@fudan.edu.cn' : ''),
+        host: settings.host || fudanStudentMail.host, address: settings.address || (campusUsername ? campusUsername + '@' + fudanStudentMail.domain : ''),
         username: settings.username || '', password: ''}))
     const [draft, setDraft] = useState(initial)
     const [preset, setPreset] = useState(() => mailPresets.find(item => item.host === initial.host)?.id ?? 'custom')
@@ -105,7 +105,7 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
                 }}>{mailPresets.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
                 <label htmlFor="mail-address">邮箱地址</label>
                 <input id="mail-address" name="address" type="email" autoComplete="username" autoCapitalize="none" spellCheck={false}
-                       placeholder="学号@fudan.edu.cn" maxLength={254} value={draft.address} aria-invalid={invalid('address')}
+                       placeholder={'学号@' + fudanStudentMail.domain} maxLength={254} value={draft.address} aria-invalid={invalid('address')}
                        aria-describedby={described('address')} onChange={event => change('address', event.target.value)}/>
                 <label htmlFor="mail-password">密码或客户端专用密码</label>
                 <div className="mail-password-control">

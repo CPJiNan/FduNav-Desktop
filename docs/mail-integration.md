@@ -4,7 +4,7 @@
 
 1. 进入侧栏“邮箱”或设置中的“邮箱”。
 2. 日常收发使用“在浏览器打开”或“在应用内打开”。两者均打开复旦官方网页版；应用内会话独立，需要另行登录。
-3. 需要助手读取时，选择“连接助手读取”，填写完整邮箱地址和邮箱密码/客户端专用密码。复旦邮箱默认 `mail.fudan.edu.cn`、993、TLS。
+3. 需要助手读取时，选择“连接助手读取”，填写完整的 `学号@m.fudan.edu.cn` 地址和邮箱密码/客户端专用密码。学生云邮箱默认 `imap.exmail.qq.com`、993、TLS，登录账号默认为完整邮箱地址。旧系统保留为独立可选预设。
 4. “测试连接”只验证连接和收件箱访问；“连接并保存”验证后通过系统安全存储加密保存。网页登录状态不能代替 IMAP 授权。
 5. 可以暂停助手读取或移除本机连接。移除不删除服务器邮件，也不清除已有对话/执行记录中的邮件片段。
 
@@ -30,7 +30,7 @@
 
 连接元数据和密码一起加密存入 `mail_connections`，渲染层只拿到不含密码的公开设置。密码仅在输入/连接过程短暂驻留内存。读取的邮件片段会发送至用户配置的模型，并进入现有对话与轨迹存储；移除连接不能撤回这些既有内容。
 
-完整邮箱能力由官方网站承担；应用没有重新实现一个邮件客户端。复旦云邮箱、QQ 及自定义 IMAP 预设可配置，但未以真实账号验收。应用内官方邮箱的已登录流程也仍需真实账号验证。
+完整邮箱能力由 `https://mail.m.fudan.edu.cn/` 官方学生云邮箱承担；应用没有重新实现一个邮件客户端。旧系统、QQ 及自定义 IMAP 预设可配置，但未以真实账号验收。应用内官方邮箱的已登录流程也仍需真实账号验证。
 
 ## 验证
 
@@ -43,11 +43,12 @@ npm run test:ui
 
 测试需要项目要求的 Node 版本。协议测试需要 OpenSSL；缺失时会明确跳过。浏览器预览地址为 `http://127.0.0.1:4176/tests/mail-ui.html`，支持 `?connected`、`?authError`、`?slow`、`?loadError`。预览仅使用模拟数据，不访问真实邮箱。
 
-见 `evidence/mail/verification.md`：真实复旦网络和 TLS 连接正常，但提供的凭据被 IMAP 和官方网页拒绝，真实邮件读取尚未验收。不要把本地协议测试等同于真实邮箱连通。
+见 `evidence/mail/verification.md`：早期测试误接旧系统，不能据此判断学生邮箱凭据。修正学生地址和服务器后，腾讯 IMAP 仍返回认证失败；可能需要客户端专用密码，但具体账号设置尚未核实。真实邮件读取尚未验收。不要把本地协议测试等同于真实邮箱连通。
 
 ## 资料
 
-- [复旦信息办邮箱说明](https://xxb.fudan.edu.cn/yjzysx_33107/list.htm)
+- [复旦学生云邮箱服务说明](https://xxb.fudan.edu.cn/fdyyx/list.htm)
+- [复旦学生云邮箱客户端设置](https://xxb.fudan.edu.cn/cjwt/list.htm)
 - [ImapFlow API](https://imapflow.com/docs/api/imapflow-client/)
 - [Electron 安全建议](https://www.electronjs.org/docs/latest/tutorial/security)
 - [Anthropic frontend-design](https://github.com/anthropics/skills/tree/main/skills/frontend-design)（下载副本、来源和许可证位于 `docs/design-guides/frontend-design/`）

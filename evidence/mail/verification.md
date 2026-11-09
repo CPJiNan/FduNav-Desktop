@@ -35,11 +35,25 @@ Screenshots in this directory use **mock accounts only**. They contain no real m
 
 ## Live Fudan boundary
 
+### Student cloud-mail correction
+
+The initial default and live checks below targeted the **old Coremail system**, whereas this user's student mailbox belongs to **m.fudan.edu.cn**. Those failures cannot establish anything about the student-cloud credentials. This was an implementation/configuration mistake.
+
+Corrected the default to `student-number@m.fudan.edu.cn`, IMAP `imap.exmail.qq.com:993` with verified TLS and full-address login, and web entry `https://mail.m.fudan.edu.cn/`. Kept the old system as an explicit alternate preset; existing saved connections are not silently migrated.
+
+Primary evidence: [Fudan cloud service](https://xxb.fudan.edu.cn/fdyyx/list.htm) and [official client settings FAQ](https://xxb.fudan.edu.cn/cjwt/list.htm). The web navigation policy now allows the exact student host and exmail.qq.com, with lookalike rejection covered by tests.
+
+A single production-client connection attempt against the **corrected student-cloud endpoint** reached authentication and returned `NO` with `authenticationFailed: true`. No mail was read or modified and no real credential was saved. The FAQ distinguishes mailbox password from client-specific password when secure login is enabled; the user's actual setting is unknown. Authenticated student webmail is not yet tested. The existing 19 tests, production build and UI-fixture typecheck pass after this correction.
+
+Browser recheck confirms the student provider is selected by default, the advanced server field shows imap.exmail.qq.com/993/TLS, the page displays mail.m.fudan.edu.cn, and Escape restores focus to Connect. `settings-student-cloud.png` records the corrected mock-account page; earlier screenshots preserve the initial old-system default as historical evidence.
+
+### Historical old-system checks
+
 - DNS and TCP/993 connectivity succeeded. TLS certificate validation succeeded without disabling verification.
 - Server greeted as Coremail IMAP. Short and full-address login attempts failed with the server's generic authentication error.
 - A separate attempt through the production ImapFlow transport, including client ID, also failed authentication. No messages were read or modified.
 - The official HTTPS webmail login was attempted through the browser and returned “用户名或密码错误，或登录受到限制”. No password reset, permission changes or repeated login loop was attempted.
-- Therefore **real-account listing/body retrieval is not verified**. A working email credential/client password and any required IMAP enablement must be established by the account owner. The exact reason cannot be inferred from generic server errors.
+- Therefore **real-account listing/body retrieval is not verified**. These old-system failures do not diagnose the student-cloud account.
 - The official web login page is reachable; authenticated full-webmail and the Electron window's authenticated flow still require a working account. Browser fixture and protocol tests do not replace that check.
 - Encryption tests use an injected authenticated cipher. The production adapter reuses the existing Electron OS secure-storage implementation; an actual account save through that adapter remains unverified because authentication fails first.
 

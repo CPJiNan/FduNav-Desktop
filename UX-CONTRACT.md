@@ -18,7 +18,7 @@ The Agent owns only `list_emails` and `get_email`. No mail mutation tool exists.
 
 ## Connection form and async behavior
 
-New connections default to Fudan TLS/993. Users may choose another provider and expand server settings. Validate the same schema in renderer and main process, focus the first invalid field, associate the error through aria-describedby, and use application-owned validation (`noValidate`). Passwords accept paste and password managers. A blank password retains the existing secret only for exactly the same account and endpoint.
+New connections default to Fudan student cloud mail: student-number@m.fudan.edu.cn, imap.exmail.qq.com, TLS/993, with the full email address as login. The official web entry is mail.m.fudan.edu.cn; the old Fudan system remains a separate preset. Users may choose another provider and expand server settings. Validate the same schema in renderer and main process, focus the first invalid field, associate the error through aria-describedby, and use application-owned validation (`noValidate`). Passwords accept paste and password managers. A blank password retains the existing secret only for exactly the same account and endpoint.
 
 Testing does not save or read bodies. Saving verifies the connection before encrypting the complete configuration using OS secure storage. Failed saves preserve the prior configuration. A stopped setup cannot commit even if cancellation happens during encryption. There is no optimistic “connected” state.
 

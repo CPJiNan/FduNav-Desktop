@@ -2,7 +2,7 @@
 import {StrictMode, useState} from 'react'
 import {createRoot} from 'react-dom/client'
 import {MailPanel} from '../src/renderer/src/MailPanel'
-import {emptyMailSettings, type MailSettings} from '../src/shared/mail'
+import {emptyMailSettings, fudanStudentMail, type MailSettings} from '../src/shared/mail'
 import '../src/renderer/src/styles/base.css'
 import '../src/renderer/src/styles/app.css'
 import '../src/renderer/src/styles/calendar.css'
@@ -10,7 +10,7 @@ import './mail-ui.css'
 
 const params = new URLSearchParams(location.search)
 let settings: MailSettings = params.has('connected') ? {...emptyMailSettings(), configured: true, enabled: true,
-    address: 'student@fudan.edu.cn', username: 'student@fudan.edu.cn', host: 'mail.fudan.edu.cn',
+    address: 'student@' + fudanStudentMail.domain, username: 'student@' + fudanStudentMail.domain, host: fudanStudentMail.host,
     lastVerifiedAt: '2026-11-09T08:00:00Z'} : emptyMailSettings()
 const ok = <T,>(data: T) => Promise.resolve({ok: true as const, data: structuredClone(data)})
 const fail = (error: string) => Promise.resolve({ok: false as const, error})

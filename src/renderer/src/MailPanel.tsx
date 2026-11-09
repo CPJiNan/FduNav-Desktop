@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from 'react'
 import type {Result} from '../../shared/accounts'
-import {emptyMailSettings, type MailSettings} from '../../shared/mail'
+import {emptyMailSettings, fudanStudentMail, type MailSettings} from '../../shared/mail'
 import {MailConnectionDialog} from './MailConnectionDialog'
 import {ConfirmDialog} from './ConfirmDialog'
 import {Icon} from './Icon'
@@ -68,7 +68,7 @@ export function MailPanel({active, campusUsername, onOpenChat}: {active: boolean
         <header className="mail-page-heading"><div className="mail-page-symbol"><Icon name="mail"/></div>
             <div><h2>邮箱</h2><p>收发交给官方邮箱，阅读交给助手。</p></div></header>
         <section className="mail-webmail-section" aria-labelledby="mail-webmail-title">
-            <div className="mail-section-heading"><h3 id="mail-webmail-title">复旦邮箱网页版</h3><span className="mail-domain">mail.fudan.edu.cn</span></div>
+            <div className="mail-section-heading"><h3 id="mail-webmail-title">复旦学生邮箱网页版</h3><span className="mail-domain">{new URL(fudanStudentMail.webmailUrl).hostname}</span></div>
             <p>使用完整的收发、附件、草稿和文件夹功能。浏览器入口可沿用你已有的登录状态。</p>
             <div className="mail-entry-actions"><button type="button" className="primary-button" disabled={!api || !!busy} onClick={() => void open('browser')}>
                 <Icon name="external"/>{busy === 'browser' ? '正在打开…' : '在浏览器打开'}</button>
