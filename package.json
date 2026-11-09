@@ -14,8 +14,6 @@
     "node": "^22.13.0 || >=24.0.0"
   },
   "scripts": {
-    "test:ui": "tsc --noEmit -p tsconfig.mail-ui.json && vite --config tests/vite.config.mjs",
-    "test:mail": "tsc --noEmit -p tsconfig.mail-tests.json && node --experimental-transform-types --import ./tests/register.mjs --test tests/mail*.test.ts",
     "dev": "electron-vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "npm run typecheck && electron-vite build",

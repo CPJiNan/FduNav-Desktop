@@ -1,5 +1,0 @@
-{
-  "extends": "./tsconfig.web.json",
-  "compilerOptions": {"composite": false},
-  "include": ["src/shared/**/*.ts", "src/renderer/src/**/*.ts", "src/renderer/src/**/*.tsx", "tests/mail-ui.tsx"]
-}

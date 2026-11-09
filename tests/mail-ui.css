@@ -1,8 +1,0 @@
-.mail-fixture { min-height: 100dvh; background: var(--color-bg-surface); }
-.mail-fixture-header { display: flex; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--color-border-subtle); font-size: 14px; }
-.mail-fixture-header > span { flex: 1; color: var(--color-text-muted); }
-.mail-fixture-layout { display: grid; grid-template-columns: 160px minmax(0, 1fr); max-width: 1000px; margin: auto; }
-.mail-fixture-layout > aside { display: flex; flex-direction: column; gap: 24px; padding: 32px 24px; color: var(--color-text-muted); font-size: 14px; }
-.mail-fixture-layout > aside strong { color: var(--color-text-primary); background: var(--color-bg-selected); border-radius: var(--radius-sm); padding: 10px 12px; margin-left: -12px; }
-.mail-fixture-layout > main { padding: 32px; min-width: 0; }
-@media(max-width: 600px) { .mail-fixture-layout { grid-template-columns: 1fr; } .mail-fixture-layout > aside { display: none; } .mail-fixture-layout > main { padding: 24px 20px; } .mail-fixture-header { padding: 12px 20px; flex-wrap: wrap; gap: 8px; } }
