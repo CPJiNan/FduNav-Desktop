@@ -2,7 +2,7 @@
 
 ## Automated checks
 
-- `npm run test:mail`: 19 passed, zero failures and zero skips, including TypeScript checking of the tests.
+- `npm run test:mail`: 21 passed, zero failures and zero skips, including TypeScript checking of the tests. The final two tests cover safe authentication diagnostics and no automatic authentication retries.
 - The protocol test uses the actual ImapFlow library against a disposable local TLS IMAP server. Its test certificate is explicitly trusted only by the injected test client; production certificate validation is unchanged.
 - Confirmed Chinese encoded subjects and GB18030/base64 bodies decode correctly; commands use EXAMINE and BODY.PEEK, with no SELECT/STORE/APPEND/MOVE/EXPUNGE and no change to Seen flags.
 - Service tests cover encrypted configuration, owner isolation, failed replacement, setup cancellation during encryption, read cancellation, disabled access, stale UID references, pagination, empty/unavailable excerpts, bounded tool results, unsafe navigation and exactly two Agent read tools.
@@ -35,6 +35,16 @@ Screenshots in this directory use **mock accounts only**. They contain no real m
 
 ## Live Fudan boundary
 
+### Successful student-cloud read smoke after enabling IMAP
+
+On 2026-11-09, the user completed WeChat login to official student webmail. Its “收发信设置” page showed “开启 IMAP/SMTP 服务” unchecked. After explicit action-time approval, enabled only that checkbox and saved; the page confirmed “设置保存成功” and showed the checked state. POP remained off and the server-side collection period remained “最近30天”.
+
+Using the same client-specific password that failed before the setting change, the production `MailService` and `createMailTransport` completed two authenticated sessions: listing three recent messages with three available body excerpts, then reading one text body (174 characters). Four excerpt/body reads compared message flags before and after; all remained identical. Only aggregate verification results were printed, with no mail content, real account identifiers, credentials, or raw protocol replies recorded in this repository.
+
+The smoke configuration was encrypted in ephemeral memory with a disposable key; no credentials were written to disk or the real app database. The production service and transport were exercised with an in-memory storage adapter, not Electron OS secure storage. No model was invoked. Actual desktop connection save, Agent conversation/trace rendering and the authenticated Electron webmail window still need end-to-end verification. Server-side 30-day visibility limits apply even if the Agent requests a longer period.
+
+The earlier failures below are historical; they no longer describe current student-cloud connectivity.
+
 ### Student cloud-mail correction
 
 The initial default and live checks below targeted the **old Coremail system**, whereas this user's student mailbox belongs to **m.fudan.edu.cn**. Those failures cannot establish anything about the student-cloud credentials. This was an implementation/configuration mistake.
@@ -53,9 +63,9 @@ Browser recheck confirms the student provider is selected by default, the advanc
 - Server greeted as Coremail IMAP. Short and full-address login attempts failed with the server's generic authentication error.
 - A separate attempt through the production ImapFlow transport, including client ID, also failed authentication. No messages were read or modified.
 - The official HTTPS webmail login was attempted through the browser and returned “用户名或密码错误，或登录受到限制”. No password reset, permission changes or repeated login loop was attempted.
-- Therefore **real-account listing/body retrieval is not verified**. These old-system failures do not diagnose the student-cloud account.
+- At that stage real-account listing/body retrieval was unverified. These old-system failures do not diagnose the student-cloud account; the successful student-cloud smoke above supersedes that boundary.
 - The official web login page is reachable; authenticated full-webmail and the Electron window's authenticated flow still require a working account. Browser fixture and protocol tests do not replace that check.
-- Encryption tests use an injected authenticated cipher. The production adapter reuses the existing Electron OS secure-storage implementation; an actual account save through that adapter remains unverified because authentication fails first.
+- Encryption tests use an injected authenticated cipher. The production adapter reuses the existing Electron OS secure-storage implementation; an actual account save through that adapter remains unverified.
 
 ## Design reconciliation and remaining scope
 
