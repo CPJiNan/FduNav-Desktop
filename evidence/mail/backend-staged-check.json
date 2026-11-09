@@ -1,0 +1,12 @@
+{
+  "tree": "05e871ad535ceea04a19c4083babe3505b486a0c",
+  "checks": {
+    "build": {
+      "exitCode": 0
+    },
+    "tests": {
+      "exitCode": 0
+    }
+  },
+  "note": "Built and tested an export of the staged index; unstaged email UI excluded."
+}

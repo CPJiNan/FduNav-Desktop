@@ -1,0 +1,26 @@
+{
+  "findings": [
+    {
+      "severity": "warning",
+      "path": "colors.border",
+      "message": "'border' is defined but never referenced by any component.",
+      "rule": "orphaned-tokens"
+    },
+    {
+      "severity": "warning",
+      "path": "colors.darkSurface",
+      "message": "'darkSurface' is defined but never referenced by any component.",
+      "rule": "orphaned-tokens"
+    },
+    {
+      "severity": "info",
+      "message": "Design system defines 6 colors, 1 typography scale, 2 rounding levels, 2 spacing tokens, 3 components.",
+      "rule": "token-summary"
+    }
+  ],
+  "summary": {
+    "errors": 0,
+    "warnings": 2,
+    "infos": 1
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "baselineCommit": "9bd20cb43e5f2d7c6ea3bfd5d0267bf5c4637373",
+  "baseline": {
+    "errors": 15,
+    "total": 15,
+    "unresolved": 0,
+    "violations": 15,
+    "warnings": 0
+  },
+  "current": {
+    "errors": 15,
+    "total": 15,
+    "unresolved": 0,
+    "violations": 15,
+    "warnings": 0
+  },
+  "newFindings": [],
+  "comparison": "file, ruleId, message; line shifts excluded; same contracts and manifest applied to both source trees"
+}

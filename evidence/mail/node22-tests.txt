@@ -1,0 +1,122 @@
+(node:67696) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+# (node:67756) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:67756) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:67756) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/zzz/Desktop/papers/2.topics/.fdunav-development/tests/mail-protocol.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/zzz/Desktop/papers/2.topics/.fdunav-development/package.json.
+# Subtest: real IMAP wire smoke decodes Chinese MIME and never changes flags
+ok 1 - real IMAP wire smoke decodes Chinese MIME and never changes flags
+  ---
+  duration_ms: 66.202875
+  ...
+# (node:67757) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:67757) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:67757) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///Users/zzz/Desktop/papers/2.topics/.fdunav-development/tests/mail.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to /Users/zzz/Desktop/papers/2.topics/.fdunav-development/package.json.
+# (node:67757) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: connection validation rejects unsafe hosts, plaintext, malformed accounts and ports
+ok 2 - connection validation rejects unsafe hosts, plaintext, malformed accounts and ports
+  ---
+  duration_ms: 0.565083
+  ...
+# Subtest: date defaults are 30 calendar days in Shanghai, and invalid ranges fail
+ok 3 - date defaults are 30 calendar days in Shanghai, and invalid ranges fail
+  ---
+  duration_ms: 1.003625
+  ...
+# Subtest: entire saved configuration is encrypted and isolated by campus account
+ok 4 - entire saved configuration is encrypted and isolated by campus account
+  ---
+  duration_ms: 1.418417
+  ...
+# Subtest: test does not persist and failed replacement preserves old settings without leaking server errors
+ok 5 - test does not persist and failed replacement preserves old settings without leaking server errors
+  ---
+  duration_ms: 0.458333
+  ...
+# Subtest: saved secrets cannot be silently reused after endpoint or identity changes
+ok 6 - saved secrets cannot be silently reused after endpoint or identity changes
+  ---
+  duration_ms: 0.438541
+  ...
+# Subtest: cancelling setup during encryption never commits a replacement connection
+ok 7 - cancelling setup during encryption never commits a replacement connection
+  ---
+  duration_ms: 0.380333
+  ...
+# Subtest: unavailable OS storage blocks saving before credential transmission
+ok 8 - unavailable OS storage blocks saving before credential transmission
+  ---
+  duration_ms: 0.1045
+  ...
+# Subtest: fresh credentials can replace an unreadable old OS-encrypted configuration
+ok 9 - fresh credentials can replace an unreadable old OS-encrypted configuration
+  ---
+  duration_ms: 0.300125
+  ...
+# Subtest: cursor pagination survives new arrivals and rejects stale mailbox identity
+ok 10 - cursor pagination survives new arrivals and rejects stale mailbox identity
+  ---
+  duration_ms: 0.821667
+  ...
+# Subtest: long escaped bodies preserve useful tool responses and correct next offsets
+ok 11 - long escaped bodies preserve useful tool responses and correct next offsets
+  ---
+  duration_ms: 0.679917
+  ...
+# Subtest: empty or failed excerpts are explicit, never a fabricated summary
+ok 12 - empty or failed excerpts are explicit, never a fabricated summary
+  ---
+  duration_ms: 0.366875
+  ...
+# Subtest: disabling permission and cancelling a task abort outstanding reads and close sessions
+ok 13 - disabling permission and cancelling a task abort outstanding reads and close sessions
+  ---
+  duration_ms: 3.876916
+  ...
+# Subtest: account change and disconnect cannot return or reuse old-mailbox data
+ok 14 - account change and disconnect cannot return or reuse old-mailbox data
+  ---
+  duration_ms: 0.695041
+  ...
+# Subtest: HTML is converted without executable content, remote-image loading or attachment text
+ok 15 - HTML is converted without executable content, remote-image loading or attachment text
+  ---
+  duration_ms: 3.453708
+  ...
+# Subtest: adapter requires verified encryption, EXAMINE and bounded body-part downloads
+ok 16 - adapter requires verified encryption, EXAMINE and bounded body-part downloads
+  ---
+  duration_ms: 0.728625
+  ...
+# Subtest: only two mail read tools exist, with proper parameters and cancellation propagation
+ok 17 - only two mail read tools exist, with proper parameters and cancellation propagation
+  ---
+  duration_ms: 0.635958
+  ...
+# Subtest: SQLite migration stores connection BLOBs per owner
+ok 18 - SQLite migration stores connection BLOBs per owner
+  ---
+  duration_ms: 1.3195
+  ...
+# Subtest: webmail URL policy rejects local schemes, credential URLs, wrong ports and lookalike domains
+ok 19 - webmail URL policy rejects local schemes, credential URLs, wrong ports and lookalike domains
+  ---
+  duration_ms: 0.100042
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 466.514917

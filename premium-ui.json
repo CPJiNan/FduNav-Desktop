@@ -1,0 +1,14 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src/renderer/src"],
+  "locale": "zh-CN",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Form", "Scrollbar", "Toast", "CRUD"],
+  "ownership": {"Select/Listbox": "native", "Date": "native"},
+  "requiredCommands": ["unit", "build"],
+  "commands": {"unit": "npm run test:mail", "build": "npm run build"},
+  "evidence": {
+    "crudFullFlow": "evidence/mail/verification.md",
+    "failurePaths": "tests/mail.test.ts"
+  }
+}
