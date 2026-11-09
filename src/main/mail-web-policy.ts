@@ -1,5 +1,6 @@
-export const fudanWebmailUrl = 'https://mail.fudan.edu.cn/'
-const webmailHosts = new Set(['mail.fudan.edu.cn', 'uis.fudan.edu.cn', 'id.fudan.edu.cn'])
+import {fudanStudentMail} from '../shared/mail'
+export const fudanWebmailUrl = fudanStudentMail.webmailUrl
+const webmailHosts = new Set(['mail.m.fudan.edu.cn', 'exmail.qq.com', 'mail.fudan.edu.cn', 'uis.fudan.edu.cn', 'id.fudan.edu.cn'])
 export function isWebmailNavigation(value: string): boolean {
     if (value === 'about:blank') return true
     try {

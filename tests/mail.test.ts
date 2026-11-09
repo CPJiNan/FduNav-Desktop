@@ -209,7 +209,7 @@ test('SQLite migration stores connection BLOBs per owner', () => {
     assert.equal(db.getMailConfiguration('one'), null); assert.deepEqual([...db.getMailConfiguration('two')!], [3])
 })
 test('webmail URL policy rejects local schemes, credential URLs, wrong ports and lookalike domains', () => {
-    for (const url of ['https://mail.fudan.edu.cn/coremail/', 'https://uis.fudan.edu.cn/', 'about:blank', 'blob:https://mail.fudan.edu.cn/id']) assert.equal(isWebmailNavigation(url), true)
-    for (const url of ['http://mail.fudan.edu.cn/', 'file:///etc/passwd', 'javascript:alert(1)', 'https://mail.fudan.edu.cn.evil.com/', 'https://x:y@mail.fudan.edu.cn/', 'https://mail.fudan.edu.cn:1234/']) assert.equal(isWebmailNavigation(url), false)
+    for (const url of ['https://mail.m.fudan.edu.cn/', 'https://exmail.qq.com/cgi-bin/login', 'https://mail.fudan.edu.cn/coremail/', 'https://uis.fudan.edu.cn/', 'about:blank', 'blob:https://mail.fudan.edu.cn/id']) assert.equal(isWebmailNavigation(url), true)
+    for (const url of ['http://mail.fudan.edu.cn/', 'file:///etc/passwd', 'javascript:alert(1)', 'https://mail.fudan.edu.cn.evil.com/', 'https://mail.m.fudan.edu.cn.evil.com/', 'https://exmail.qq.com.evil.com/', 'https://x:y@mail.fudan.edu.cn/', 'https://mail.fudan.edu.cn:1234/']) assert.equal(isWebmailNavigation(url), false)
     assert.equal(isExternalMailLink('https://example.com/notice'), true); assert.equal(isExternalMailLink('mailto:x@example.com'), false)
 })

@@ -6,12 +6,13 @@ export interface MailConnection {
 }
 export interface MailInput extends MailConnection {password: string; enabled: boolean}
 export interface MailSettings extends MailConnection {configured: boolean; enabled: boolean; lastVerifiedAt: string | null}
+export const fudanStudentMail = {domain: 'm.fudan.edu.cn', host: 'imap.exmail.qq.com', webmailUrl: 'https://mail.m.fudan.edu.cn/'} as const
 export const emptyMailSettings = (): MailSettings => ({
     configured: false, enabled: false, address: '', username: '', host: '', port: 993, security: 'tls', lastVerifiedAt: null,
 })
 export const mailPresets = [
-    {id: 'fudan', label: '复旦邮箱', host: 'mail.fudan.edu.cn', hint: '使用邮箱密码；请在网页版邮箱的设置中确认已开启 IMAP 服务。'},
-    {id: 'fudan-cloud', label: '复旦云邮箱', host: 'imap.exmail.qq.com', hint: '使用客户端专用密码或授权码。'},
+    {id: 'fudan-cloud', label: '复旦学生邮箱', host: fudanStudentMail.host, hint: '使用邮箱密码；已开启“安全登录”时，请使用客户端专用密码。'},
+    {id: 'fudan', label: '复旦邮箱（旧系统）', host: 'mail.fudan.edu.cn', hint: '使用邮箱密码；请在网页版邮箱的设置中确认已开启 IMAP 服务。'},
     {id: 'qq', label: 'QQ 邮箱', host: 'imap.qq.com', hint: '请先开启 IMAP 服务，并使用授权码。'},
     {id: 'custom', label: '其他邮箱', host: '', hint: '填写服务商提供的 IMAP 设置；部分邮箱需要应用专用密码。'},
 ] as const
