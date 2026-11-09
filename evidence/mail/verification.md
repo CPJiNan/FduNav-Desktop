@@ -33,6 +33,12 @@ Served through `npm run test:ui` at `/tests/mail-ui.html`. The fixture imports t
 
 Screenshots in this directory use **mock accounts only**. They contain no real mailbox content or credentials.
 
+### Setup guidance follow-up
+
+The unconnected settings page now names both prerequisites. The student-cloud modal shows three visible steps before account entry: enable and save IMAP/SMTP, generate/copy a client-specific password, paste/test/save in FduNav. Official menu paths for generating the password were checked against the Fudan FAQ; the service checkbox path was observed in authenticated official webmail. The student password field has a specific label, paste instruction and missing-value error. Other providers keep their existing generic guidance.
+
+Rechecked the production components in the mock fixture: standard light/dark views, 390×844 scrolling with reachable action buttons, missing-password focus, pending and successful test feedback, switching to Other (student guide disappears), and Escape focus restoration. Screenshots: `connection-guide-light.png`, `connection-guide-dark.png`, `connection-guide-narrow.png`. Existing 21 tests and production build passed; strict UI audit retains the same 15 untouched legacy findings with none in the changed mail components. No additional live login or mail read was needed for this copy/layout change.
+
 ## Live Fudan boundary
 
 ### Successful student-cloud read smoke after enabling IMAP

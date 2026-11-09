@@ -58,7 +58,7 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
             if (checked.field && !['address', 'password', 'enabled'].includes(checked.field)) setAdvanced(true)
             return
         }
-        if (!settings.configured && !draft.password) {setError('请输入邮箱密码或客户端专用密码。'); setFieldError('password'); return}
+        if (!settings.configured && !draft.password) {setError(preset === 'fudan-cloud' ? '请粘贴在官方邮箱生成的客户端专用密码。' : '请输入邮箱密码或客户端专用密码。'); setFieldError('password'); return}
         setBusy(kind); setError(''); setFieldError(''); setNotice('')
         const input = checked.data
         try {
@@ -103,14 +103,23 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
                     setPreset(next.id); setDraft(current => ({...current, host: next.host, port: 993, security: 'tls', password: ''}))
                     setError(''); setFieldError(''); setNotice(''); setAdvanced(next.id === 'custom')
                 }}>{mailPresets.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+                {preset === 'fudan-cloud' && <section className="mail-setup-guide" aria-labelledby="mail-setup-title">
+                    <h4 id="mail-setup-title">首次连接指引</h4>
+                    <ol>
+                        <li><strong>开启 IMAP/SMTP：</strong>登录官方邮箱，在“设置 → 收发信设置”勾选“开启 IMAP/SMTP 服务”，点击“保存更改”。</li>
+                        <li><strong>生成专用密码：</strong>进入“设置 → 邮箱绑定 → 客户端专用密码”，点击“生成新密码”，按提示验证后复制密码。</li>
+                        <li><strong>粘贴并连接：</strong>在下方粘贴专用密码，点击“测试连接”；成功后点击“{settings.configured ? '保存更改' : '连接并保存'}”。</li>
+                    </ol>
+                    <p>前两步都要完成；仅生成密码不会开启服务。FduNav 仅使用 IMAP 读取邮件。</p>
+                </section>}
                 <label htmlFor="mail-address">邮箱地址</label>
                 <input id="mail-address" name="address" type="email" autoComplete="username" autoCapitalize="none" spellCheck={false}
                        placeholder={'学号@' + fudanStudentMail.domain} maxLength={254} value={draft.address} aria-invalid={invalid('address')}
                        aria-describedby={described('address')} onChange={event => change('address', event.target.value)}/>
-                <label htmlFor="mail-password">密码或客户端专用密码</label>
+                <label htmlFor="mail-password">{preset === 'fudan-cloud' ? '客户端专用密码' : '密码或客户端专用密码'}</label>
                 <div className="mail-password-control">
                     <input id="mail-password" name="password" type={revealed ? 'text' : 'password'} autoComplete="current-password"
-                           value={draft.password} maxLength={4096} placeholder={settings.configured ? '留空保留已保存的密码' : '输入密码或授权码'}
+                           value={draft.password} maxLength={4096} placeholder={settings.configured ? '留空保留已保存的密码' : preset === 'fudan-cloud' ? '粘贴在官方邮箱生成的专用密码' : '输入密码或授权码'}
                            aria-invalid={invalid('password')} aria-describedby={described('password', 'mail-password-hint')}
                            onChange={event => change('password', event.target.value)}/>
                     <button type="button" className="mail-reveal" aria-label={revealed ? '隐藏密码' : '显示密码'} aria-pressed={revealed}

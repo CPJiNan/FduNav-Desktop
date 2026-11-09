@@ -91,7 +91,7 @@ export function MailPanel({active, campusUsername, onOpenChat}: {active: boolean
                 {settings.lastVerifiedAt && <p className="mail-field-hint">上次连接验证：{new Date(settings.lastVerifiedAt).toLocaleString('zh-CN')}</p>}
                 <div className="mail-account-actions"><button type="button" className="secondary-button" onClick={onOpenChat}>前往对话</button>
                     <button ref={removeButton} type="button" className="mail-text-button" disabled={!!busy} onClick={() => setRemoving(true)}>移除本机连接</button></div>
-            </> : <div className="mail-connect-invitation"><p>连接后，可以让助手帮你查看最近一个月的邮件，再按需阅读正文。</p>
+            </> : <div className="mail-connect-invitation"><p>首次连接前，请在官方邮箱开启 IMAP/SMTP 服务并保存，再生成客户端专用密码。连接时将专用密码粘贴到 FduNav。</p>
                 <button ref={connectionButton} type="button" className="secondary-button" disabled={!api || !!busy} onClick={() => setEditing(true)}><Icon name="plus"/>连接助手读取</button></div>}
             <ul className="mail-capabilities"><li><Icon name="notices"/><div><strong>查看最近邮件</strong><p>标题、发件人和正文摘录，默认最近 30 天，可指定日期。</p></div></li>
                 <li><Icon name="book"/><div><strong>按需阅读正文</strong><p>只读取需要的邮件。写信、回复和管理操作由你在网页版完成。</p></div></li></ul>
