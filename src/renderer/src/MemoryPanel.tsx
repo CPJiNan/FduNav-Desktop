@@ -2,7 +2,7 @@ import {useEffect, useRef, useState} from 'react'
 import type {Memory, MemoryState} from '../../shared/memory'
 import type {Result} from '../../shared/accounts'
 import {downloadJson} from './ChatTracePanel'
-import {Icon} from './Icon'
+import {MemoryListDialog} from './MemoryListDialog'
 import {MemoryDialog} from './MemoryDialog'
 import {ConfirmDialog} from './ConfirmDialog'
 
@@ -15,6 +15,7 @@ export function MemoryPanel({active}: { active: boolean }) {
     const [deleting, setDeleting] = useState('')
     const [retry, setRetry] = useState(0)
     const [notice, setNotice] = useState('')
+    const [listOpen, setListOpen] = useState(false)
     const importInput = useRef<HTMLInputElement>(null)
     useEffect(() => {
         if (!active) return
@@ -95,6 +96,8 @@ export function MemoryPanel({active}: { active: boolean }) {
             </button>
         </div>
         <div className="trace-toolbar memory-toolbar">
+            <button type="button" className="secondary-button" disabled={busy || !loaded} aria-haspopup="dialog"
+                    onClick={() => setListOpen(true)}>记忆列表 <span className="memory-count">{state.items.length}</span></button>
             <button type="button" className="secondary-button" disabled={busy || !loaded}
                     onClick={() => {
                         setError('');
@@ -120,23 +123,10 @@ export function MemoryPanel({active}: { active: boolean }) {
             <button type="button" className="secondary-button"
                     onClick={() => setRetry(value => value + 1)}>重试</button>}</div>}
         {!loaded && !error && <p role="status">正在读取记忆…</p>}
-        <ul className="memory-list">{state.items.map(item => <li key={item.id}>
-            <div>
-                <p>{item.text}</p><small>{item.evidence}</small></div>
-            <div className="memory-actions">
-                <button type="button" className="icon-button" title="编辑" aria-label="编辑记忆" disabled={busy}
-                        onClick={() => setEditing({...item})}><Icon name="pencil"/></button>
-                <button type="button" className="icon-button" aria-pressed={item.pinned}
-                        title={item.pinned ? '取消置顶' : '置顶'} aria-label={item.pinned ? '取消置顶' : '置顶'}
-                        disabled={busy}
-                        onClick={() => void update(() => window.memory?.save({
-                            ...item,
-                            pinned: !item.pinned
-                        }))}><Icon name="pin"/></button>
-                <button type="button" className="icon-button" title="删除" aria-label="删除记忆" disabled={busy}
-                        onClick={() => setDeleting(item.id)}><Icon name="trash"/></button>
-            </div>
-        </li>)}</ul>
+        {listOpen && <MemoryListDialog items={state.items} busy={busy} error={error} nestedOpen={!!editing || !!deleting}
+                                       onClose={() => setListOpen(false)} onEdit={item => setEditing({...item})}
+                                       onRemove={item => setDeleting(item.id)}
+                                       onPin={item => void update(() => window.memory?.save({...item, pinned: !item.pinned}))}/>}
         {deleting && <ConfirmDialog title="删除这条记忆" message="是否删除这条记忆？" confirmLabel="删除"
                                     danger busy={busy}
                                     onConfirm={() => void confirmRemove()}
