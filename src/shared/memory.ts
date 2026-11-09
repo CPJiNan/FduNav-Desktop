@@ -10,15 +10,11 @@ export interface MemoryInput {
     status: 'active' | 'archived'
 }
 
-export type MemorySource = 'tool' | 'compaction' | 'import' | 'edit' | 'restore'
-
 export interface Memory extends MemoryInput {
     id: string;
     createdAt: string;
     updatedAt: string
     seenCount?: number
-    mergedFrom?: string[]
-    source?: MemorySource
 }
 
 export interface MemoryState {

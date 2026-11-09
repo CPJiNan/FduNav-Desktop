@@ -164,7 +164,10 @@ export default function App() {
                         aria-label="待办" title="待办" aria-current={showTodosPage ? 'page' : undefined}
                         onClick={() => openPage('todos')}><Icon name="todo"/></button>
                 <button type="button" className="icon-button rail-button" aria-label="邮箱" title="邮箱"
-                        onClick={() => {setTab('mail'); setSettings(true)}}><Icon name="mail"/></button>
+                        onClick={() => {
+                            setTab('mail');
+                            setSettings(true)
+                        }}><Icon name="mail"/></button>
                 <div className="rail-bottom">
                     <SummaryQueuePanel username={account?.username} onOpenNotice={async ref => {
                         const result = await window.notices?.getNotice(ref)
@@ -206,7 +209,8 @@ export default function App() {
                                     {tab === 'notifications' && showSettings && <NotificationSettingsPanel/>}
                                     {tab === 'account' && <AccountPanel account={account} onChange={setAccount}/>}
                                     {tab === 'about' && <AboutPanel/>}
-                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'} campusUsername={account?.username ?? undefined}
+                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
+                                               campusUsername={account?.username ?? undefined}
                                                onOpenChat={() => openPage('chat')}/>
                                     <div hidden={tab !== 'messages'}><MessagePreferencesPanel
                                         key={account?.status === 'signed-in' ? account.username : 'signed-out'}

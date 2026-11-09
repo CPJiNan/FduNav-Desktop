@@ -8,16 +8,25 @@ import {MailError, MailService} from './mail-service'
 import {openWebmail} from './mail-web'
 
 export function registerMailHandlers(db: AppDatabase, accounts: AccountService, trusted: (event: IpcMainInvokeEvent) => boolean) {
-    const owner = () => {const account = accounts.getState(); return account.status === 'signed-in' ? account.username : null}
+    const owner = () => {
+        const account = accounts.getState();
+        return account.status === 'signed-in' ? account.username : null
+    }
     const service = new MailService(db, secureStorage, createMailTransport(), owner)
+
     function handle<T>(channel: string, action: (input: unknown, event: IpcMainInvokeEvent) => Promise<T>) {
         ipcMain.handle(channel, async (event, input): Promise<Result<T>> => {
             if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
-            try {return {ok: true, data: await action(input, event)}}
-            catch (error) {return {ok: false, error: error instanceof MailError ? error.message : '邮箱操作失败，请重试。'}}
-            finally {if (input && typeof input === 'object' && typeof input.password === 'string') input.password = ''}
+            try {
+                return {ok: true, data: await action(input, event)}
+            } catch (error) {
+                return {ok: false, error: error instanceof MailError ? error.message : '邮箱操作失败，请重试。'}
+            } finally {
+                if (input && typeof input === 'object' && typeof input.password === 'string') input.password = ''
+            }
         })
     }
+
     handle('mail:get', () => service.get())
     handle('mail:test', input => service.test(input))
     handle('mail:save', input => service.save(input))

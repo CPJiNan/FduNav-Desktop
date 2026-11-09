@@ -105,16 +105,10 @@ export function validateCompaction(raw: string): string {
     return JSON.stringify(summary)
 }
 
-export function parseSummary(summary: string | null | undefined): Record<string, unknown> | string | null {
+export function parseSummary(summary: string | null | undefined): Record<string, unknown> | null {
     if (!summary) return null
-    try {
-        const parsed: unknown = JSON.parse(summary)
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return summary
-        const {memories: _memories, ...rest} = parsed as Record<string, unknown>
-        return rest
-    } catch {
-        return summary
-    }
+    const {memories: _memories, ...rest} = JSON.parse(summary) as Record<string, unknown>
+    return rest
 }
 
 export type MemoryCandidate =

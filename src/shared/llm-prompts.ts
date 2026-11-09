@@ -34,20 +34,3 @@ export const defaultAdditionalLlmPrompts = (): AdditionalLlmPrompts => ({
     chatPrompt: defaultChatPrompt,
     connectionTestPrompt: defaultConnectionTestPrompt, toolDescriptions: {...defaultToolDescriptions},
 })
-
-export function readAdditionalLlmPrompts(value: unknown): AdditionalLlmPrompts {
-    const defaults = defaultAdditionalLlmPrompts()
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return defaults
-    const input = value as Record<string, unknown>
-    for (const field of ['chatPrompt', 'connectionTestPrompt'] as const) {
-        if (typeof input[field] === 'string' && input[field].trim() && input[field].length <= 8000) defaults[field] = input[field]
-    }
-    if (input.toolDescriptions && typeof input.toolDescriptions === 'object' && !Array.isArray(input.toolDescriptions)) {
-        const descriptions = input.toolDescriptions as Record<string, unknown>
-        for (const key of Object.keys(defaultToolDescriptions) as ChatToolName[]) {
-            const description = descriptions[key]
-            if (typeof description === 'string' && description.trim() && description.length <= 2000) defaults.toolDescriptions[key] = description
-        }
-    }
-    return defaults
-}

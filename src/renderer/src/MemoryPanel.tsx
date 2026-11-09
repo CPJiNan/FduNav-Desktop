@@ -97,7 +97,8 @@ export function MemoryPanel({active}: { active: boolean }) {
         </div>
         <div className="trace-toolbar memory-toolbar">
             <button type="button" className="secondary-button" disabled={busy || !loaded} aria-haspopup="dialog"
-                    onClick={() => setListOpen(true)}>记忆列表 <span className="memory-count">{state.items.length}</span></button>
+                    onClick={() => setListOpen(true)}>查看记忆
+            </button>
             <button type="button" className="secondary-button" disabled={busy || !loaded}
                     onClick={() => {
                         setError('');
@@ -123,10 +124,11 @@ export function MemoryPanel({active}: { active: boolean }) {
             <button type="button" className="secondary-button"
                     onClick={() => setRetry(value => value + 1)}>重试</button>}</div>}
         {!loaded && !error && <p role="status">正在读取记忆…</p>}
-        {listOpen && <MemoryListDialog items={state.items} busy={busy} error={error} nestedOpen={!!editing || !!deleting}
-                                       onClose={() => setListOpen(false)} onEdit={item => setEditing({...item})}
-                                       onRemove={item => setDeleting(item.id)}
-                                       onPin={item => void update(() => window.memory?.save({...item, pinned: !item.pinned}))}/>}
+        {listOpen &&
+            <MemoryListDialog items={state.items} busy={busy} error={error} nestedOpen={!!editing || !!deleting}
+                              onClose={() => setListOpen(false)} onEdit={item => setEditing({...item})}
+                              onRemove={item => setDeleting(item.id)}
+                              onPin={item => void update(() => window.memory?.save({...item, pinned: !item.pinned}))}/>}
         {deleting && <ConfirmDialog title="删除这条记忆" message="是否删除这条记忆？" confirmLabel="删除"
                                     danger busy={busy}
                                     onConfirm={() => void confirmRemove()}
