@@ -9,6 +9,8 @@ import {MessagePreferencesPanel} from './MessagePreferencesPanel'
 import {SourcesPanel} from './SourcesPanel'
 import {LlmPanel} from './LlmPanel'
 import {GeneralPanel} from './GeneralPanel'
+import {MailPanel} from './MailPanel'
+import {MailboxPage} from './MailboxPage'
 import {NotificationSettingsPanel} from './NotificationSettingsPanel'
 import {SummaryQueuePanel} from './SummaryQueuePanel'
 import {AboutPanel} from './AboutPanel'
@@ -27,6 +29,7 @@ const tabs = [
     {id: 'messages', label: '消息偏好', icon: 'tag'},
     {id: 'sources', label: '消息来源', icon: 'folder'},
     {id: 'llm', label: 'LLM', icon: 'processor'},
+    {id: 'mail', label: '邮箱', icon: 'mail'},
     {id: 'about', label: '关于', icon: 'info'},
 ] as const
 type Tab = typeof tabs[number]['id']
@@ -35,7 +38,7 @@ const calendarNavigation = {label: '日历', icon: 'calendar'} as const
 
 export default function App() {
     const [settings, setSettings] = useState(false)
-    const [page, setPage] = useState<'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos'>('dashboard')
+    const [page, setPage] = useState<'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'mail'>('dashboard')
     const [noticeToOpen, setNoticeToOpen] = useState<Notice | null>(null)
     const [calendarInitialView, setCalendarInitialView] = useState<CalendarView>('week')
     const [tab, setTab] = useState<Tab>('general')
@@ -56,6 +59,7 @@ export default function App() {
     const showTodosPage = !showSettings && page === 'todos'
     const showDashboardPage = !showSettings && page === 'dashboard'
     const showChatPage = !showSettings && page === 'chat'
+    const showMailPage = !showSettings && page === 'mail'
     const settingsButton = useRef<HTMLButtonElement>(null)
     const settingsWasOpen = useRef(false)
 
@@ -116,7 +120,7 @@ export default function App() {
         return () => window.removeEventListener('keydown', onKey)
     }, [needsSetup])
 
-    function openPage(next: 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos', calendarView: CalendarView = 'week') {
+    function openPage(next: 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'mail', calendarView: CalendarView = 'week') {
         if (next === 'calendar') setCalendarInitialView(calendarView)
         setPage(next)
         if (needsLogin) {
@@ -161,6 +165,8 @@ export default function App() {
                 <button type="button" className={`icon-button rail-button ${showTodosPage ? 'is-active' : ''}`}
                         aria-label="待办" title="待办" aria-current={showTodosPage ? 'page' : undefined}
                         onClick={() => openPage('todos')}><Icon name="todo"/></button>
+                <button type="button" className={`icon-button rail-button ${showMailPage ? 'is-active' : ''}`} aria-label="邮箱" title="邮箱"
+                        aria-current={showMailPage ? 'page' : undefined} onClick={() => openPage('mail')}><Icon name="mail"/></button>
                 <div className="rail-bottom">
                     <SummaryQueuePanel username={account?.username} onOpenNotice={async ref => {
                         const result = await window.notices?.getNotice(ref)
@@ -202,6 +208,8 @@ export default function App() {
                                     {tab === 'notifications' && showSettings && <NotificationSettingsPanel/>}
                                     {tab === 'account' && <AccountPanel account={account} onChange={setAccount}/>}
                                     {tab === 'about' && <AboutPanel/>}
+                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'} campusUsername={account?.username ?? undefined}
+                                               onOpenMailbox={() => openPage('mail')}/>
                                     <div hidden={tab !== 'messages'}><MessagePreferencesPanel
                                         key={account?.status === 'signed-in' ? account.username : 'signed-out'}
                                         requiredProfile={account?.status === 'signed-in'}
@@ -244,6 +252,8 @@ export default function App() {
                                           initialView={calendarInitialView}/>}
                         {showTodosPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <TodosPage key={account?.username}/>}
+                        {showMailPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                            <MailboxPage key={account?.username} onSettings={() => {setTab('mail'); setSettings(true)}}/>}
                     </main>
                 </div>
             </div>
