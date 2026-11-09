@@ -11,7 +11,7 @@ export const emptyMailSettings = (): MailSettings => ({
     configured: false, enabled: false, address: '', username: '', host: '', port: 993, security: 'tls', lastVerifiedAt: null,
 })
 export const mailPresets = [
-    {id: 'fudan-cloud', label: '复旦学生邮箱', host: fudanStudentMail.host, hint: '推荐使用客户端专用密码；已开启“安全登录”时必须使用。微信扫码登录不能代替客户端授权。'},
+    {id: 'fudan-cloud', label: '复旦学生邮箱', host: fudanStudentMail.host, hint: '开启“安全登录”后，需使用客户端专用密码，普通邮箱密码不可用。'},
     {id: 'fudan', label: '复旦邮箱（旧系统）', host: 'mail.fudan.edu.cn', hint: '使用邮箱密码；请在网页版邮箱的设置中确认已开启 IMAP 服务。'},
     {id: 'qq', label: 'QQ 邮箱', host: 'imap.qq.com', hint: '请先开启 IMAP 服务，并使用授权码。'},
     {id: 'custom', label: '其他邮箱', host: '', hint: '填写服务商提供的 IMAP 设置；部分邮箱需要应用专用密码。'},

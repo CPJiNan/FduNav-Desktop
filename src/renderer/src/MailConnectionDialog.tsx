@@ -65,7 +65,7 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
             if (kind === 'test') {
                 const result = await api.test(input)
                 if (!mounted.current) return
-                if (result.ok) setNotice(result.data.message)
+                if (result.ok) setNotice(settings.configured ? '测试通过。点击“保存更改”保存本次设置。' : '测试通过。点击“连接并保存”完成设置。')
                 else setError(result.error)
             } else {
                 const result = await api.save(input)
@@ -91,8 +91,8 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
                    onCancel={event => {event.preventDefault(); requestClose()}}
                    onClick={event => {if (event.target === dialog.current) requestClose()}}>
         <div className="calendar-dialog-header mail-dialog-heading">
-            <div><h3 id="mail-connection-title">{settings.configured ? '修改助手连接' : '连接助手读取'}</h3>
-                <p id="mail-connection-description">让助手按需查看收件箱，收发邮件仍在官方网页版完成。</p></div>
+            <div><h3 id="mail-connection-title">{settings.configured ? '修改邮箱连接' : '连接邮箱'}</h3>
+                <p id="mail-connection-description">连接后，可在对话中查询收件箱中的邮件。</p></div>
             <button ref={closeButton} type="button" className="icon-button" title="关闭" aria-label="关闭邮箱连接" disabled={!!busy} onClick={requestClose}><Icon name="close"/></button>
         </div>
         <form ref={form} className="mail-connection-form" noValidate onSubmit={(event: FormEvent) => {event.preventDefault(); void perform('save')}} aria-busy={!!busy}>
@@ -104,17 +104,16 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
                     setError(''); setFieldError(''); setNotice(''); setAdvanced(next.id === 'custom')
                 }}>{mailPresets.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
                 {preset === 'fudan-cloud' && <section className="mail-setup-guide" aria-labelledby="mail-setup-title">
-                    <h4 id="mail-setup-title">首次连接指引</h4>
+                    <h4 id="mail-setup-title">连接步骤</h4>
                     <ol>
-                        <li><strong>开启 IMAP/SMTP：</strong>登录官方邮箱，在“设置 → 收发信设置”勾选“开启 IMAP/SMTP 服务”，点击“保存更改”。</li>
-                        <li><strong>生成专用密码：</strong>进入“设置 → 邮箱绑定 → 客户端专用密码”，点击“生成新密码”，按提示验证后复制密码。</li>
-                        <li><strong>粘贴并连接：</strong>在下方粘贴专用密码，点击“测试连接”；成功后点击“{settings.configured ? '保存更改' : '连接并保存'}”。</li>
+                        <li><strong>开启服务：</strong>在官方邮箱的“设置 → 收发信设置”中勾选“开启 IMAP/SMTP 服务”，保存更改。</li>
+                        <li><strong>获取专用密码：</strong>进入“设置 → 邮箱绑定 → 客户端专用密码”，点击“生成新密码”，验证后复制密码。</li>
+                        <li><strong>填写并保存：</strong>在下方填写完整邮箱地址、粘贴专用密码。测试通过后，点击“{settings.configured ? '保存更改' : '连接并保存'}”。</li>
                     </ol>
-                    <p>前两步都要完成；仅生成密码不会开启服务。FduNav 仅使用 IMAP 读取邮件。</p>
                 </section>}
                 <label htmlFor="mail-address">邮箱地址</label>
                 <input id="mail-address" name="address" type="email" autoComplete="username" autoCapitalize="none" spellCheck={false}
-                       placeholder={'学号@' + fudanStudentMail.domain} maxLength={254} value={draft.address} aria-invalid={invalid('address')}
+                       placeholder={preset === 'fudan-cloud' ? '学号@' + fudanStudentMail.domain : 'name@example.com'} maxLength={254} value={draft.address} aria-invalid={invalid('address')}
                        aria-describedby={described('address')} onChange={event => change('address', event.target.value)}/>
                 <label htmlFor="mail-password">{preset === 'fudan-cloud' ? '客户端专用密码' : '密码或客户端专用密码'}</label>
                 <div className="mail-password-control">
@@ -139,18 +138,18 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
                                 <select id="mail-security" name="security" value={draft.security} onChange={event => {
                                     const security = event.target.value as MailInput['security']; setDraft(current => ({...current, security, port: security === 'tls' ? 993 : 143})); setNotice('')
                                 }}><option value="tls">TLS（推荐）</option><option value="starttls">STARTTLS</option></select></div></div>
-                        <label htmlFor="mail-username">登录账号（可选）</label>
+                        <label htmlFor="mail-username">登录账号（选填）</label>
                         <input id="mail-username" name="username" value={draft.username} maxLength={254} autoCapitalize="none" spellCheck={false}
                                placeholder="默认使用上方邮箱地址" aria-invalid={invalid('username')} aria-describedby={described('username')}
                                onChange={event => change('username', event.target.value)}/>
                     </div>
                 </details>
                 <label className="mail-agent-consent"><input type="checkbox" checked={draft.enabled} onChange={event => change('enabled', event.target.checked)}/>
-                    允许助手按需读取收件箱</label>
-                <p className="mail-field-hint">凭据通过系统安全存储加密保存在本机。助手读取的邮件片段会发送至你配置的模型，并保留在对话与执行记录中。</p>
+                    允许助手读取邮件</label>
+                <p className="mail-field-hint">账号和密码加密保存在本机。读取的邮件内容会发送到所选模型，并保存在对话和执行记录中。</p>
             </fieldset>
             <div className="mail-form-feedback" aria-live="polite">
-                {busy && <p role="status">{busy === 'test' ? '正在验证安全连接…' : '正在验证并加密保存…'}</p>}
+                {busy && <p role="status">{busy === 'test' ? '正在测试连接…' : '正在连接并保存…'}</p>}
                 {notice && <p className="mail-success" role="status">{notice}</p>}
                 {error && <p id="mail-connection-error" className="account-error" role="alert">{error}</p>}
             </div>
@@ -160,7 +159,7 @@ export function MailConnectionDialog({settings, campusUsername, onClose, onSaved
                 <button type="submit" className="primary-button" disabled={!!busy}>{busy === 'save' ? '正在保存…' : settings.configured ? '保存更改' : '连接并保存'}</button>
             </div>
         </form>
-        {discarding && <ConfirmDialog title="放弃未保存的连接设置？" message="修改尚未保存。关闭后需要重新输入密码。" confirmLabel="放弃修改"
+        {discarding && <ConfirmDialog title="放弃修改？" message="本次修改尚未保存。关闭后，填写的内容将被清除。" confirmLabel="放弃修改"
                                      onCancel={() => setDiscarding(false)} onConfirm={onClose}/>}
     </dialog>
 }

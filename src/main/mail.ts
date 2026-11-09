@@ -14,7 +14,7 @@ export function registerMailHandlers(db: AppDatabase, accounts: AccountService, 
         ipcMain.handle(channel, async (event, input): Promise<Result<T>> => {
             if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
             try {return {ok: true, data: await action(input, event)}}
-            catch (error) {return {ok: false, error: error instanceof MailError ? error.message : '邮箱操作未完成，请重试；网页打不开时可改用浏览器。'}}
+            catch (error) {return {ok: false, error: error instanceof MailError ? error.message : '邮箱操作失败，请重试。'}}
             finally {if (input && typeof input === 'object' && typeof input.password === 'string') input.password = ''}
         })
     }
