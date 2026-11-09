@@ -21,7 +21,6 @@ import {registerTimetableHandlers} from './timetable'
 import {registerCalendarHandlers} from './calendar'
 import {registerChatHandlers} from './chat'
 import {registerTodoHandlers} from './todos'
-import {registerMailHandlers} from './mail'
 import {registerCampusCardHandlers} from './campus-card'
 import {registerLibraryHandlers} from './library'
 import {registerGeneralSettingsHandlers} from './general-settings'
@@ -179,8 +178,7 @@ app.whenReady().then(async () => {
         const todos = registerTodoHandlers(database, accounts, trusted, showMainWindow)
         const llm = registerLlmHandlers(database, trusted)
         const notices = registerNoticeHandlers(database, accounts, llm, trusted, showMainWindow)
-        const mail = registerMailHandlers(database, accounts, trusted)
-        registerChatHandlers(database, accounts, llm, notices, calendar, todos, mail, trusted)
+        registerChatHandlers(database, accounts, llm, notices, calendar, todos, trusted)
         registerMessagePreferenceHandlers(database, trusted)
     } catch (error) {
         console.error('FduNav 启动失败', error)

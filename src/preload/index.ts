@@ -14,18 +14,6 @@ import type {MemoryAPI} from '../shared/memory'
 import type {ChatAPI, ChatPushState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
-import type {MailAPI} from '../shared/mail'
-
-const mail: MailAPI = {
-    get: () => ipcRenderer.invoke('mail:get'),
-    test: input => ipcRenderer.invoke('mail:test', input),
-    save: input => ipcRenderer.invoke('mail:save', input),
-    cancelSetup: () => ipcRenderer.invoke('mail:cancel-setup'),
-    setEnabled: enabled => ipcRenderer.invoke('mail:set-enabled', enabled),
-    disconnect: () => ipcRenderer.invoke('mail:disconnect'),
-    openWebmail: mode => ipcRenderer.invoke('mail:open-webmail', mode),
-}
-contextBridge.exposeInMainWorld('mail', mail)
 
 const library: LibraryAPI = {
     crowding: refresh => ipcRenderer.invoke('library:crowding', refresh),

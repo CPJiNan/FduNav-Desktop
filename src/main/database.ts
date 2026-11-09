@@ -116,9 +116,6 @@ export class AppDatabase {
                 username TEXT NOT NULL, cookies BLOB NOT NULL,
                 target TEXT NOT NULL, last_login TEXT NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS mail_connections (
-                username TEXT PRIMARY KEY, encrypted_configuration BLOB NOT NULL
-            );
             CREATE TABLE IF NOT EXISTS message_sources (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -521,19 +518,6 @@ export class AppDatabase {
 
     getAccount(): SavedAccount | null {
         return (this.db.prepare('SELECT username, cookies, target, last_login FROM account WHERE id = 1').get() as unknown as SavedAccount) ?? null
-    }
-
-    getMailConfiguration(username: string): Uint8Array | null {
-        const row = this.db.prepare('SELECT encrypted_configuration AS configuration FROM mail_connections WHERE username = ?').get(username)
-        return row ? row.configuration as Uint8Array : null
-    }
-
-    saveMailConfiguration(username: string, configuration: Uint8Array) {
-        this.db.prepare('INSERT INTO mail_connections (username, encrypted_configuration) VALUES (?, ?) ON CONFLICT(username) DO UPDATE SET encrypted_configuration = excluded.encrypted_configuration').run(username, configuration)
-    }
-
-    clearMailConfiguration(username: string) {
-        this.db.prepare('DELETE FROM mail_connections WHERE username = ?').run(username)
     }
 
     saveAccount(account: SavedAccount) {

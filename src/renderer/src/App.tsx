@@ -9,7 +9,6 @@ import {MessagePreferencesPanel} from './MessagePreferencesPanel'
 import {SourcesPanel} from './SourcesPanel'
 import {LlmPanel} from './LlmPanel'
 import {GeneralPanel} from './GeneralPanel'
-import {MailPanel} from './MailPanel'
 import {NotificationSettingsPanel} from './NotificationSettingsPanel'
 import {SummaryQueuePanel} from './SummaryQueuePanel'
 import {AboutPanel} from './AboutPanel'
@@ -28,7 +27,6 @@ const tabs = [
     {id: 'messages', label: '消息偏好', icon: 'tag'},
     {id: 'sources', label: '消息来源', icon: 'folder'},
     {id: 'llm', label: 'LLM', icon: 'processor'},
-    {id: 'mail', label: '邮箱', icon: 'mail'},
     {id: 'about', label: '关于', icon: 'info'},
 ] as const
 type Tab = typeof tabs[number]['id']
@@ -163,11 +161,6 @@ export default function App() {
                 <button type="button" className={`icon-button rail-button ${showTodosPage ? 'is-active' : ''}`}
                         aria-label="待办" title="待办" aria-current={showTodosPage ? 'page' : undefined}
                         onClick={() => openPage('todos')}><Icon name="todo"/></button>
-                <button type="button" className="icon-button rail-button" aria-label="邮箱" title="邮箱"
-                        onClick={() => {
-                            setTab('mail');
-                            setSettings(true)
-                        }}><Icon name="mail"/></button>
                 <div className="rail-bottom">
                     <SummaryQueuePanel username={account?.username} onOpenNotice={async ref => {
                         const result = await window.notices?.getNotice(ref)
@@ -209,9 +202,6 @@ export default function App() {
                                     {tab === 'notifications' && showSettings && <NotificationSettingsPanel/>}
                                     {tab === 'account' && <AccountPanel account={account} onChange={setAccount}/>}
                                     {tab === 'about' && <AboutPanel/>}
-                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
-                                               campusUsername={account?.username ?? undefined}
-                                               onOpenChat={() => openPage('chat')}/>
                                     <div hidden={tab !== 'messages'}><MessagePreferencesPanel
                                         key={account?.status === 'signed-in' ? account.username : 'signed-out'}
                                         requiredProfile={account?.status === 'signed-in'}
