@@ -18,6 +18,31 @@ const iso = (v: unknown) => {
     const date = v instanceof Date ? v : typeof v === 'string' ? new Date(v) : null
     return date && Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
+function authenticationError(error: unknown): MailError {
+    const v = error as {responseText?: unknown; response?: unknown; responseStatus?: unknown; serverResponseCode?: unknown}
+    // Interpret server text privately. Never return raw replies, executedCommand or credential payloads.
+    const reply = [v.responseText, v.response].filter((value): value is string => typeof value === 'string')
+        .map(value => value.slice(0, 8192)).join(' ')
+    const status = v.responseStatus === 'NO' || v.responseStatus === 'BAD' ? v.responseStatus : '未提供'
+    const knownCodes = ['AUTHENTICATIONFAILED', 'AUTHORIZATIONFAILED', 'PRIVACYREQUIRED', 'UNAVAILABLE', 'EXPIRED', 'NOPERM', 'LIMIT', 'CONTACTADMIN']
+    const responseCode = typeof v.serverResponseCode === 'string' && knownCodes.includes(v.serverResponseCode) ? v.serverResponseCode : '未提供'
+    let code: MailError['code'] = 'forbidden'
+    let reason = '未收到可识别的具体拒绝原因，不能据此判断是密码错误还是邮箱侧访问策略限制。'
+    if (/too many (?:login |authentication )?(?:attempts|connections)|rate[ -]?limit|登录过于频繁|尝试次数过多/i.test(reply) || responseCode === 'LIMIT') {
+        code = 'transient'; reason = '服务器提示登录尝试或连接过多，请暂停重试，待限制解除后再连接。'
+    } else if (/(?:IMAP|protocol).{0,24}(?:disabled|not enabled|closed)|IMAP.{0,16}(?:未开启|未开通|被禁用)/i.test(reply)) {
+        reason = '服务器提示 IMAP 客户端访问未开启或已被禁用，请在邮箱侧确认客户端权限。'
+    } else if (/authorization[ -]?(?:code|password)|client[ -]?(?:specific[ -]?)?password|app(?:lication)?[ -]?password|客户端专用密码|授权码/i.test(reply)) {
+        reason = /invalid|incorrect|wrong|expired|无效|错误|过期/i.test(reply)
+            ? '服务器提示客户端专用密码或授权码被拒绝或已失效，请在邮箱侧核查该凭据。'
+            : '服务器要求使用客户端专用密码或授权码。'
+    } else if (/contact.{0,24}(?:administrator|admin)|联系.{0,12}管理员/i.test(reply) || responseCode === 'CONTACTADMIN') {
+        reason = '服务器要求联系邮箱管理员，请核查该账号的客户端访问策略。'
+    } else if (/account.{0,24}(?:locked|blocked|suspended|restricted)|(?:IP|login).{0,24}(?:blocked|restricted)|账号.{0,12}(?:锁定|冻结|受限)/i.test(reply)) {
+        reason = '服务器提示账号或登录来源受到限制，请在邮箱侧确认限制原因。'
+    } else if (responseCode === 'EXPIRED') reason = '服务器提示认证凭据已过期，请在邮箱侧核查凭据。'
+    return new MailError(code, `邮箱登录失败。${reason}（认证阶段；服务器状态：${status}；错误码：${responseCode}）`)
+}
 function decodeCursor(value: string): Cursor {
     try {
         if (!value || value.length > 1024 || !/^[a-z0-9_-]+$/i.test(value)) throw new Error()
@@ -170,7 +195,7 @@ export class MailService {
             if (signal.aborted) throw new MailError('transient', '邮箱操作已取消或超时，请重试。')
             if (error instanceof MailError) throw error
             const v = error as {code?: string; authenticationFailed?: boolean}
-            if (v?.authenticationFailed || /AUTH|EAUTH|LOGIN/i.test(v?.code ?? '')) throw new MailError('forbidden', '邮箱登录失败。请确认已开启 IMAP，并使用邮箱密码或客户端专用密码；网页登录状态不能替代 IMAP 授权。')
+            if (v?.authenticationFailed || /AUTH|EAUTH|LOGIN/i.test(v?.code ?? '')) throw authenticationError(error)
             if (/CERT|TLS|SSL|SELF_SIGNED/i.test(v?.code ?? '')) throw new MailError('forbidden', '邮箱服务器的安全连接验证失败，请检查服务器地址和系统时间。')
             throw new MailError('transient', '暂时无法读取邮箱，请检查网络、IMAP 服务器和端口后重试。')
         } finally {

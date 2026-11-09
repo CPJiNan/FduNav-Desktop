@@ -91,6 +91,27 @@ test('saved secrets cannot be silently reused after endpoint or identity changes
     }
     assert.equal(f.counts().opened, 2)
 })
+test('authentication diagnostics explain an explicit server refusal without exposing raw replies or credentials', async () => {
+    const f = fixture(), payload = Buffer.from('\0' + input.username + '\0' + input.password).toString('base64')
+    f.setError(Object.assign(new Error(input.password), {authenticationFailed: true, responseStatus: 'NO', serverResponseCode: 'AUTHORIZATIONFAILED',
+        responseText: 'LOGIN fail. Please contact your administrator. ' + input.password + ' session=private-session', executedCommand: 'A1 AUTHENTICATE PLAIN ' + payload}))
+    await assert.rejects(f.service.test({...input}), error => {
+        assert.ok(error instanceof MailError); assert.match(error.message, /服务器要求联系邮箱管理员/)
+        assert.match(error.message, /服务器状态：NO/); assert.match(error.message, /AUTHORIZATIONFAILED/)
+        for (const secret of [input.password, payload, 'private-session', 'LOGIN fail', 'executedCommand']) assert.equal(error.message.includes(secret), false)
+        return true
+    })
+    f.setError(Object.assign(new Error('hidden'), {authenticationFailed: true, responseStatus: 'NO', serverResponseCode: input.password, responseText: 'unknown ' + payload}))
+    await assert.rejects(f.service.test({...input}), error => error instanceof MailError && /不能据此判断/.test(error.message) && !error.message.includes(input.password) && !error.message.includes(payload))
+})
+test('explicit client-password and rate-limit refusals are distinguished without automatic retries', async () => {
+    const f = fixture()
+    f.setError(Object.assign(new Error('hidden'), {authenticationFailed: true, responseStatus: 'NO', responseText: 'Invalid authorization code'}))
+    await assert.rejects(f.service.test({...input}), /客户端专用密码或授权码被拒绝/)
+    f.setError(Object.assign(new Error('hidden'), {authenticationFailed: true, responseStatus: 'NO', responseText: 'Too many login attempts'}))
+    await assert.rejects(f.service.test({...input}), error => error instanceof MailError && error.code === 'transient' && /暂停重试/.test(error.message))
+    assert.equal(f.counts().opened, 2); assert.equal(f.rows.size, 0)
+})
 test('cancelling setup during encryption never commits a replacement connection', {timeout: 3000}, async () => {
     const f = fixture(); await f.service.save({...input})
     const original = f.rows.get('student')
