@@ -38,7 +38,7 @@ export function MailboxPage({onSettings}: {onSettings: () => void}) {
     const [editor, setEditor] = useState<MailDraft | null>(null), [preview, setPreview] = useState<{data: string; name: string; type: string} | null>(null)
     const [mobileFolders, setMobileFolders] = useState(false)
     const [folderError, setFolderError] = useState('')
-    const [draftSource, setDraftSource] = useState<'local' | 'server'>('local')
+    const [draftSource, setDraftSource] = useState<'local' | 'server'>('server')
     const localDrafts = view === 'drafts' && draftSource === 'local' && !folder
     const resolvedFolders = useMemo(() => resolveMailFolders(folders), [folders])
     const [canScrollToTop, setCanScrollToTop] = useState(false)
@@ -214,7 +214,8 @@ export function MailboxPage({onSettings}: {onSettings: () => void}) {
     const visibleFolders = resolvedFolders.filter(value => !accountId || value.accountId === accountId)
     const inboxUnread = mailFoldersForScope(visibleFolders, 'inbox').reduce((sum, value) => sum + (value.unread ?? 0), 0)
     const serverDraftCount = mailFoldersForScope(visibleFolders, 'drafts').reduce((sum, value) => sum + (value.messages ?? 0), 0)
-    const draftCount = drafts.filter(draft => !accountId || draft.accountId === accountId).length + serverDraftCount
+    const localDraftCount = drafts.filter(draft => !accountId || draft.accountId === accountId).length
+    const draftCount = localDraftCount + serverDraftCount
     const folderGroups = accounts.filter(account => !accountId || account.id === accountId).map(account => ({account, nodes: mailFolderTree(resolvedFolders.filter(value => value.accountId === account.id))})).filter(group => group.nodes.length)
     const serverDraft = !!message && ((view === 'drafts' && !localDrafts) || resolvedFolders.some(value => isMailDraftFolder(value) && value.accountId === message.accountId && value.path === message.folder))
     const folderLabel = (item: MailItem) => {
@@ -255,8 +256,8 @@ export function MailboxPage({onSettings}: {onSettings: () => void}) {
             <div className="mailbox-search"><Icon name="search"/><label className="sr-only" htmlFor="mailbox-search">搜索邮件</label><input ref={searchInput} id="mailbox-search" type="search" value={search} maxLength={200} placeholder={view === 'drafts' ? '搜索草稿' : accountId ? '搜索当前邮箱' : '搜索全部账号'}
                 onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={event => {setSearch(event.target.value); if (!event.target.value) setQuery('')}} onKeyDown={event => {if (event.key === 'Enter' && !event.nativeEvent.isComposing) setQuery(search.trim())}}/>
                 {search && <MailAction icon="close" label="清空搜索" onClick={() => {setSearch(''); setQuery(''); searchInput.current?.focus()}}/>}</div>
-            {view === 'drafts' && !folder && <div className="mailbox-draft-sources" role="group" aria-label="草稿来源">{(['local', 'server'] as const).map(source => <button type="button" key={source} aria-pressed={draftSource === source} onClick={() => setDraftSource(source)}>{source === 'local' ? '本机' : '服务器'}</button>)}</div>}
-            <div className="mailbox-list-meta"><span>{localDrafts ? draftItems.length + ' 封本地草稿' : loading ? '加载中…' : items.length + (cursor ? '+' : '') + ' 封'}</span>{!localDrafts && <button type="button" className={'mailbox-filter' + (unreadOnly ? ' is-active' : '')} aria-pressed={unreadOnly} onClick={() => setUnreadOnly(!unreadOnly)}>仅未读</button>}</div>
+            {view === 'drafts' && !folder && <div className="mailbox-draft-sources" role="group" aria-label="草稿来源">{(['server', 'local'] as const).map(source => <button type="button" key={source} aria-pressed={draftSource === source} onClick={() => setDraftSource(source)}>{source === 'local' ? '本机' : '服务器'}<span>{source === 'local' ? localDraftCount : serverDraftCount}</span></button>)}</div>}
+            <div className="mailbox-list-meta"><span>{localDrafts ? draftItems.length + ' 封本地草稿' : loading ? '加载中…' : listError ? '未能加载' : items.length + (cursor ? '+' : '') + ' 封'}</span>{!localDrafts && <button type="button" className={'mailbox-filter' + (unreadOnly ? ' is-active' : '')} aria-pressed={unreadOnly} onClick={() => setUnreadOnly(!unreadOnly)}>仅未读</button>}</div>
             {(listError || (localDrafts && draftError)) && <div className="mailbox-inline-error" role="alert"><p>{localDrafts ? draftError : listError}</p><button type="button" className="mail-text-button" onClick={() => {setRefresh(value => value + 1); setDraftReload(value => value + 1)}}>重试</button></div>}
             {errors.length > 0 && <details className="mailbox-partial-error"><summary>{errors.length} 个邮箱未能加载</summary>{errors.map(error => <p key={error.accountId}>{error.address}：{error.message}</p>)}<button type="button" className="mail-text-button" onClick={() => setRefresh(value => value + 1)}>重新加载</button></details>}
             <div className="mailbox-action-feedback mailbox-list-feedback" aria-live="polite">{actionError && <p role="alert" className="account-error">{actionError}</p>}{notice && <p role="status">{notice}</p>}</div>
