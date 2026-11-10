@@ -8,15 +8,14 @@ import type {MailAccount, MailFolder, MailItem, MailMessage, MailPage, MailPerio
 import {validateMailDraft} from '../shared/mail'
 import {MailDrafts} from './mail-drafts'
 import {deliverMail, prepareMailMessage} from './mail-smtp'
+import {mailFoldersForScope, resolveMailFolders} from '../shared/mail-folders'
 
 type Position = {before: number; validity: string}
 type PageCursor = {v: 1; signature: string; positions: Record<string, Position>}
 type Stream = {key: string; validity: string; items: {uid: number; item: MailItem}[]; hasMore: boolean}
 const streamKey = (id: string, folder: string) => id + ':' + Buffer.from(folder).toString('base64url')
-const folderMatches = (folder: MailFolder, use: string, fallback: RegExp) => folder.specialUse === use || fallback.test(folder.path)
 
 export class MailClient {
-    private folderCache = new Map<string, {until: number; folders: MailFolder[]}>()
     private sending = new Set<string>()
     constructor(readonly accounts: MailAccounts, readonly drafts: MailDrafts,
                 private factory: (options: ReturnType<typeof mailConnectionOptions>) => ImapFlow = options => new ImapFlow(options),
@@ -38,17 +37,15 @@ export class MailClient {
     }
     private async listFolders(client: ImapFlow, account: StoredMailAccount): Promise<MailFolder[]> {
         const rows = await client.list({statusQuery: {messages: true, unseen: true}})
-        return rows.filter(folder => !folder.flags?.has('\\Noselect') && folder.path && folder.path.length <= 1000 && !/[\x00-\x1f\x7f]/.test(folder.path))
+        return resolveMailFolders(rows.filter(folder => folder.path && folder.path.length <= 1000 && !/[\x00-\x1f\x7f]/.test(folder.path))
             .map(folder => ({accountId: account.id, path: folder.path, name: folder.name || folder.path,
-                specialUse: folder.specialUse ?? null, messages: folder.status?.messages ?? null, unread: folder.status?.unseen ?? null}))
+                delimiter: folder.delimiter || null, selectable: !folder.flags?.has('\\Noselect'),
+                specialUse: folder.specialUse ?? null, messages: folder.status?.messages ?? null, unread: folder.status?.unseen ?? null})))
     }
     async folders(ids?: string[]): Promise<{folders: MailFolder[]; errors: MailPage['errors']}> {
         const owner = this.accounts.owner(), revision = this.accounts.revision(owner), selected = await this.selected(ids), folders: MailFolder[] = [], errors: MailPage['errors'] = []
         const result = await mapMailLimit(selected, 3, async account => {
-            const key = owner + ':' + account.id + ':' + this.accounts.revision(owner), cached = this.folderCache.get(key)
-            if (cached && cached.until > Date.now()) return cached.folders
-            const value = await this.imap(owner, account.id, false, (client, stored) => this.listFolders(client, stored))
-            this.folderCache.set(key, {folders: value, until: Date.now() + 30000}); return value
+            return this.imap(owner, account.id, false, (client, stored) => this.listFolders(client, stored))
         })
         result.forEach((value, index) => {
             if (value.status === 'fulfilled') folders.push(...value.value)
@@ -58,21 +55,17 @@ export class MailClient {
     }
     private chooseFolders(folders: MailFolder[], scope: MailScope, folder?: string): MailFolder[] {
         if (folder) {
-            const selected = folders.find(value => value.path === folder)
+            const selected = folders.find(value => value.path === folder && value.selectable !== false)
             if (!selected) throw new MailError('not_found', '文件夹已不存在，请刷新文件夹列表。')
             return [selected]
         }
-        if (scope === 'inbox') return folders.filter(value => value.path.toUpperCase() === 'INBOX' || value.specialUse === '\\Inbox').slice(0, 1)
-        if (scope === 'sent') return folders.filter(value => folderMatches(value, '\\Sent', /^(?:sent(?: messages| items)?|已发送|发件箱)$/i)).slice(0, 1)
-        if (scope === 'trash') return folders.filter(value => folderMatches(value, '\\Trash', /^(?:trash|deleted(?: messages| items)?|已删除|废纸篓)$/i)).slice(0, 1)
-        const all = folders.find(value => value.specialUse === '\\All')
-        return all ? [all] : folders.filter(value => !['\\Trash', '\\Junk'].includes(value.specialUse ?? '') && !/^(?:trash|junk|spam|已删除|垃圾邮件|垃圾箱)$/i.test(value.path))
+        return mailFoldersForScope(folders, scope)
     }
     async messages(raw: MailQuery = {}, options: {agent?: boolean; period?: MailPeriod; external?: AbortSignal} = {}): Promise<MailPage> {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new MailError('invalid_args', '邮件查询条件无效。')
         if (raw.query !== undefined && typeof raw.query !== 'string') throw new MailError('invalid_args', '搜索条件须为文本。')
         const scope = raw.scope ?? 'inbox', query = raw.query?.trim() ?? '', limit = raw.limit ?? 30
-        if (!['inbox', 'all', 'starred', 'sent', 'trash'].includes(scope) || typeof query !== 'string' || query.length > 200 || /[\x00-\x1f\x7f]/.test(query) ||
+        if (!['inbox', 'all', 'starred', 'sent', 'trash', 'drafts', 'junk', 'archive'].includes(scope) || typeof query !== 'string' || query.length > 200 || /[\x00-\x1f\x7f]/.test(query) ||
             !Number.isInteger(limit) || limit < 1 || limit > 50 || (raw.unreadOnly !== undefined && typeof raw.unreadOnly !== 'boolean') ||
             (raw.folder !== undefined && (typeof raw.folder !== 'string' || !raw.folder || raw.folder.length > 1000 || /[\x00-\x1f\x7f]/.test(raw.folder)))) throw new MailError('invalid_args', '邮件查询条件无效。')
         const owner = this.accounts.owner(), revision = this.accounts.revision(owner), selected = await this.selected(raw.accountIds, options.agent)
@@ -145,7 +138,7 @@ export class MailClient {
         return this.imap(owner, reference.accountId, false, async (client, account, signal) => {
             const {message} = await this.selectMessage(client, id, !markRead)
             const result = await presentMailMessage(client, account, reference.folder, reference.validity, message, signal)
-            if (markRead && !result.read) {if (!await client.messageFlagsAdd(reference.uid, ['\\Seen'], {uid: true})) throw new MailError('transient', '已读标记未能保存，请重试。'); result.read = true; this.folderCache.clear()}
+            if (markRead && !result.read) {if (!await client.messageFlagsAdd(reference.uid, ['\\Seen'], {uid: true})) throw new MailError('transient', '已读标记未能保存，请重试。'); result.read = true}
             return result
         })
     }
@@ -160,7 +153,7 @@ export class MailClient {
                 if (!ok) throw new MailError('transient', '服务器未能更新标记，请刷新后重试。')
             }
         })
-        this.folderCache.clear(); return null
+        return null
     }
     async trash(id: string): Promise<null> {
         const reference = parseMailReference(id), owner = this.accounts.owner()
@@ -173,7 +166,7 @@ export class MailClient {
             if (!client.capabilities.has('MOVE') && !client.capabilities.has('IMAP4rev2')) throw new MailError('forbidden', '这个服务器不支持安全移动邮件，请在官方邮箱中处理。')
             if (!await client.messageMove(reference.uid, trash.path, {uid: true})) throw new MailError('transient', '邮件未能移入垃圾箱，请刷新后重试。')
         })
-        this.folderCache.clear(); return null
+        return null
     }
     async attachment(id: string, part: string): Promise<{data: Buffer; name: string; type: string}> {
         if (typeof part !== 'string' || !/^\d+(?:\.\d+)*$/.test(part) || part.length > 60) throw new MailError('invalid_args', '附件引用无效。')
@@ -252,7 +245,7 @@ export class MailClient {
                     })
                 } catch {result.message += ' 已发送副本未能确认，请在官方邮箱核对。'}
                 await this.drafts.saveReceipt(owner, raw.requestId, {fingerprint, state: 'sent', result})
-                this.folderCache.clear(); return result
+                return result
             })
         } finally {this.sending.delete(key)}
     }

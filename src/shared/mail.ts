@@ -86,8 +86,10 @@ export const smtpPresets: Record<string, {host: string; port: number; security: 
 }
 export interface MailFolder {
     accountId: string; path: string; name: string; specialUse: string | null; messages: number | null; unread: number | null
+    delimiter?: string | null; selectable?: boolean; role?: MailFolderRole | null
 }
-export type MailScope = 'inbox' | 'all' | 'starred' | 'sent' | 'trash'
+export type MailFolderRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'all' | 'starred'
+export type MailScope = MailFolderRole
 export interface MailQuery {
     accountIds?: string[]; scope?: MailScope; folder?: string; query?: string; unreadOnly?: boolean; limit?: number; cursor?: string
 }
