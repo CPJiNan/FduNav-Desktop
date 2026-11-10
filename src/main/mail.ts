@@ -11,7 +11,7 @@ import {MailAccounts} from './mail-accounts'
 import {MailClient} from './mail-client'
 import {MailDrafts} from './mail-drafts'
 import {verifyMailSmtp} from './mail-smtp'
-import {MailError} from './mail-errors'
+import {MailError, safeMailError} from './mail-errors'
 
 export function registerMailHandlers(db: AppDatabase, campus: AccountService, trusted: (event: IpcMainInvokeEvent) => boolean) {
     const owner = () => {
@@ -20,8 +20,12 @@ export function registerMailHandlers(db: AppDatabase, campus: AccountService, tr
     }
     const transport = createMailTransport()
     const accounts = new MailAccounts(db, secureStorage, async (account, signal) => {
-        const session = await transport(account, signal)
-        session.close()
+        try {
+            const session = await transport(account, signal)
+            session.close()
+        } catch (error) {
+            throw safeMailError(error, '验证收信服务器（IMAP）')
+        }
         if (account.smtp) await verifyMailSmtp(account, signal)
     }, owner)
     const drafts = new MailDrafts(db, secureStorage, accounts), client = new MailClient(accounts, drafts)

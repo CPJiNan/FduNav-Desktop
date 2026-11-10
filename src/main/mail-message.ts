@@ -16,9 +16,9 @@ export function mailReference(accountId: string, folder: string, validity: strin
 export function parseMailReference(id: unknown) {
     if (typeof id !== 'string' || id.length > 3000) throw new MailError('invalid_args', '邮件引用无效，请重新选择邮件。')
     const match = /^m2\.([a-zA-Z0-9_-]{16})\.([a-zA-Z0-9_-]{1,2048})\.(\d{1,10})\.(\d{1,10})$/.exec(id)
-    if (!match) throw new MailError('invalid_args', '邮件引用无效，请重新选择邮件。')
-    const folder = Buffer.from(match[2], 'base64url').toString('utf8')
-    const accountId = match[1], validity = match[3], uid = Number(match[4])
+    const legacy = /^mail\.([a-zA-Z0-9_-]{16})\.(\d{1,10})\.(\d{1,10})$/.exec(id)
+    const folder = match ? Buffer.from(match[2], 'base64url').toString('utf8') : 'INBOX'
+    const accountId = match?.[1] ?? legacy?.[1], validity = match?.[3] ?? legacy?.[2], uid = Number(match?.[4] ?? legacy?.[3])
     if (!accountId || !validity || !Number.isInteger(uid) || uid < 1 || uid > 4294967295 || !folder || folder.length > 1000 || /[\x00-\x1f\x7f]/.test(folder)) throw new MailError('invalid_args', '邮件引用无效，请重新选择邮件。')
     return {accountId, folder, validity, uid}
 }

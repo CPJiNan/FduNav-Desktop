@@ -45,8 +45,8 @@ export interface MailPreset {
 
 export const mailPresets: readonly MailPreset[] = [
     {id: 'fudan-cloud', label: '复旦学生邮箱', host: fudanStudentMail.host},
-    {id: 'fudan', label: '复旦邮箱（旧系统）', host: 'mail.fudan.edu.cn'},
     {id: 'qq', label: 'QQ 邮箱', host: 'imap.qq.com'},
+    {id: 'gmail', label: 'Gmail', host: 'imap.gmail.com'},
     {id: 'custom', label: '其他邮箱', host: ''},
 ]
 
@@ -170,6 +170,7 @@ export interface MailAccount extends MailSettings {
 export const smtpPresets: Record<string, { host: string; port: number; security: MailSecurity }> = {
     'fudan-cloud': {host: 'smtp.exmail.qq.com', port: 465, security: 'tls'},
     qq: {host: 'smtp.qq.com', port: 465, security: 'tls'},
+    gmail: {host: 'smtp.gmail.com', port: 465, security: 'tls'},
     '163': {host: 'smtp.163.com', port: 465, security: 'tls'},
 }
 
@@ -178,11 +179,15 @@ export interface MailFolder {
     path: string;
     name: string;
     specialUse: string | null;
+    delimiter?: string | null;
+    selectable?: boolean;
+    role?: MailFolderRole | null;
     messages: number | null;
     unread: number | null
 }
 
-export type MailScope = 'inbox' | 'all' | 'starred' | 'sent' | 'trash'
+export type MailFolderRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'all' | 'starred'
+export type MailScope = MailFolderRole
 
 export interface MailQuery {
     accountIds?: string[];
