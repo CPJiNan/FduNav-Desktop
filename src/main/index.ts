@@ -20,6 +20,8 @@ import {registerLlmHandlers} from './llm'
 import {registerTimetableHandlers} from './timetable'
 import {registerCalendarHandlers} from './calendar'
 import {registerChatHandlers} from './chat'
+import {registerDantaHandlers} from './danta'
+import {createCampusToolAccess} from './danta-tools'
 import {registerTodoHandlers} from './todos'
 import {registerCampusCardHandlers} from './campus-card'
 import {registerLibraryHandlers} from './library'
@@ -178,7 +180,8 @@ app.whenReady().then(async () => {
         const todos = registerTodoHandlers(database, accounts, trusted, showMainWindow)
         const llm = registerLlmHandlers(database, trusted)
         const notices = registerNoticeHandlers(database, accounts, llm, trusted, showMainWindow)
-        registerChatHandlers(database, accounts, llm, notices, calendar, todos, trusted)
+        const danta = registerDantaHandlers(database, accounts, llm, trusted)
+        registerChatHandlers(database, accounts, llm, notices, calendar, todos, trusted, createCampusToolAccess(danta))
         registerMessagePreferenceHandlers(database, trusted)
     } catch (error) {
         console.error('FduNav 启动失败', error)

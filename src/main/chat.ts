@@ -15,7 +15,7 @@ import {streamLlmWithTools} from './llm-stream'
 import {compactTurns, uncompactedTurns, validateCompaction, extractCompactionMemories, parseSummary} from './chat-context'
 import {cancellationMessages, redactTrace, toolSuccess, toolFailure, ToolError, type ChatCancelReason, type ChatTraceEvent} from '../shared/agent'
 import {validateMemory, selectMemories, type Memory} from '../shared/memory'
-import {chatToolLabels, configuredChatTools, createChatToolRunner} from './chat-tools'
+import {campusToolNames, chatToolLabels, configuredChatTools, createChatToolRunner, type CampusToolAccess} from './chat-tools'
 
 /** Compaction attempts include the first try; two retries. */
 /** Short user-facing confirmation appended to the transcript once an approval executes. */
@@ -62,7 +62,8 @@ interface RunningChat {
 export function registerChatHandlers(db: AppDatabase, accounts: AccountService, llm: LlmSettingsService,
                                      notices: ReturnType<typeof registerNoticeHandlers>, calendar: ReturnType<typeof registerCalendarHandlers>,
                                      todos: ReturnType<typeof registerTodoHandlers>,
-                                     trusted: (event: IpcMainInvokeEvent) => boolean) {
+                                     trusted: (event: IpcMainInvokeEvent) => boolean,
+                                     campus: CampusToolAccess | null = null) {
     const running = new Map<string, RunningChat>()
     /** Memories injected last turn, so a short follow-up keeps the same context. */
     const memoryCarry = new Map<string, Memory[]>()
@@ -357,14 +358,16 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 }
                 return {requestId: request.id, status: request.status, action: request.action,
                     message: '请求卡片已显示，等待用户允许，尚未执行。'}
-            })
+            }, campus)
             let calls = 0
             for (let round = 0; round <= 8; round++) {
                 assertCurrent()
                 const final = round === 8 || calls >= 24 || JSON.stringify(context).length > 120000
                 active.status = final ? '整理已有结果' : '思考中'
                 if (final) context.push({role: 'user', content: '本轮工具或上下文预算已耗尽。不要调用工具。请基于已有结果明确总结完成、待批准与未完成的部分，并说明下一步。'})
+                const campusReady = campus?.available().ready ?? false
                 const availableTools = final ? [] : configuredChatTools(llm.get().toolDescriptions)
+                    .filter(item => campusReady || !campusToolNames.has(item.function.name))
                 const event = record('model', final ? '汇总已有结果（不再调用工具）' : `模型调用 ${round + 1}`,
                     {model: connection.model, messages: context, tools: availableTools, round: round + 1, remaining: {rounds: Math.max(0, 8 - round), calls: Math.max(0, 24 - calls)}}, 'running')
                 persist(user, active); publish(user)

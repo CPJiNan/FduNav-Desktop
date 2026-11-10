@@ -13,6 +13,7 @@ import type {MemoryAPI} from '../../shared/memory'
 import type {ChatAPI} from '../../shared/chat'
 import type {CampusCardAPI} from '../../shared/campus-card'
 import type {LibraryAPI} from '../../shared/library'
+import type {DantaAPI} from '../../shared/danta'
 
 declare global {
     interface Window {
@@ -31,6 +32,7 @@ declare global {
         timetable?: TimetableAPI
         calendar?: CalendarAPI
         todos?: TodosAPI
+        danta?: DantaAPI
         windowControls?: {
             minimize(): void
             toggleMaximize(): void

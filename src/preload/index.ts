@@ -14,6 +14,26 @@ import type {MemoryAPI} from '../shared/memory'
 import type {ChatAPI, ChatState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
+import type {DantaAPI} from '../shared/danta'
+
+const danta: DantaAPI = {
+    status: () => ipcRenderer.invoke('danta:state'),
+    connectSchool: () => ipcRenderer.invoke('danta:connect-school'),
+    checkSchool: () => ipcRenderer.invoke('danta:check-school'),
+    login: input => ipcRenderer.invoke('danta:login', input),
+    logout: () => ipcRenderer.invoke('danta:logout'),
+    setAgentEnabled: enabled => ipcRenderer.invoke('danta:set-agent-enabled', enabled),
+    searchPosts: input => ipcRenderer.invoke('danta:search-posts', input),
+    readThread: input => ipcRenderer.invoke('danta:read-thread', input),
+    searchCourses: input => ipcRenderer.invoke('danta:search-courses', input),
+    getCourseGroup: id => ipcRenderer.invoke('danta:course-group', {id}),
+    getCourseReviews: courseId => ipcRenderer.invoke('danta:course-reviews', {courseId}),
+    summarizeThread: holeId => ipcRenderer.invoke('danta:summarize-thread', {holeId}),
+    summarizeCourse: courseId => ipcRenderer.invoke('danta:summarize-course', {courseId}),
+    getPlan: () => ipcRenderer.invoke('danta:plan-get'),
+    savePlan: items => ipcRenderer.invoke('danta:plan-save', {items}),
+}
+contextBridge.exposeInMainWorld('danta', danta)
 
 const library: LibraryAPI = {
     crowding: refresh => ipcRenderer.invoke('library:crowding', refresh),
