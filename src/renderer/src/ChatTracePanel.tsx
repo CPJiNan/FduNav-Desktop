@@ -1,14 +1,10 @@
 import {useEffect, useRef, useState} from 'react'
 import type {ChatTurn} from '../../shared/chat'
 import type {ChatTraceEvent} from '../../shared/agent'
+import {TracePayload, downloadJson} from './TracePayload'
 
 const statusLabels = {running: '进行中', completed: '完成', failed: '失败', cancelled: '已停止'}
-export function downloadJson(value: unknown, filename: string) {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], {type: 'application/json'}))
-    const link = document.createElement('a')
-    link.href = url; link.download = filename; link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
+export {downloadJson}
 export function ChatTracePanel({turn, onClose}: {turn: ChatTurn; onClose: () => void}) {
     const [events, setEvents] = useState<ChatTraceEvent[]>([])
     const [error, setError] = useState('')
@@ -16,7 +12,6 @@ export function ChatTracePanel({turn, onClose}: {turn: ChatTurn; onClose: () => 
     const [loading, setLoading] = useState(true)
     const [reload, setReload] = useState(0)
     const close = useRef<HTMLButtonElement>(null)
-    const revision = (turn.trace ?? []).map(item => `${item.id}:${item.status}`).join('|')
     useEffect(() => {close.current?.focus()}, [])
     useEffect(() => {
         if (!window.chat) {setError('聊天服务未加载，请重启应用。'); setLoading(false); return}
@@ -29,7 +24,9 @@ export function ChatTracePanel({turn, onClose}: {turn: ChatTurn; onClose: () => 
         }).catch(() => {if (active) setError('无法读取执行记录，请重试。')})
             .finally(() => {if (active) setLoading(false)})
         return () => {active = false}
-    }, [turn.id, revision, reload])
+        // Reload when the panel opens and when the turn finishes; per-event churn would refetch
+        // the whole trace every time a step changes status.
+    }, [turn.id, turn.finishedAt, reload])
     const shown = events.filter(item => filter === 'all' || (filter === 'failed' ? item.status === 'failed' || item.status === 'cancelled' : item.kind === 'tool'))
     return <aside id="chat-trace-panel" className="chat-trace" aria-label="执行记录" onKeyDown={event => {
         if (event.key === 'Escape') {event.stopPropagation(); onClose()}
@@ -53,7 +50,7 @@ export function ChatTracePanel({turn, onClose}: {turn: ChatTurn; onClose: () => 
             <p className="trace-time"><time dateTime={item.at}>{new Date(item.at).toLocaleTimeString('zh-CN', {hour12: false})}</time>
                 {item.elapsedMs !== undefined && ` · ${(item.elapsedMs / 1000).toFixed(2)} 秒`}</p>
             {item.details !== undefined && <details><summary>参数与响应</summary>
-                <pre tabIndex={0}>{JSON.stringify(item.details, null, 2)}</pre></details>}
+                <TracePayload value={item.details} filename={`fdunav-trace-${turn.id}-${item.id}.json`} /></details>}
         </li>)}</ol>
         {!!events.length && !shown.length && <p role="status">没有符合筛选条件的步骤。</p>}
     </aside>

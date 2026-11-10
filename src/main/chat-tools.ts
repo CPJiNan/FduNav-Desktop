@@ -1,6 +1,6 @@
-import {ToolError} from '../shared/agent'
+import {ToolError, maxToolResultChars} from '../shared/agent'
 import type {CampusPage, CourseReviewsResult, CourseSearchPage} from '../shared/danta'
-import {validateMemory} from '../shared/memory'
+import {validateMemory, presentMemory, memoryShortId} from '../shared/memory'
 import {type ChatToolName, defaultToolDescriptions} from '../shared/llm-prompts'
 import {
     calendarDate,
@@ -11,6 +11,7 @@ import {
 } from '../shared/calendar'
 import {type Todo, validateTodo} from '../shared/todos'
 import type {ChatAction, ChatCard} from '../shared/chat'
+import type {Memory} from '../shared/memory'
 import type {Notice} from '../shared/notices'
 import type {AppDatabase} from './database'
 import type {registerNoticeHandlers} from './notices'
@@ -43,18 +44,21 @@ function tool(name: ChatToolName, properties: Fields, required: string[] = []): 
 }
 
 export const chatTools: ChatTool[] = [
-    tool('recall', {query: str('记忆关键词，可留空')}),
+    tool('recall', {query: str('记忆关键词，可留空'), ...pagination}),
     tool('remember', {kind: {type: 'string', enum: ['fact', 'preference', 'event']}, text: str('长期事实或偏好，最多 600 字'),
-        evidence: str('用户明确陈述的原话与上下文，不得猜测'), confidence: {type: 'number', minimum: 0, maximum: 1},
-        pinned: {type: 'boolean'}, expiresAt: {type: ['string', 'null'], description: 'ISO 到期时间，或 null；可省略'}},
+        evidence: str('用户明确陈述的原话与上下文，不得猜测'),
+        confidence: {type: 'number', minimum: 0, maximum: 1, description: '0–1，省略按 0.6 处理'},
+        pinned: {type: 'boolean', description: '省略按 false 处理'},
+        expiresAt: {type: 'string', description: 'ISO 到期时间；空字符串表示永久'}},
         ['kind', 'text', 'evidence']),
-    tool('forget', {id: str('记忆 ID，必须来自 recall')}, ['id']),
+    tool('forget', {id: str('记忆 ID，来自 recall；可使用短 id')}, ['id']),
     tool('search_notices', {
         query: str('标题或来源关键词，空字符串查询最新通知'), sourceId: str('可选来源 ID'),
         from: str('最早发布日期 YYYY-MM-DD'), to: str('最晚发布日期 YYYY-MM-DD'),
         relevance: {type: 'string', enum: ['related', 'maybe', 'none']}, ...pagination,
     }),
-    tool('get_notice', ref, ['sourceId', 'url']),
+    tool('get_notice', {...ref, offset: {type: 'integer', minimum: 0, description: '正文字符偏移，首次省略；后续使用 nextOffset'},
+        limit: {type: 'integer', minimum: 1, maximum: 8000, description: '正文片段最大字符数，默认 6000'}}, ['sourceId', 'url']),
     tool('generate_notice_summary', ref, ['sourceId', 'url']),
     tool('list_events', {
         from: str('开始日期 YYYY-MM-DD'),
@@ -136,16 +140,68 @@ export const chatToolLabels: Record<string, string> = {
     search_courses: '检索课程', read_course_reviews: '读取课评',
 }
 
-/** Model-facing view of a todo: mark eLearning-sourced items explicitly so they are not read as manual todos. */
+/**
+ * Model-facing views: ids and the fields the model needs, without timestamps, database-only ids or
+ * UI state. Persisted records stay internal and are never passed through to the model verbatim.
+ */
 export function presentTodo(todo: Todo) {
     const elearning = todo.elearning
-    if (!elearning) return {...todo, kind: 'todo' as const, source: 'manual' as const}
-    return {
-        ...todo,
-        kind: 'todo' as const,
-        source: 'elearning' as const,
-        elearning: {...elearning, label: `eLearning 作业 · ${elearning.courseName}`}
+    const base = {
+        id: todo.id, kind: 'todo' as const, title: todo.title, notes: todo.notes,
+        dueDate: todo.dueDate, dueTime: todo.dueTime, completed: todo.completed,
+        source: elearning ? 'elearning' as const : 'manual' as const,
     }
+    if (!elearning) return base
+    return {
+        ...base,
+        elearning: {
+            courseName: elearning.courseName, status: elearning.status, url: elearning.url,
+            submittedAt: elearning.submittedAt, attempts: elearning.attempts,
+            label: `eLearning 作业 · ${elearning.courseName}`,
+        }
+    }
+}
+
+export function presentEvent(event: CalendarEvent) {
+    return {
+        id: event.id, kind: 'event' as const, title: event.title,
+        startDate: event.startDate, endDate: event.endDate,
+        startTime: event.startTime, endTime: event.endTime, allDay: event.allDay,
+        location: event.location, notes: event.notes,
+    }
+}
+
+export function presentNotice(notice: Notice) {
+    return {
+        sourceId: notice.sourceId, sourceName: notice.sourceName, title: notice.title,
+        url: notice.url, published: notice.published, relevance: notice.relevance ?? 'none',
+    }
+}
+
+/** Approval checkpoints contain full database records; model messages use these views only. */
+export function presentAction(action: ChatAction) {
+    switch (action.kind) {
+        case 'create_todo': return {kind: action.kind, todo: action.todo}
+        case 'create_event': return {kind: action.kind, event: action.after}
+        case 'update_todo': return {kind: action.kind, id: action.before.id, changes: changedFields(action.before, action.after)}
+        case 'update_event': return {kind: action.kind, id: action.before.id, changes: changedFields(action.before, action.after)}
+        case 'delete_todo': case 'delete_event': return {kind: action.kind, id: action.before.id, title: action.before.title}
+        case 'remember': return {kind: action.kind, memory: {kind: action.memory.kind, text: action.memory.text},
+            ...(action.targetId ? {id: memoryShortId(action.targetId)} : {})}
+        case 'forget': return {kind: action.kind, memory: presentMemory(action.memory)}
+    }
+}
+
+function changedFields(before: object, after: object) {
+    const values = before as Record<string, unknown>
+    return Object.fromEntries(Object.entries(after).filter(([key, value]) => key !== 'id' && value !== values[key]))
+}
+
+export function presentActionResult(action: ChatAction, result: CalendarEvent | Todo | Memory | undefined) {
+    if (!result) return undefined
+    if (action.kind === 'remember') return presentMemory(result as Memory)
+    if (action.kind.endsWith('_todo')) return presentTodo(result as Todo)
+    return presentEvent(result as CalendarEvent)
 }
 
 function textArg(args: Fields, key: string, required = false, max = 500): string {
@@ -253,15 +309,22 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             if (!db.getMemoryEnabled(username)) throw new ToolError('forbidden', '记忆已关闭，可在设置中管理。')
             if (name === 'recall') {
                 const query = textArg(input, 'query').toLocaleLowerCase()
-                return page(db.getMemories(username).filter(item => item.status === 'active' &&
-                    (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()) && item.text.toLocaleLowerCase().includes(query)), {})
+                const result = page(db.getMemories(username).filter(item => item.status === 'active' &&
+                    (!item.expiresAt || Date.parse(item.expiresAt) > Date.now()) && item.text.toLocaleLowerCase().includes(query)), input)
+                return {...result, items: result.items.map(presentMemory)}
             }
             if (name === 'forget') {
-                const memory = db.getMemories(username).find(item => item.id === textArg(input, 'id', true))
-                if (!memory) throw new ToolError('not_found', '记忆不存在。')
-                return requestAction({kind: 'forget', memory})
+                const id = textArg(input, 'id', true)
+                const matches = db.getMemories(username).filter(item => item.id === id || (id.length >= 4 && item.id.startsWith(id)))
+                if (!matches.length) throw new ToolError('not_found', '记忆不存在，请先查询后再请求删除。')
+                if (matches.length > 1) throw new ToolError('invalid_args', '记忆 ID 前缀不唯一，请使用 recall 返回的短 id。')
+                return requestAction({kind: 'forget', memory: matches[0]})
             }
-            const result = validateMemory({confidence: 0.6, pinned: false, expiresAt: null, ...input, status: 'active'})
+            // Optional fields default here instead of failing the call: models routinely omit them.
+            // `expiresAt: ''` means permanent — a single string type keeps older gateways from 400ing
+            // on the former ["string","null"] union.
+            const result = validateMemory({confidence: 0.6, pinned: false, ...input,
+                expiresAt: input.expiresAt === '' ? null : input.expiresAt ?? null, status: 'active'})
             if (!result.ok) throw new ToolError('invalid_args', result.error)
             return requestAction({kind: 'remember', memory: result.data})
         }
@@ -276,7 +339,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
                 .sort((a, b) => b.published.localeCompare(a.published))
             const result = page(items, input)
             result.items.forEach(noticeCard)
-            return result
+            return {...result, items: result.items.map(presentNotice)}
         }
         if (name === 'get_notice') {
             const notice = knownNotice(input)
@@ -284,7 +347,22 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             assertCurrent()
             if (detail.requiresLogin) throw new ToolError('forbidden', '通知需要登录，请在通知详情中登录后再试。')
             noticeCard(notice)
-            return {notice, content: detail.content}
+            const offset = input.offset ?? 0, limit = input.limit ?? 6000
+            if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 || offset > detail.content.length ||
+                typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 8000) {
+                throw new ToolError('invalid_args', '正文分页参数无效。')
+            }
+            const makePage = (end: number) => ({notice: presentNotice(notice), content: detail.content.slice(offset, end),
+                offset, totalChars: detail.content.length, nextOffset: end < detail.content.length ? end : null,
+                hasMore: end < detail.content.length})
+            let end = Math.min(detail.content.length, offset + limit)
+            let result = makePage(end)
+            // JSON escaping also consumes the tool-result budget (e.g. quoted tables/newlines).
+            while (JSON.stringify(result).length > maxToolResultChars - 400 && end > offset) {
+                end = offset + Math.floor((end - offset) * 0.8); result = makePage(end)
+            }
+            if (end === offset && offset < detail.content.length) throw new ToolError('internal', '通知元数据超过读取上限，暂时无法分段。')
+            return result
         }
         if (name === 'generate_notice_summary') {
             const notice = knownNotice(input)
@@ -321,23 +399,22 @@ export function createChatToolRunner(db: AppDatabase, username: string,
                 else eventCard(item.event)
             })
             return {
-                ...result, items: result.items.map(item => {
-                    if (item.kind === 'course') {
-                        const {occurrence: _occurrence, ...fields} = item;
-                        return fields
-                    }
-                    const {event: _event, ...fields} = item;
-                    return fields
-                }), timetableUpdatedAt: timetable?.updatedAt ?? null, timetableWarning
+                ...result, items: result.items.map(item => item.kind === 'course'
+                    ? {kind: 'course' as const, readOnly: true, id: item.id, title: item.title, date: item.startDate,
+                        startTime: item.startTime, endTime: item.endTime, location: item.location,
+                        teachers: item.teachers, startUnit: item.startUnit, endUnit: item.endUnit}
+                    : {...presentEvent(item.event), readOnly: false}), timetableUpdatedAt: timetable?.updatedAt ?? null, timetableWarning
             }
         }
         if (name === 'get_event') {
             const event = getEvent(input);
             eventCard(event);
-            return event
+            return presentEvent(event)
         }
         if (name === 'create_event') {
-            if (input.allDay === false && (input.startTime === undefined || input.endTime === undefined)) {
+            // Non-empty times are required for timed events; an empty string must fail here rather
+            // than relying on the downstream calendar validator.
+            if (input.allDay === false && (!input.startTime || !input.endTime)) {
                 throw new ToolError('invalid_args', '请先明确日程的起止时间。')
             }
             const checked = validateCalendarEvent({

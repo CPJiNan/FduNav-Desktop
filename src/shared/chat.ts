@@ -23,7 +23,8 @@ export type ChatAction = { kind: 'create_event'; after: CalendarEventInput } |
     {kind: 'update_todo'; before: Todo; after: TodoInput} |
     {kind: 'delete_event'; before: CalendarEvent} |
     {kind: 'delete_todo'; before: Todo} |
-    {kind: 'remember'; memory: MemoryInput} | {kind: 'forget'; memory: Memory}
+    {kind: 'remember'; memory: MemoryInput; targetId?: string; previousText?: string} |
+    {kind: 'forget'; memory: Memory}
 
 export const chatActionTitles = {
     create_event: '新增日程', create_todo: '新增待办', remember: '保存记忆', forget: '删除记忆',
@@ -50,6 +51,8 @@ export interface ChatTurn {
     actionRequests?: ChatActionRequest[]
     error?: string
     cancelReason?: ChatCancelReason
+    /** The wrap-up round still requested tools; those calls were ignored and the reply is partial. */
+    truncated?: boolean
     trace?: ChatTraceEvent[]
     startedAt?: string
     finishedAt?: string
@@ -74,11 +77,16 @@ export interface ChatStats {
     turnElapsedMs: number
 }
 
+export interface SessionTraceEvent extends Omit<ChatTraceEvent, 'details'> {
+    /** Details are fetched on demand via `chat:trace-event`. */
+    hasDetails: boolean
+}
+
 export interface SessionTraceTurn {
     turnId: string
     user: string
     at: string
-    events: ChatTraceEvent[]
+    events: SessionTraceEvent[]
 }
 
 export interface ChatState {
@@ -89,10 +97,21 @@ export interface ChatState {
     stats?: ChatStats
 }
 
+/**
+ * Pushed state: `full: false` carries only the changed tail (the running turn) and must be merged
+ * into the previous state; `full: true` replaces it.
+ */
+export interface ChatPushState extends ChatState {
+    full: boolean
+}
+
 export interface ChatAPI {
     get(): Promise<Result<ChatState>>
 
     send(text: string): Promise<Result<ChatState>>
+
+    /** Edit and resend the last turn after it failed. */
+    retry(turnId: string, text: string): Promise<Result<ChatState>>
 
     cancel(): Promise<Result<null>>
 
@@ -104,11 +123,13 @@ export interface ChatAPI {
 
     trace(turnId: string): Promise<Result<ChatTraceEvent[]>>
 
+    traceEvent(turnId: string, eventId: string): Promise<Result<ChatTraceEvent>>
+
     sessionTrace(): Promise<Result<SessionTraceTurn[]>>
 
     usage(): Promise<Result<UsageSummary>>
 
     undo(turnId: string, requestId: string): Promise<Result<ChatState>>
 
-    onChanged(callback: (state: ChatState) => void): () => void
+    onChanged(callback: (state: ChatPushState) => void): () => void
 }

@@ -23,3 +23,20 @@ test('additive migration retains legacy conversation and trace survives database
         db.close()
     } finally {rmSync(directory, {recursive: true, force: true})}
 })
+
+test('legacy trace tables gain the kind column and an incremental step counter', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'fdunav-agent-test-')), path = join(directory, 'legacy.sqlite')
+    try {
+        const legacy = new DatabaseSync(path)
+        legacy.exec(`CREATE TABLE chat_traces (username TEXT NOT NULL, turn_id TEXT NOT NULL, event_id TEXT NOT NULL,
+            position INTEGER NOT NULL, data TEXT NOT NULL, details TEXT, PRIMARY KEY (username, turn_id, event_id))`)
+        legacy.prepare('INSERT INTO chat_traces VALUES (?, ?, ?, ?, ?, ?)').run('alice', 'turn', 'event', 0,
+            JSON.stringify({id: 'event', kind: 'tool', label: '工具调用', at: 'now', status: 'completed'}), null)
+        legacy.close()
+        const db = new AppDatabase(path)
+        try {
+            assert.equal(db.getChatStats('alice').steps, 1)
+            assert.equal(db.getChatTrace('alice', 'turn')[0].label, '工具调用')
+        } finally {db.close()}
+    } finally {rmSync(directory, {recursive: true, force: true})}
+})

@@ -19,7 +19,7 @@ export interface ToolCall {
     function: { name: string; arguments: string }
 }
 
-export type ToolChatMessage = ChatMessage | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] } |
+export type ToolChatMessage = ChatMessage | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[]; reasoning_content?: string } |
     { role: 'tool'; tool_call_id: string; content: string }
 
 export interface ChatTool {

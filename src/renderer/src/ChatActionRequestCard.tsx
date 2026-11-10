@@ -37,15 +37,21 @@ export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onMa
         : action.kind === 'create_event' || action.kind === 'update_event' ? action.after
         : action.kind === 'delete_todo' || action.kind === 'delete_event' ? action.before : null
     const title = payload?.title ?? ''
-    return <section className="chat-summary-request" aria-label={`${titles[action.kind]}请求`}>
-        <header><strong><Icon name={action.kind === 'create_todo' ? 'todo' : 'calendar'}/>{titles[action.kind]}
+    const heading = action.kind === 'remember' && action.targetId ? '更新已有记忆' : titles[action.kind]
+    return <section className="chat-summary-request" aria-label={`${heading}请求`}>
+        <header><strong><Icon name={action.kind === 'create_todo' ? 'todo' : action.kind === 'remember' ? 'sparkles' : 'calendar'}/>{heading}
             {title && <span className="chat-action-title">{title}</span>}</strong>
             <span role="status">{statuses[request.status]}</span></header>
         {action.kind === 'delete_todo' || action.kind === 'delete_event' ? <dl className="chat-action-facts">
             <dt>将删除</dt><dd>{action.before.title}</dd>
             <dt>说明</dt><dd>允许后删除，撤销可恢复。</dd>
         </dl> : action.kind === 'remember' || action.kind === 'forget' ? <dl className="chat-action-facts">
-            <dt>内容</dt><dd>{action.memory.text}</dd>
+            {action.kind === 'remember' && action.targetId ? <>
+                <dt>原内容</dt><dd className="memory-diff-old">− {action.previousText ?? '（原记忆）'}</dd>
+                <dt>新内容</dt><dd className="memory-diff-new">＋ {action.memory.text}</dd>
+            </> : <>
+                <dt>内容</dt><dd>{action.memory.text}</dd>
+            </>}
             <dt>依据</dt><dd>{action.memory.evidence}</dd>
             <dt>说明</dt><dd>{action.kind === 'remember' ? '允许后保存在本机；记忆启用时可随对话发送给模型服务。' : '允许后从记忆库删除。'}</dd>
             {request.status === 'completed' && action.kind === 'remember' && <><dt/><dd>
