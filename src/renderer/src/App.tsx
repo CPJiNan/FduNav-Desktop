@@ -158,6 +158,10 @@ export default function App() {
                 <button type="button" className={`icon-button rail-button ${showChatPage ? 'is-active' : ''}`}
                         aria-label="聊天" title="聊天" aria-current={showChatPage ? 'page' : undefined}
                         onClick={() => openPage('chat')}><Icon name="chat"/></button>
+                <button type="button" className={`icon-button rail-button ${showMailPage ? 'is-active' : ''}`}
+                        aria-label="邮箱" title="邮箱"
+                        aria-current={showMailPage ? 'page' : undefined} onClick={() => openPage('mail')}><Icon
+                    name="mail"/></button>
                 <button type="button" className={`icon-button rail-button ${showCalendarPage ? 'is-active' : ''}`}
                         aria-label={calendarNavigation.label}
                         title={calendarNavigation.label} aria-current={showCalendarPage ? 'page' : undefined}
@@ -165,8 +169,6 @@ export default function App() {
                 <button type="button" className={`icon-button rail-button ${showTodosPage ? 'is-active' : ''}`}
                         aria-label="待办" title="待办" aria-current={showTodosPage ? 'page' : undefined}
                         onClick={() => openPage('todos')}><Icon name="todo"/></button>
-                <button type="button" className={`icon-button rail-button ${showMailPage ? 'is-active' : ''}`} aria-label="邮箱" title="邮箱"
-                        aria-current={showMailPage ? 'page' : undefined} onClick={() => openPage('mail')}><Icon name="mail"/></button>
                 <div className="rail-bottom">
                     <SummaryQueuePanel username={account?.username} onOpenNotice={async ref => {
                         const result = await window.notices?.getNotice(ref)
@@ -208,8 +210,8 @@ export default function App() {
                                     {tab === 'notifications' && showSettings && <NotificationSettingsPanel/>}
                                     {tab === 'account' && <AccountPanel account={account} onChange={setAccount}/>}
                                     {tab === 'about' && <AboutPanel/>}
-                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'} campusUsername={account?.username ?? undefined}
-                                               onOpenMailbox={() => openPage('mail')}/>
+                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
+                                               campusUsername={account?.username ?? undefined}/>
                                     <div hidden={tab !== 'messages'}><MessagePreferencesPanel
                                         key={account?.status === 'signed-in' ? account.username : 'signed-out'}
                                         requiredProfile={account?.status === 'signed-in'}
@@ -253,7 +255,10 @@ export default function App() {
                         {showTodosPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <TodosPage key={account?.username}/>}
                         {showMailPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
-                            <MailboxPage key={account?.username} onSettings={() => {setTab('mail'); setSettings(true)}}/>}
+                            <MailboxPage key={account?.username} onSettings={() => {
+                                setTab('mail');
+                                setSettings(true)
+                            }}/>}
                     </main>
                 </div>
             </div>

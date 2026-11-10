@@ -284,9 +284,12 @@ export function createChatToolRunner(db: AppDatabase, username: string,
         if (name === 'list_emails' || name === 'get_email') {
             try {
                 const result = name === 'list_emails' ? await mail.list(username, input, signal)
-                    : await mail.read(username, {id: textArg(input, 'id', true), offset: input.offset as number | undefined,
-                        limit: input.limit as number | undefined}, signal)
-                assertCurrent(); return result
+                    : await mail.read(username, {
+                        id: textArg(input, 'id', true), offset: input.offset as number | undefined,
+                        limit: input.limit as number | undefined
+                    }, signal)
+                assertCurrent();
+                return result
             } catch (error) {
                 if (error instanceof MailError) throw new ToolError(error.code === 'send_unknown' ? 'transient' : error.code, error.message)
                 throw new ToolError('internal', '邮箱读取未完成，请重试。')

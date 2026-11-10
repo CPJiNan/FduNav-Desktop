@@ -78,7 +78,7 @@ export function ChatSessionTracePanel({onClose}: { onClose: () => void }) {
             </button>
         </div>}
         {loading && <p role="status">正在读取…</p>}
-        {!loading && !error && !turns.length && <p role="status">还没有可显示的执行记录。</p>}
+        {!loading && !error && !turns.length && <p role="status">暂无执行记录。</p>}
         <ol className="trace-sessions">{turns.map((turn, index) => <li key={turn.turnId}>
             <details>
                 <summary>
