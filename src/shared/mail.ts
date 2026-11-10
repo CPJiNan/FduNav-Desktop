@@ -45,7 +45,6 @@ export interface MailPreset {
 
 export const mailPresets: readonly MailPreset[] = [
     {id: 'fudan-cloud', label: '复旦学生邮箱', host: fudanStudentMail.host},
-    {id: 'fudan', label: '复旦邮箱（旧系统）', host: 'mail.fudan.edu.cn'},
     {id: 'qq', label: 'QQ 邮箱', host: 'imap.qq.com'},
     {id: 'gmail', label: 'Gmail', host: 'imap.gmail.com'},
     {id: 'custom', label: '其他邮箱', host: ''},
