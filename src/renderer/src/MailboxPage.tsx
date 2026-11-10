@@ -34,6 +34,7 @@ export function MailboxPage({onSettings}: {onSettings: () => void}) {
     const [drafts, setDrafts] = useState<MailDraftSummary[]>([]), [draftReload, setDraftReload] = useState(0), [draftError, setDraftError] = useState('')
     const [editor, setEditor] = useState<MailDraft | null>(null), [preview, setPreview] = useState<{data: string; name: string; type: string} | null>(null)
     const [mobileFolders, setMobileFolders] = useState(false)
+    const [canScrollToTop, setCanScrollToTop] = useState(false)
     const sidebar = useRef<HTMLElement>(null)
     const request = useRef(0), searchInput = useRef<HTMLInputElement>(null), list = useRef<HTMLDivElement>(null)
     const selection = useRef(selected); selection.current = selected
@@ -83,6 +84,8 @@ export function MailboxPage({onSettings}: {onSettings: () => void}) {
         ...(folder ? {folder} : {}), query, unreadOnly, limit: 30}
     useEffect(() => {
         const sequence = ++request.current
+        if (list.current) list.current.scrollTop = 0
+        setCanScrollToTop(false)
         setSelected(null); setMessage(null); setBodyError(''); setItems([]); setCursor(null); setMoreLoading(false); setErrors([]); setListError('')
         if (!window.mail || !accounts.length || view === 'drafts') {setLoading(false); return}
         setLoading(true)
@@ -220,7 +223,11 @@ export function MailboxPage({onSettings}: {onSettings: () => void}) {
             {accountId && folders.length > 0 && <details className="mailbox-folder-tree"><summary>文件夹</summary>{folders.filter(value => value.accountId === accountId).map(value => <button type="button" key={value.path} className={'mailbox-nav-item' + (folder === value.path ? ' is-active' : '')} onClick={() => navigate('all', value.path)}><Icon name="folder"/><span>{value.name}</span>{!!value.unread && <span className="mailbox-nav-count">{value.unread}</span>}</button>)}</details>}
         </aside>
         <section inert={mobileFolders || undefined} className="mailbox-list-pane" aria-label={title + '邮件列表'}>
-            <header className="mailbox-list-heading"><div><MailAction icon="panel" label="显示邮箱与文件夹" onClick={() => setMobileFolders(true)}/><h2>{title}</h2></div><MailAction icon="refresh" label="刷新邮件" disabled={loading || moreLoading} onClick={() => {setRefresh(value => value + 1); setDraftReload(value => value + 1)}}/></header>
+            <header className="mailbox-list-heading"><div><MailAction icon="panel" label="显示邮箱与文件夹" onClick={() => setMobileFolders(true)}/><h2>
+                <button type="button" className={'mailbox-list-title' + (canScrollToTop ? ' is-scrolled' : '')} aria-label={title + '，回到顶部'} title={canScrollToTop ? '回到顶部' : undefined}
+                        onClick={() => list.current?.scrollTo({top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'})}>
+                    <span>{title}</span><Icon name="chevron"/></button>
+            </h2></div><MailAction icon="refresh" label="刷新邮件" disabled={loading || moreLoading} onClick={() => {setRefresh(value => value + 1); setDraftReload(value => value + 1)}}/></header>
             <div className="mailbox-search"><Icon name="search"/><label className="sr-only" htmlFor="mailbox-search">搜索邮件</label><input ref={searchInput} id="mailbox-search" type="search" value={search} maxLength={200} placeholder={view === 'drafts' ? '搜索草稿' : accountId ? '搜索当前邮箱' : '搜索全部账号'}
                 onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)} onChange={event => {setSearch(event.target.value); if (!event.target.value) setQuery('')}} onKeyDown={event => {if (event.key === 'Enter' && !event.nativeEvent.isComposing) setQuery(search.trim())}}/>
                 {search && <MailAction icon="close" label="清空搜索" onClick={() => {setSearch(''); setQuery(''); searchInput.current?.focus()}}/>}</div>
@@ -228,7 +235,7 @@ export function MailboxPage({onSettings}: {onSettings: () => void}) {
             {(listError || (view === 'drafts' && draftError)) && <div className="mailbox-inline-error" role="alert"><p>{view === 'drafts' ? draftError : listError}</p><button type="button" className="mail-text-button" onClick={() => {setRefresh(value => value + 1); setDraftReload(value => value + 1)}}>重试</button></div>}
             {errors.length > 0 && <details className="mailbox-partial-error"><summary>{errors.length} 个邮箱未能加载</summary>{errors.map(error => <p key={error.accountId}>{error.address}：{error.message}</p>)}<button type="button" className="mail-text-button" onClick={() => setRefresh(value => value + 1)}>重新加载</button></details>}
             <div className="mailbox-action-feedback mailbox-list-feedback" aria-live="polite">{actionError && <p role="alert" className="account-error">{actionError}</p>}{notice && <p role="status">{notice}</p>}</div>
-            <div className="mailbox-message-list" ref={list} aria-busy={loading} onKeyDown={event => {
+            <div className="mailbox-message-list" ref={list} aria-busy={loading} onScroll={event => setCanScrollToTop(event.currentTarget.scrollTop > 160)} onKeyDown={event => {
                 if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
                 const buttons = Array.from(list.current?.querySelectorAll<HTMLButtonElement>('.mail-row-open') ?? []), index = buttons.indexOf(document.activeElement as HTMLButtonElement)
                 if (index < 0) return
