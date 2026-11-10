@@ -138,8 +138,8 @@ export function MailComposer({initial, accounts, onClose, onSent, onDraftChange,
                     <button type="button" className="mail-text-button" aria-expanded={ccVisible} onClick={() => setCcVisible(!ccVisible)}>抄送 / 密送</button></div>
                 {ccVisible && <><div className="mail-compose-line"><label htmlFor="mail-cc">抄送</label><input id="mail-cc" value={draft.cc} placeholder="可选" onChange={event => change({cc: event.target.value})}/></div>
                     <div className="mail-compose-line"><label htmlFor="mail-bcc">密送</label><input id="mail-bcc" value={draft.bcc} placeholder="可选，其他收件人不可见" onChange={event => change({bcc: event.target.value})}/></div></>}
-                <div className="mail-compose-line"><label htmlFor="mail-subject">主题</label><input id="mail-subject" value={draft.subject} maxLength={998} placeholder="邮件主题" onChange={event => change({subject: event.target.value})}/></div>
-                <label className="sr-only" htmlFor="mail-compose-body">正文</label><textarea ref={bodyField} id="mail-compose-body" value={draft.body} placeholder="写点什么…" maxLength={1000000} onChange={event => change({body: event.target.value})}/>
+                <div className="mail-compose-line"><label htmlFor="mail-subject">主题</label><input id="mail-subject" value={draft.subject} maxLength={998} onChange={event => change({subject: event.target.value})}/></div>
+                <label className="sr-only" htmlFor="mail-compose-body">正文</label><textarea ref={bodyField} id="mail-compose-body" value={draft.body} maxLength={1000000} onChange={event => change({body: event.target.value})}/>
                 {draft.attachments.length > 0 && <ul className="mail-compose-attachments">{draft.attachments.map((attachment, index) => <li key={index}><Icon name="attachment"/><span>{attachment.name}</span>
                     <button type="button" className="icon-button" aria-label={'移除附件 ' + attachment.name} title="移除附件" onClick={() => change({attachments: draft.attachments.filter((_item, i) => i !== index)})}><Icon name="close"/></button></li>)}</ul>}
             </fieldset>
@@ -148,7 +148,7 @@ export function MailComposer({initial, accounts, onClose, onSent, onDraftChange,
             <footer className="mail-compose-footer"><div><button type="submit" className="primary-button" disabled={unavailable || adding || !sender?.smtp}><Icon name="send"/>{sending ? '正在发送…' : unknown ? '状态待确认' : '发送'}</button>
                 <label className={'mail-attach-button secondary-button' + (unavailable || adding ? ' is-disabled' : '')}><Icon name="attachment"/>{adding ? '正在添加…' : '附件'}<input type="file" multiple disabled={unavailable || adding} onChange={event => void attach(event)}/></label></div>
                 {unknown ? <div className="mail-compose-recovery"><button type="button" className="mail-text-button" disabled={closing} onClick={() => setResolving(true)}>已确认未发送，继续编辑</button><button type="button" className="mail-text-button" onClick={() => {onClose(); onViewSent()}}>查看已发送</button></div> : <button type="button" className="icon-button" title="删除草稿" aria-label="删除草稿" disabled={unavailable || adding} onClick={() => setDiscarding(true)}><Icon name="trash"/></button>}</footer>
-            {!sender?.smtp && <p className="mail-field-hint mail-compose-config-note">发件账号未配置 SMTP，可先保存草稿，再到邮箱设置补充发信信息。</p>}
+            {!sender?.smtp && <p className="mail-field-hint mail-compose-config-note">此账号未启用发信，请在设置中配置 SMTP。</p>}
         </form>
         {confirmEmpty && <ConfirmDialog title="未填写主题，仍要发送？" message={'将从 ' + sender?.address + ' 发送给 ' + draft.to + '。'} confirmLabel="发送" onCancel={() => setConfirmEmpty(false)} onConfirm={() => void send(true)}/>}
         {resolving && <ConfirmDialog title="确认这封邮件没有发出？" message="请先在邮箱中核对已发送邮件，必要时向收件人确认。恢复编辑后再次发送可能造成重复投递。" confirmLabel="确认未发送，恢复编辑" onCancel={() => setResolving(false)} onConfirm={() => void release()}/>}

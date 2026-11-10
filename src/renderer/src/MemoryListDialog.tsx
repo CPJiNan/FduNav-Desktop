@@ -64,14 +64,10 @@ export function MemoryListDialog({items, busy, error, nestedOpen, onClose, onEdi
                                 <Icon name="trash"/></button>
                         </div>
                     </div>
-                    <div className="memory-row-support">
-                        <div className="memory-row-meta"><span>{kinds[item.kind]}</span>
-                            {item.pinned && <span>已置顶</span>}{item.status === 'archived' ? <span>已归档</span>
-                                : item.expiresAt && Date.parse(item.expiresAt) <= Date.now() && <span>已过期</span>}
-                        </div>
-                        {item.evidence && <details className="memory-evidence">
-                            <summary>依据</summary>
-                            <p>{item.evidence}</p></details>}</div>
+                    <div className="memory-row-meta"><span>{kinds[item.kind]}</span>
+                        {item.pinned && <span>已置顶</span>}{item.status === 'archived' ? <span>已归档</span>
+                            : item.expiresAt && Date.parse(item.expiresAt) <= Date.now() && <span>已过期</span>}
+                    </div>
                 </li>)}</ul>}
         </div>
     </dialog>

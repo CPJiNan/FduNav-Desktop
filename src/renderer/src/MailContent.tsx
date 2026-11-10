@@ -44,5 +44,5 @@ export function MailContent({message, onError}: {message: MailMessage; onError: 
         return () => {element.removeEventListener('load', loaded); resize?.disconnect(); cancelAnimationFrame(pendingFrame); removeClick?.()}
     }, [documentHtml, onError])
     if (message.html) return <iframe ref={frame} title="邮件正文" className="mail-html-body" sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={documentHtml}/>
-    return <div className="mail-plain-body">{message.body || '这封邮件没有文本正文，请查看附件。'}</div>
+    return <div className="mail-plain-body">{message.body || '无正文'}</div>
 }

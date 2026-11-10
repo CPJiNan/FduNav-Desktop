@@ -67,10 +67,9 @@ export function MailConnectionDialog({account, campusUsername, onClose, onSaved}
         catch {setError('暂时无法取消，请等待连接结束。')} finally {if (mounted.current) setStopping(false)}
     }
     const described = (field: string) => fieldError === field ? 'mail-account-error' : undefined
-    return <dialog ref={dialog} className="calendar-dialog mail-connection-dialog" aria-labelledby="mail-account-title" aria-describedby="mail-account-description"
+    return <dialog ref={dialog} className="calendar-dialog mail-connection-dialog" aria-labelledby="mail-account-title"
                    onCancel={event => {event.preventDefault(); requestClose()}} onClick={event => {if (event.target === dialog.current) requestClose()}}>
-        <header className="calendar-dialog-header mail-dialog-heading"><div><h3 id="mail-account-title">{account ? '编辑邮箱账号' : '添加邮箱'}</h3>
-            <p id="mail-account-description">添加后可在邮箱页面收信、写信和回复。</p></div>
+        <header className="calendar-dialog-header mail-dialog-heading"><div><h3 id="mail-account-title">{account ? '编辑邮箱账号' : '添加邮箱'}</h3></div>
             <button ref={closeButton} type="button" className="icon-button" disabled={!!busy} title="关闭" aria-label="关闭邮箱设置" onClick={requestClose}><Icon name="close"/></button></header>
         <form ref={form} className="mail-connection-form" noValidate aria-busy={!!busy} onSubmit={(event: FormEvent) => {event.preventDefault(); void perform('save')}}>
             <fieldset disabled={!!busy}>
@@ -98,7 +97,7 @@ export function MailConnectionDialog({account, campusUsername, onClose, onSaved}
                     <button type="button" className="mail-reveal" aria-label={revealed ? '隐藏密码' : '显示密码'} aria-pressed={revealed} onClick={() => setRevealed(!revealed)}>{revealed ? '隐藏' : '显示'}</button></div>
                 <label className="mail-agent-consent"><input type="checkbox" checked={!!draft.smtp} onChange={event => update({smtp: event.target.checked ? {
                     ...(smtpPresets[preset] ?? {host: '', port: 465, security: 'tls'}), address: draft.address, username: '', password: '', useImapCredentials: true,
-                } : null})}/>启用发信</label><p className="mail-field-hint">用于写信、回复和转发。关闭后仍可收信。</p>
+                } : null})}/>启用发信</label>
                 <details className="mail-advanced" open={advanced} onToggle={event => setAdvanced(event.currentTarget.open)}><summary>服务器设置</summary><div className="mail-advanced-fields">
                     <h4>收信 · IMAP</h4>
                     <label htmlFor="mail-host">服务器</label><input id="mail-host" name="host" value={draft.host} autoCapitalize="none" spellCheck={false}
@@ -118,7 +117,7 @@ export function MailConnectionDialog({account, campusUsername, onClose, onSaved}
                     </>}
                 </div></details>
                 <label className="mail-agent-consent"><input type="checkbox" checked={draft.enabled} onChange={event => update({enabled: event.target.checked})}/>允许助手读取这个邮箱</label>
-                <p className="mail-field-hint">助手只有阅读权限。交给助手的邮件内容会发送到所选模型并保存在对话中。账号、密码和本地草稿加密保存。</p>
+                <p className="mail-field-hint">邮件内容会发送给所选模型并保存在对话记录中；账号密码仅加密保存在本机。</p>
             </fieldset>
             <div className="mail-form-feedback" aria-live="polite">{busy && <p role="status">{busy === 'test' ? '正在测试连接…' : '正在验证并保存…'}</p>}{notice && <p role="status" className="mail-success">{notice}</p>}{error && <p id="mail-account-error" role="alert" className="account-error">{error}</p>}</div>
             <div className="calendar-dialog-actions mail-dialog-actions">{busy ? <button ref={stopButton} type="button" className="secondary-button" disabled={stopping} onClick={() => void stop()}>{stopping ? '正在取消…' : '取消操作'}</button> : <button type="button" className="secondary-button" onClick={() => void perform('test')}>测试连接</button>}

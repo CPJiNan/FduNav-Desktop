@@ -78,7 +78,6 @@ html:has(.mail-connection-dialog[open]) { overflow: hidden; }
 .mailbox-sidebar > header > .mail-action { display: none; }
 .mailbox-compose-button { width: 100%; margin-bottom: var(--space-5); }
 .mailbox-sidebar > select { min-height: 38px; font-size: var(--font-size-xs); padding: var(--space-2); margin-bottom: var(--space-3); background: var(--color-bg-surface); }
-.mailbox-sidebar-address { margin: 0 var(--space-2) var(--space-4); color: var(--color-text-muted); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
 .mailbox-sidebar nav { display: grid; gap: var(--space-1); }
 .mailbox-nav-item { border: 0; width: 100%; min-height: 40px; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: transparent; color: var(--color-text-secondary); text-align: left; font-size: var(--font-size-sm); }
 .mailbox-nav-item > span:not(.mailbox-nav-count) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -89,8 +88,6 @@ html:has(.mail-connection-dialog[open]) { overflow: hidden; }
 .mailbox-folder-tree { margin-top: var(--space-5); border-top: var(--border-width) solid var(--color-border-subtle); padding-top: var(--space-3); }
 .mailbox-folder-tree summary { padding: var(--space-2) var(--space-3); font-size: var(--font-size-xs); color: var(--color-text-muted); cursor: pointer; }
 .mailbox-folder-tree .mailbox-nav-item { font-size: var(--font-size-xs); }
-.mailbox-sidebar-bottom { margin-top: auto; padding-top: var(--space-6); }
-.mailbox-sidebar-bottom .mailbox-nav-item { font-size: var(--font-size-xs); }
 .mailbox-list-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: var(--border-width) solid var(--color-border-subtle); }
 .mailbox-list-heading { min-height: 64px; padding: var(--space-3) var(--space-4); display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .mailbox-list-heading > div { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }

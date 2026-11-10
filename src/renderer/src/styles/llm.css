@@ -373,43 +373,13 @@ html:has(.memory-list-dialog[open]) {
     white-space: pre-wrap;
 }
 
-.memory-row-support {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-4);
-    margin-top: var(--space-2);
-}
-
 .memory-row-meta {
+    margin-top: var(--space-2);
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
     color: var(--color-text-muted);
     font-size: var(--font-size-xs);
-}
-
-.memory-evidence {
-    flex: 1;
-    min-width: 0;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-xs);
-}
-
-.memory-evidence summary {
-    width: fit-content;
-    cursor: pointer;
-    border-radius: var(--radius-xs);
-}
-
-.memory-evidence summary:hover {
-    color: var(--color-text-primary);
-}
-
-.memory-evidence p {
-    margin: var(--space-2) 0 0;
-    padding-left: var(--space-3);
-    border-left: var(--border-width) solid var(--color-border-subtle);
-    white-space: pre-wrap;
 }
 
 .memory-actions .memory-remove:not(:disabled):hover {

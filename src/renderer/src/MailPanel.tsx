@@ -41,7 +41,7 @@ export function MailPanel({active, campusUsername, onOpenMailbox}: {active: bool
     }
     if (!active) return null
     return <div className="mail-panel">
-        <header className="mail-settings-heading"><div><h2>邮箱账号</h2><p>连接多个邮箱，在邮箱页面统一收发和管理邮件。</p></div>
+        <header className="mail-settings-heading"><div><h2>邮箱账号</h2></div>
             <button ref={addButton} type="button" className="primary-button" disabled={loading || !!busy || !window.mail} onClick={() => setEditing('new')}><Icon name="plus"/>添加邮箱</button></header>
         {loading ? <p role="status">正在加载邮箱账号…</p> : accounts.length ? <div className="mail-settings-accounts">
             {accounts.map(account => <section className="mail-settings-account" key={account.id} aria-label={account.label}>
@@ -49,12 +49,12 @@ export function MailPanel({active, campusUsername, onOpenMailbox}: {active: bool
                     <div className="mail-settings-account-name"><h3>{account.label}</h3><p>{account.address}</p></div><span className="mail-account-capability">{account.smtp ? '收发已配置' : '仅收信'}</span>
                     <button type="button" className="mail-text-button" disabled={!!busy} onClick={() => setEditing(account)}>编辑</button>
                     <button type="button" className="icon-button" title="移除邮箱" aria-label={'移除 ' + account.address} disabled={!!busy} onClick={() => setRemoving(account)}><Icon name="trash"/></button></div>
-                <div className="mail-settings-access"><div><label id={'mail-agent-' + account.id}>允许助手读取</label><p>只授权这个邮箱；写信、回复由你在邮箱页面操作。</p></div>
+                <div className="mail-settings-access"><div><label id={'mail-agent-' + account.id}>允许助手读取</label></div>
                     <button type="button" role="switch" className="llm-switch" aria-labelledby={'mail-agent-' + account.id} aria-checked={account.enabled} disabled={!!busy} onClick={() => void setAccess(account)}><span className="llm-switch-track" aria-hidden="true"><span/></span></button></div>
             </section>)}
             <button type="button" className="secondary-button" onClick={onOpenMailbox}>打开邮箱</button>
-        </div> : !error && <div className="mail-settings-empty"><Icon name="mail"/><h3>还没有添加邮箱</h3><p>支持复旦学生邮箱及通用 IMAP/SMTP 账号。</p></div>}
-        <p className="mail-privacy-note"><Icon name="info"/><span>账号、密码和本地草稿加密保存在本机。授权助手读取的邮件内容会发送到所选模型，并保留在对话和执行记录中。</span></p>
+        </div> : !error && <div className="mail-settings-empty"><Icon name="mail"/><h3>暂无邮箱账号</h3></div>}
+        <p className="mail-privacy-note"><Icon name="info"/><span>账号密码加密保存在本机。授权助手读取后，邮件内容会发送给所选模型并保存在对话记录中。</span></p>
         <div className="mail-page-feedback" aria-live="polite">{notice && <p className="mail-success" role="status">{notice}</p>}{error && <div role="alert"><p className="account-error">{error}</p><button type="button" className="mail-text-button" onClick={() => setReload(value => value + 1)}>重新加载</button></div>}</div>
         {editing && <MailConnectionDialog account={editing === 'new' ? undefined : editing} campusUsername={campusUsername} onClose={() => setEditing(null)} onSaved={value => {
             setAccounts(current => [...current.filter(account => account.id !== value.id && account.id !== (editing === 'new' ? '' : editing.id)), value]); setNotice('邮箱账号已保存。'); setError('')
