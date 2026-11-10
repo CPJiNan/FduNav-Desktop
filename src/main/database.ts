@@ -549,14 +549,14 @@ export class AppDatabase {
         return (this.db.prepare('SELECT id FROM mail_drafts WHERE username = ? ORDER BY updated_at DESC LIMIT 1000').all(username) as {id: string}[]).map(row => row.id)
     }
     getMailDraft(username: string, id: string): Uint8Array | null {
-        return (this.db.prepare('SELECT encrypted_data FROM mail_drafts WHERE username = ? AND id = ?').get(username, id)?.encrypted_data as Uint8Array) ?? null
+        return (this.db.prepare('SELECT encrypted_data AS encryptedData FROM mail_drafts WHERE username = ? AND id = ?').get(username, id)?.encryptedData as Uint8Array) ?? null
     }
     saveMailDraft(username: string, id: string, value: Uint8Array, updatedAt: string) {
         this.db.prepare('INSERT INTO mail_drafts (username,id,encrypted_data,updated_at) VALUES (?,?,?,?) ON CONFLICT(username,id) DO UPDATE SET encrypted_data=excluded.encrypted_data,updated_at=excluded.updated_at').run(username, id, value, updatedAt)
     }
     deleteMailDraft(username: string, id: string) {this.db.prepare('DELETE FROM mail_drafts WHERE username=? AND id=?').run(username, id)}
     getMailSend(username: string, id: string): Uint8Array | null {
-        return (this.db.prepare('SELECT encrypted_data FROM mail_sends WHERE username=? AND id=?').get(username, id)?.encrypted_data as Uint8Array) ?? null
+        return (this.db.prepare('SELECT encrypted_data AS encryptedData FROM mail_sends WHERE username=? AND id=?').get(username, id)?.encryptedData as Uint8Array) ?? null
     }
     saveMailSend(username: string, id: string, value: Uint8Array) {
         this.db.prepare('INSERT INTO mail_sends (username,id,encrypted_data) VALUES (?,?,?) ON CONFLICT(username,id) DO UPDATE SET encrypted_data=excluded.encrypted_data').run(username, id, value)
