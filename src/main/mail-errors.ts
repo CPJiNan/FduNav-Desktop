@@ -23,6 +23,9 @@ export function safeMailError(error: unknown, action = '访问邮箱'): MailErro
         else if (/(?:IMAP|protocol).{0,24}(?:disabled|not enabled|closed)/i.test(reply)) reason = '请在官方邮箱设置中开启 IMAP/SMTP 服务并保存。'
         return new MailError('forbidden', '邮箱登录失败。' + reason)
     }
+    if (/^(?:ECONNRESET|EPIPE)$/.test(code)) return new MailError('transient', action + '时连接被中断（' + code + '）。请检查网络或代理是否能访问邮箱服务器。')
+    if (/^(?:ETIMEDOUT|ETIMEOUT|ESOCKETTIMEDOUT|CONNECT_TIMEOUT|GREETING_TIMEOUT)$/.test(code)) return new MailError('transient', action + '超时（' + code + '）。请检查网络或代理是否能访问邮箱服务器。')
+    if (/^(?:ENOTFOUND|EAI_AGAIN|EDNS)$/.test(code)) return new MailError('transient', action + '失败：无法解析服务器地址（' + code + '）。请检查网络和服务器地址。')
     if (/CERT|TLS|SSL|SELF_SIGNED/i.test(code)) return new MailError('forbidden', '邮箱服务器的安全连接验证失败，请检查服务器地址和系统时间。')
     return new MailError('transient', action + '失败，请检查网络和服务器设置后重试。')
 }
