@@ -1,4 +1,4 @@
-import {BrowserWindow, ipcMain, type IpcMainInvokeEvent, shell} from 'electron'
+import {BrowserWindow, ipcMain, type IpcMainInvokeEvent, net, shell} from 'electron'
 import type {AppDatabase} from './database'
 import type {AccountService} from './accounts'
 import {AuthError} from './fudan-auth.ts'
@@ -104,6 +104,16 @@ export function registerTimetableHandlers(db: AppDatabase, accounts: AccountServ
             if (!course) throw new AuthError('未找到这门课程，请刷新课表后重试。')
             const url = courseSyllabusUrl(course)
             if (!url) throw new AuthError('这门课程缺少教学班编号，暂时无法直接打开教学大纲。')
+            const checkUrl = new URL('../check-can-info', url)
+            checkUrl.searchParams.set('id', course.lessonId!)
+            const response = await net.fetch(checkUrl.href, {
+                credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(15000)
+            })
+            if (!response.ok) throw new AuthError('无法查询教学大纲的开放状态，请稍后重试。')
+            const body = (await response.text()).trim()
+            const notice = body ? JSON.parse(body) : null
+            if (notice) throw new AuthError(typeof notice.text === 'string' && notice.text.trim()
+                ? notice.text : '教务系统暂未开放这门课的教学大纲。')
             await shell.openExternal(url)
             return {ok: true, data: undefined}
         } catch (error) {
@@ -120,8 +130,8 @@ export function registerTimetableHandlers(db: AppDatabase, accounts: AccountServ
             const {username, kind} = context()
             const timetable = db.getTimetable(username, kind)
             const course = timetable?.courses.find(item => item.id === courseId)
-            if (!course) throw new AuthError('未找到这门课程，请刷新课表后重试。')
-            await accounts.openCourseReplay(course, timetable?.startDate ?? null, BrowserWindow.fromWebContents(event.sender) ?? undefined)
+            if (!timetable || !course) throw new AuthError('未找到这门课程，请刷新课表后重试。')
+            await accounts.openCourseReplay(course, timetable, BrowserWindow.fromWebContents(event.sender) ?? undefined)
             return {ok: true, data: undefined}
         } catch (error) {
             return {ok: false, error: error instanceof AuthError ? error.message : '无法打开课程回放，请检查网络后重试。'}
