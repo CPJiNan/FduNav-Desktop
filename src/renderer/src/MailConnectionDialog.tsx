@@ -215,7 +215,9 @@ export function MailConnectionDialog({account, campusUsername, onClose, onSaved}
                 </div>
                 {preset === 'gmail' && <div className="mail-provider-help">
                     <p id="mail-gmail-help" className="mail-field-hint">先开启 Google 两步验证，再生成应用专用密码。</p>
-                    <button type="button" className="mail-text-button" onClick={() => void openGmailPasswords()}>获取应用专用密码</button>
+                    <button type="button" className="mail-text-button"
+                            onClick={() => void openGmailPasswords()}>获取应用专用密码
+                    </button>
                 </div>}
                 <label className="mail-agent-consent"><input type="checkbox" checked={!!draft.smtp}
                                                              onChange={event => update({

@@ -149,7 +149,11 @@ export class MailAccounts {
         try {
             const document = JSON.parse(await this.secrets.decrypt(value))
             // Read existing single-account settings in place; explicit saves upgrade the encrypted document.
-            const accounts = document.version === 2 ? document.accounts : [{...document, label: document.address, smtp: null}]
+            const accounts = document.version === 2 ? document.accounts : [{
+                ...document,
+                label: document.address,
+                smtp: null
+            }]
             if (!Array.isArray(accounts) || accounts.length > 20) throw new Error()
             const ids = new Set<string>()
             return accounts.map(raw => {

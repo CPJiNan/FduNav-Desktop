@@ -18,7 +18,7 @@ import {ConfirmDialog} from './ConfirmDialog'
 import {MailComposer} from './MailComposer'
 import {MailContent} from './MailContent'
 import {MailAttachmentPreview} from './MailAttachmentPreview'
-import {isMailDraftFolder, mailFolderTree, mailFoldersForScope, resolveMailFolders} from '../../shared/mail-folders'
+import {isMailDraftFolder, mailFoldersForScope, mailFolderTree, resolveMailFolders} from '../../shared/mail-folders'
 import {MailFolderTree} from './MailFolderTree'
 import './styles/mail.css'
 
@@ -402,7 +402,10 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
     const serverDraftCount = mailFoldersForScope(visibleFolders, 'drafts').reduce((sum, value) => sum + (value.messages ?? 0), 0)
     const localDraftCount = drafts.filter(draft => !accountId || draft.accountId === accountId).length
     const draftCount = localDraftCount + serverDraftCount
-    const folderGroups = accounts.filter(account => !accountId || account.id === accountId).map(account => ({account, nodes: mailFolderTree(resolvedFolders.filter(value => value.accountId === account.id))})).filter(group => group.nodes.length)
+    const folderGroups = accounts.filter(account => !accountId || account.id === accountId).map(account => ({
+        account,
+        nodes: mailFolderTree(resolvedFolders.filter(value => value.accountId === account.id))
+    })).filter(group => group.nodes.length)
     const serverDraft = !!message && ((view === 'drafts' && !localDrafts) || resolvedFolders.some(value => isMailDraftFolder(value) && value.accountId === message.accountId && value.path === message.folder))
     const folderLabel = (item: MailItem) => {
         const source = resolvedFolders.find(value => value.accountId === item.accountId && value.path === item.folder)
@@ -462,30 +465,45 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
                                                                                              }}>
             <option value="">全部账号</option>
             {accounts.map(account => <option key={account.id} value={account.id}>{account.label}</option>)}</select>
-            <nav aria-label="邮件分类">{views.filter(value => !['junk', 'archive'].includes(value.id) || value.id === view || visibleFolders.some(folder => folder.role === value.id)).map(value => <button type="button" key={value.id}
-                                                                   className={'mailbox-nav-item' + (view === value.id && !folder ? ' is-active' : '')}
-                                                                   aria-current={view === value.id && !folder ? 'page' : undefined}
-                                                                   onClick={() => navigate(value.id)}><Icon
-                name={value.icon}/><span>{value.label}</span>
-                {value.id === 'inbox' && inboxUnread > 0 ? <span
-                    className="mailbox-nav-count">{inboxUnread}</span> : value.id === 'drafts' && draftCount > 0 ?
-                    <span
-                        className="mailbox-nav-count">{draftCount}</span> : null}
-            </button>)}</nav>
-            {folderGroups.length > 0 && <details className="mailbox-folder-tree"><summary>文件夹</summary>{folderGroups.map(group => <div key={group.account.id}>
-                {!accountId && accounts.length > 1 && <p className="mailbox-folder-account">{group.account.label}</p>}
-                <MailFolderTree nodes={group.nodes} selected={accountId === group.account.id ? folder : ''} onSelect={path => {setAccountId(group.account.id); navigate('all', path)}}/>
-            </div>)}</details>}
+            <nav
+                aria-label="邮件分类">{views.filter(value => !['junk', 'archive'].includes(value.id) || value.id === view || visibleFolders.some(folder => folder.role === value.id)).map(value =>
+                <button type="button" key={value.id}
+                        className={'mailbox-nav-item' + (view === value.id && !folder ? ' is-active' : '')}
+                        aria-current={view === value.id && !folder ? 'page' : undefined}
+                        onClick={() => navigate(value.id)}><Icon
+                    name={value.icon}/><span>{value.label}</span>
+                    {value.id === 'inbox' && inboxUnread > 0 ? <span
+                        className="mailbox-nav-count">{inboxUnread}</span> : value.id === 'drafts' && draftCount > 0 ?
+                        <span
+                            className="mailbox-nav-count">{draftCount}</span> : null}
+                </button>)}</nav>
+            {folderGroups.length > 0 && <details className="mailbox-folder-tree">
+                <summary>文件夹</summary>
+                {folderGroups.map(group => <div key={group.account.id}>
+                    {!accountId && accounts.length > 1 &&
+                        <p className="mailbox-folder-account">{group.account.label}</p>}
+                    <MailFolderTree nodes={group.nodes} selected={accountId === group.account.id ? folder : ''}
+                                    onSelect={path => {
+                                        setAccountId(group.account.id);
+                                        navigate('all', path)
+                                    }}/>
+                </div>)}</details>}
             {folderError && <p className="mailbox-folder-error" role="alert">{folderError}</p>}
         </aside>
         <section inert={mobileFolders || undefined} className="mailbox-list-pane" aria-label={title + '邮件列表'}>
             <header className="mailbox-list-heading">
                 <div><MailAction icon="panel" label="显示邮箱与文件夹" onClick={() => setMobileFolders(true)}/>
-                    <h2><button type="button" className={'mailbox-list-title' + (canScrollToTop ? ' is-scrolled' : '')}
+                    <h2>
+                        <button type="button" className={'mailbox-list-title' + (canScrollToTop ? ' is-scrolled' : '')}
                                 aria-label={title + '，回到顶部'} title={canScrollToTop ? '回到顶部' : undefined}
-                                onClick={() => list.current?.scrollTo({top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'})}>
-                        <span>{title}</span><Icon name="chevron"/>
-                    </button></h2></div>
+                                onClick={() => list.current?.scrollTo({
+                                    top: 0,
+                                    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
+                                })}>
+                            <span>{title}</span><Icon name="chevron"/>
+                        </button>
+                    </h2>
+                </div>
                 <MailAction icon="refresh" label="刷新邮件" disabled={loading || moreLoading} onClick={() => {
                     setRefresh(value => value + 1);
                     setDraftReload(value => value + 1)
@@ -508,16 +526,17 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
                 }}/>}</div>
             {view === 'drafts' && !folder && <div className="mailbox-draft-sources" role="group" aria-label="草稿来源">
                 {(['server', 'local'] as const).map(source => <button type="button" key={source}
-                    aria-pressed={draftSource === source} onClick={() => setDraftSource(source)}>
+                                                                      aria-pressed={draftSource === source}
+                                                                      onClick={() => setDraftSource(source)}>
                     {source === 'local' ? '本机' : '服务器'}<span>{source === 'local' ? localDraftCount : serverDraftCount}</span>
                 </button>)}
             </div>}
             <div className="mailbox-list-meta">
                 <span>{loading ? '加载中…' : (localDrafts ? draftError : listError) ? '未能加载' : localDrafts
                     ? draftItems.length + ' 封本地草稿' : view === 'drafts'
-                    ? items.length + (cursor ? '+' : '') + ' 封' : unreadCount + ' 封未读'}</span>
+                        ? items.length + (cursor ? '+' : '') + ' 封' : unreadCount + ' 封未读'}</span>
                 {!localDrafts && <button type="button" className={'mailbox-filter' + (unreadOnly ? ' is-active' : '')}
-                        aria-pressed={unreadOnly} onClick={() => setUnreadOnly(!unreadOnly)}>仅未读
+                                         aria-pressed={unreadOnly} onClick={() => setUnreadOnly(!unreadOnly)}>仅未读
                 </button>}
             </div>
             {(listError || (localDrafts && draftError)) &&
@@ -538,7 +557,8 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
             <div className="mailbox-action-feedback mailbox-list-feedback" aria-live="polite">{actionError &&
                 <p role="alert" className="account-error">{actionError}</p>}{notice &&
                 <p role="status">{notice}</p>}</div>
-            <div className="mailbox-message-list" ref={list} aria-busy={loading} onScroll={event => setCanScrollToTop(event.currentTarget.scrollTop > 160)} onKeyDown={event => {
+            <div className="mailbox-message-list" ref={list} aria-busy={loading}
+                 onScroll={event => setCanScrollToTop(event.currentTarget.scrollTop > 160)} onKeyDown={event => {
                 if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
                 const buttons = Array.from(list.current?.querySelectorAll<HTMLButtonElement>('.mail-row-open') ?? []),
                     index = buttons.indexOf(document.activeElement as HTMLButtonElement)
@@ -569,8 +589,9 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
                         <span className="mail-row-subject">{item.subject}</span><span
                             className="mail-row-bottom"><span>{!accountId ? accounts.find(account => account.id === item.accountId)?.label ?? item.accountAddress : folderLabel(item)}</span>{item.hasAttachments &&
                             <span title="有附件"><Icon name="attachment"/></span>}</span></button>
-                    {view !== 'drafts' && <MailAction icon="star" label={item.starred ? '取消收藏' : '收藏邮件'} active={item.starred}
-                                disabled={!!busy} onClick={() => void flags(item, {starred: !item.starred})}/>}
+                    {view !== 'drafts' &&
+                        <MailAction icon="star" label={item.starred ? '取消收藏' : '收藏邮件'} active={item.starred}
+                                    disabled={!!busy} onClick={() => void flags(item, {starred: !item.starred})}/>}
                 </div>) : !listError && <div className="mailbox-list-empty"><Icon name={query ? 'search' : 'inbox'}/>
                     <p>{query ? '没有找到匹配的邮件' : unreadOnly ? '没有未读邮件' : errors.length ? '暂无邮件' : '这里暂无邮件'}</p>{query &&
                         <button type="button" className="mail-text-button" onClick={() => {
@@ -589,16 +610,18 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
                     setSelected(null);
                     setMessage(null)
                 }}/></span>
-                    {message && !serverDraft && <><MailAction icon="star" label={message.starred ? '取消收藏' : '收藏邮件'}
-                                              active={message.starred} disabled={!!busy}
-                                              onClick={() => void flags(message, {starred: !message.starred})}/>
+                    {message && !serverDraft && <><MailAction icon="star"
+                                                              label={message.starred ? '取消收藏' : '收藏邮件'}
+                                                              active={message.starred} disabled={!!busy}
+                                                              onClick={() => void flags(message, {starred: !message.starred})}/>
                         <MailAction icon="mail" label={message.read ? '标记为未读' : '标记为已读'} disabled={!!busy}
                                     onClick={() => void flags(message, {read: !message.read})}/>
                         <MailAction icon="trash" label="移入垃圾箱" disabled={!!busy || view === 'trash'}
                                     onClick={() => setTrashing(message)}/></>}
                 </div>
-                {message && !serverDraft && <button type="button" className="secondary-button mail-reader-reply" disabled={!!busy}
-                                    onClick={() => void reply('reply')}><Icon name="reply"/>回复</button>}</header>
+                {message && !serverDraft &&
+                    <button type="button" className="secondary-button mail-reader-reply" disabled={!!busy}
+                            onClick={() => void reply('reply')}><Icon name="reply"/>回复</button>}</header>
             <div className="mailbox-action-feedback" aria-live="polite">{actionError &&
                 <p role="alert" className="account-error">{actionError}</p>}{notice &&
                 <p role="status">{notice}</p>}</div>
@@ -611,7 +634,9 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
                                     onClick={() => setBodyRetry(value => value + 1)}>重试
                             </button>
                         </div> : message ? <article className="mailbox-message">
-                                <div className="mail-message-account"><Icon name="user"/>{message.accountAddress}{serverDraft && <span>服务器草稿 · 只读</span>}</div>
+                                <div className="mail-message-account"><Icon
+                                    name="user"/>{message.accountAddress}{serverDraft && <span>服务器草稿 · 只读</span>}
+                                </div>
                                 <h1>{message.subject}</h1>
                                 <div className="mail-message-sender"><span className="mail-sender-avatar"
                                                                            aria-hidden="true">{(message.from.split('<')[0].trim() || message.fromAddress).slice(0, 1).toUpperCase() || '?'}</span>
