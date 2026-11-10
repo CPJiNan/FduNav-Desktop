@@ -88,7 +88,7 @@ export function MailConnectionDialog({account, campusUsername, onClose, onSaved}
             return
         }
         if (!account && !draft.password) {
-            setError('请输入密码或授权码。');
+            setError(preset === 'gmail' ? '请输入应用专用密码。' : '请输入密码或授权码。');
             setFieldError('password');
             return
         }
@@ -135,7 +135,21 @@ export function MailConnectionDialog({account, campusUsername, onClose, onSaved}
         }
     }
 
-    const described = (field: string) => fieldError === field ? 'mail-account-error' : undefined
+    async function openGmailPasswords() {
+        if (!window.mail) return
+        try {
+            const result = await window.mail.openLink('https://myaccount.google.com/apppasswords')
+            if (!result.ok) setError(result.error)
+        } catch {
+            setError('无法打开 Google 账号设置，请稍后重试。')
+        }
+    }
+
+    const passwordLabel = preset === 'gmail' ? '应用专用密码' : '密码或授权码'
+    const described = (field: string) => [
+        field === 'password' && preset === 'gmail' ? 'mail-gmail-help' : '',
+        fieldError === field ? 'mail-account-error' : '',
+    ].filter(Boolean).join(' ') || undefined
     return <dialog ref={dialog} className="calendar-dialog mail-connection-dialog" aria-labelledby="mail-account-title"
                    onCancel={event => {
                        event.preventDefault();
@@ -186,19 +200,23 @@ export function MailConnectionDialog({account, campusUsername, onClose, onSaved}
                 <input id="mail-label" name="label" aria-invalid={fieldError === 'label' || undefined}
                        value={draft.label} maxLength={80} placeholder="邮箱名称"
                        onChange={event => update({label: event.target.value})}/>
-                <label htmlFor="mail-password">密码或授权码</label>
+                <label htmlFor="mail-password">{passwordLabel}</label>
                 <div className="mail-password-control"><input id="mail-password" name="password"
                                                               type={revealed ? 'text' : 'password'}
                                                               autoComplete="current-password" value={draft.password}
-                                                              placeholder={account?.configured ? '已配置' : '密码或授权码'}
+                                                              placeholder={account?.configured ? '已配置' : preset === 'gmail' ? '16 位应用专用密码' : passwordLabel}
                                                               maxLength={4096}
                                                               aria-invalid={fieldError === 'password' || undefined}
                                                               aria-describedby={described('password')}
-                                                              onChange={event => update({password: event.target.value})}/>
+                                                              onChange={event => update({password: preset === 'gmail' ? event.target.value.replace(/\s/g, '') : event.target.value})}/>
                     <button type="button" className="mail-reveal" aria-label={revealed ? '隐藏密码' : '显示密码'}
                             aria-pressed={revealed} onClick={() => setRevealed(!revealed)}><Icon
                         name={revealed ? 'eye-off' : 'eye'}/></button>
                 </div>
+                {preset === 'gmail' && <div className="mail-provider-help">
+                    <p id="mail-gmail-help" className="mail-field-hint">先开启 Google 两步验证，再生成应用专用密码。</p>
+                    <button type="button" className="mail-text-button" onClick={() => void openGmailPasswords()}>获取应用专用密码</button>
+                </div>}
                 <label className="mail-agent-consent"><input type="checkbox" checked={!!draft.smtp}
                                                              onChange={event => update({
                                                                  smtp: event.target.checked ? {

@@ -1379,3 +1379,16 @@ html:has(.mail-connection-dialog[open]) {
 .mailbox-list-title > .icon { width: 14px; height: 14px; flex-basis: 14px; transform: rotate(-90deg); opacity: 0; color: var(--color-accent); }
 .mailbox-list-title.is-scrolled > .icon, .mailbox-list-title:focus-visible > .icon { opacity: 1; }
 .mailbox-list-title.is-scrolled:hover { color: var(--color-accent); }
+
+.mail-provider-help {
+    margin-top: var(--space-2);
+}
+
+.mail-provider-help p {
+    margin: 0;
+}
+
+.mail-provider-help .mail-text-button {
+    color: var(--color-accent);
+    font-size: var(--font-size-xs);
+}

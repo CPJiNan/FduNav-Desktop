@@ -47,6 +47,7 @@ export const mailPresets: readonly MailPreset[] = [
     {id: 'fudan-cloud', label: '复旦学生邮箱', host: fudanStudentMail.host},
     {id: 'fudan', label: '复旦邮箱（旧系统）', host: 'mail.fudan.edu.cn'},
     {id: 'qq', label: 'QQ 邮箱', host: 'imap.qq.com'},
+    {id: 'gmail', label: 'Gmail', host: 'imap.gmail.com'},
     {id: 'custom', label: '其他邮箱', host: ''},
 ]
 
@@ -170,6 +171,7 @@ export interface MailAccount extends MailSettings {
 export const smtpPresets: Record<string, { host: string; port: number; security: MailSecurity }> = {
     'fudan-cloud': {host: 'smtp.exmail.qq.com', port: 465, security: 'tls'},
     qq: {host: 'smtp.qq.com', port: 465, security: 'tls'},
+    gmail: {host: 'smtp.gmail.com', port: 465, security: 'tls'},
     '163': {host: 'smtp.163.com', port: 465, security: 'tls'},
 }
 
