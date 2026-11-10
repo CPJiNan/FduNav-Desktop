@@ -41,7 +41,7 @@ export interface TimetableAPI {
 
 export function courseSyllabusUrl({lessonId}: Pick<TimetableCourse, 'lessonId'>): string | null {
     if (!lessonId || !/^[1-9]\d*$/.test(lessonId) || !Number.isSafeInteger(Number(lessonId))) return null
-    return `https://fdjwgl.fudan.edu.cn/student/for-std/lesson-search/teachingSyllabusInfo/${lessonId}`
+    return `https://fdjwgl.fudan.edu.cn/student/for-all/lesson-search/teachingSyllabusInfo/${lessonId}`
 }
 
 export const courseStartTimes = ['08:00', '08:55', '09:55', '10:50', '11:45', '13:30', '14:25', '15:25',

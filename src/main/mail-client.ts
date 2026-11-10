@@ -1,47 +1,45 @@
 import {createHash} from 'node:crypto'
-import {ImapFlow, type FetchMessageObject, type SearchObject} from 'imapflow'
+import {ImapFlow, type SearchObject} from 'imapflow'
 import {MailAccounts, mapMailLimit, type StoredMailAccount} from './mail-accounts'
 import {mailConnectionOptions} from './mail-imap'
 import {MailError, safeMailError} from './mail-errors'
-import {downloadMailPart, messageAttachments, parseMailReference, presentMailItem, presentMailMessage} from './mail-message'
-import type {MailAccount, MailFolder, MailItem, MailMessage, MailPage, MailPeriod, MailQuery, MailScope, MailDraft, MailSendResult} from '../shared/mail'
+import {
+    downloadMailPart,
+    messageAttachments,
+    parseMailReference,
+    presentMailItem,
+    presentMailMessage
+} from './mail-message'
+import type {
+    MailAccount,
+    MailDraft,
+    MailFolder,
+    MailItem,
+    MailMessage,
+    MailPage,
+    MailPeriod,
+    MailQuery,
+    MailScope,
+    MailSendResult
+} from '../shared/mail'
 import {validateMailDraft} from '../shared/mail'
+import {mailFoldersForScope, resolveMailFolders} from '../shared/mail-folders'
 import {MailDrafts} from './mail-drafts'
 import {deliverMail, prepareMailMessage} from './mail-smtp'
-import {mailFoldersForScope, resolveMailFolders} from '../shared/mail-folders'
 
-type Position = {before: number; validity: string}
-type PageCursor = {v: 1; signature: string; positions: Record<string, Position>}
-type Stream = {key: string; validity: string; items: {uid: number; item: MailItem}[]; hasMore: boolean}
+type Position = { before: number; validity: string }
+type PageCursor = { v: 1; signature: string; positions: Record<string, Position> }
+type Stream = { key: string; validity: string; items: { uid: number; item: MailItem }[]; hasMore: boolean }
 const streamKey = (id: string, folder: string) => id + ':' + Buffer.from(folder).toString('base64url')
 
 export class MailClient {
     private sending = new Set<string>()
+
     constructor(readonly accounts: MailAccounts, readonly drafts: MailDrafts,
                 private factory: (options: ReturnType<typeof mailConnectionOptions>) => ImapFlow = options => new ImapFlow(options),
-                private deliver: typeof deliverMail = deliverMail) {}
-    private async imap<T>(owner: string, id: string, agent: boolean,
-                          work: (client: ImapFlow, account: StoredMailAccount, signal: AbortSignal) => Promise<T>, external?: AbortSignal) {
-        return this.accounts.withAccount(owner, id, agent, async (account, signal) => {
-            const client = this.factory(mailConnectionOptions(account)), abort = () => client.close()
-            client.on('error', () => {}); signal.addEventListener('abort', abort, {once: true})
-            try {signal.throwIfAborted(); await client.connect(); signal.throwIfAborted(); return await work(client, account, signal)}
-            finally {signal.removeEventListener('abort', abort); client.close(); if (client.options.auth) client.options.auth.pass = ''}
-        }, external)
+                private deliver: typeof deliverMail = deliverMail) {
     }
-    private async selected(ids?: string[], agent = false): Promise<MailAccount[]> {
-        if (ids !== undefined && (!Array.isArray(ids) || ids.length > 20 || ids.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9_-]{16}$/.test(id)))) throw new MailError('invalid_args', '邮箱筛选条件无效。')
-        const all = await this.accounts.list(), allowed = all.filter(account => !agent || account.enabled)
-        if (ids?.some(id => !allowed.some(account => account.id === id))) throw new MailError('forbidden', '所选邮箱不存在或未授权读取。')
-        return ids?.length ? allowed.filter(account => ids.includes(account.id)) : allowed
-    }
-    private async listFolders(client: ImapFlow, account: StoredMailAccount): Promise<MailFolder[]> {
-        const rows = await client.list({statusQuery: {messages: true, unseen: true}})
-        return resolveMailFolders(rows.filter(folder => folder.path && folder.path.length <= 1000 && !/[\x00-\x1f\x7f]/.test(folder.path))
-            .map(folder => ({accountId: account.id, path: folder.path, name: folder.name || folder.path,
-                delimiter: folder.delimiter || null, selectable: !folder.flags?.has('\\Noselect'),
-                specialUse: folder.specialUse ?? null, messages: folder.status?.messages ?? null, unread: folder.status?.unseen ?? null})))
-    }
+
     async folders(ids?: string[]): Promise<{folders: MailFolder[]; errors: MailPage['errors']}> {
         const owner = this.accounts.owner(), revision = this.accounts.revision(owner), selected = await this.selected(ids), folders: MailFolder[] = [], errors: MailPage['errors'] = []
         const result = await mapMailLimit(selected, 3, async account => {
@@ -53,14 +51,7 @@ export class MailClient {
         })
         this.accounts.assert(owner, revision); return {folders, errors}
     }
-    private chooseFolders(folders: MailFolder[], scope: MailScope, folder?: string): MailFolder[] {
-        if (folder) {
-            const selected = folders.find(value => value.path === folder && value.selectable !== false)
-            if (!selected) throw new MailError('not_found', '文件夹已不存在，请刷新文件夹列表。')
-            return [selected]
-        }
-        return mailFoldersForScope(folders, scope)
-    }
+
     async messages(raw: MailQuery = {}, options: {agent?: boolean; period?: MailPeriod; external?: AbortSignal} = {}): Promise<MailPage> {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new MailError('invalid_args', '邮件查询条件无效。')
         if (raw.query !== undefined && typeof raw.query !== 'string') throw new MailError('invalid_args', '搜索条件须为文本。')
@@ -125,13 +116,7 @@ export class MailClient {
         this.accounts.assert(owner, revision)
         return {items, hasMore, nextCursor: hasMore ? Buffer.from(JSON.stringify({v: 1, signature, positions} satisfies PageCursor)).toString('base64url') : null, errors}
     }
-    private async selectMessage(client: ImapFlow, id: string, readOnly: boolean) {
-        const reference = parseMailReference(id), box = await client.mailboxOpen(reference.folder, {readOnly})
-        if (box.uidValidity.toString() !== reference.validity) throw new MailError('not_found', '邮件引用已失效，请刷新列表。')
-        const message = await client.fetchOne(reference.uid, {uid: true, envelope: true, flags: true, internalDate: true, bodyStructure: true, headers: ['references']}, {uid: true})
-        if (!message) throw new MailError('not_found', '邮件已被移走或删除，请刷新列表。')
-        return {reference, message}
-    }
+
     async message(id: string, markRead = false): Promise<MailMessage> {
         const reference = parseMailReference(id), owner = this.accounts.owner()
         if (typeof markRead !== 'boolean') throw new MailError('invalid_args', '邮件读取参数无效。')
@@ -142,6 +127,7 @@ export class MailClient {
             return result
         })
     }
+
     async flags(input: {id: string; read?: boolean; starred?: boolean}): Promise<null> {
         if (!input || (input.read !== undefined && typeof input.read !== 'boolean') || (input.starred !== undefined && typeof input.starred !== 'boolean') || (input.read === undefined && input.starred === undefined)) throw new MailError('invalid_args', '邮件标记参数无效。')
         const reference = parseMailReference(input.id), owner = this.accounts.owner()
@@ -155,6 +141,7 @@ export class MailClient {
         })
         return null
     }
+
     async trash(id: string): Promise<null> {
         const reference = parseMailReference(id), owner = this.accounts.owner()
         await this.imap(owner, reference.accountId, false, async (client, account) => {
@@ -168,11 +155,13 @@ export class MailClient {
         })
         return null
     }
-    async attachment(id: string, part: string): Promise<{data: Buffer; name: string; type: string}> {
+
+    async attachment(id: string, part: string): Promise<{ data: Buffer; name: string; type: string }> {
         if (typeof part !== 'string' || !/^\d+(?:\.\d+)*$/.test(part) || part.length > 60) throw new MailError('invalid_args', '附件引用无效。')
         const reference = parseMailReference(id), owner = this.accounts.owner()
         return this.imap(owner, reference.accountId, false, async (client, _account, signal) => {
-            const {message} = await this.selectMessage(client, id, true), attachment = messageAttachments(message).find(value => value.part === part)
+            const {message} = await this.selectMessage(client, id, true),
+                attachment = messageAttachments(message).find(value => value.part === part)
             if (!attachment) throw new MailError('not_found', '附件已不存在。')
             if (attachment.size > 25 * 1024 * 1024) throw new MailError('invalid_args', '附件超过 25 MB，请使用官方邮箱下载。')
             const result = await downloadMailPart(client, reference.uid, part, 25 * 1024 * 1024, signal)
@@ -180,6 +169,7 @@ export class MailClient {
             return {data: result.data, name: attachment.name, type: attachment.type}
         })
     }
+
     async releaseDraft(id: string): Promise<MailDraft> {
         const owner = this.accounts.owner(), draft = await this.drafts.get(id)
         if (draft.sendRequestId && this.sending.has(owner + ':' + draft.sendRequestId)) throw new MailError('transient', '邮件仍在发送，请等待结果。')
@@ -187,10 +177,12 @@ export class MailClient {
             const receipt = await this.drafts.receipt(owner, draft.sendRequestId)
             if (receipt?.state === 'sent') throw new MailError('forbidden', '发信服务器已接受这封邮件，请查看已发送邮件。')
         }
-        delete draft.sendState; delete draft.sendRequestId
+        delete draft.sendState;
+        delete draft.sendRequestId
         await this.drafts.save(draft, true)
         return draft
     }
+
     async send(raw: {draft: MailDraft; requestId: string}): Promise<MailSendResult> {
         if (!raw || typeof raw.requestId !== 'string' || !/^[a-zA-Z0-9_-]{16,64}$/.test(raw.requestId)) throw new MailError('invalid_args', '发送请求无效。')
         const checked = validateMailDraft(raw.draft)
@@ -248,5 +240,64 @@ export class MailClient {
                 return result
             })
         } finally {this.sending.delete(key)}
+    }
+
+    private async imap<T>(owner: string, id: string, agent: boolean,
+                          work: (client: ImapFlow, account: StoredMailAccount, signal: AbortSignal) => Promise<T>, external?: AbortSignal) {
+        return this.accounts.withAccount(owner, id, agent, async (account, signal) => {
+            const client = this.factory(mailConnectionOptions(account)), abort = () => client.close()
+            client.on('error', () => {
+            });
+            signal.addEventListener('abort', abort, {once: true})
+            try {
+                signal.throwIfAborted();
+                await client.connect();
+                signal.throwIfAborted();
+                return await work(client, account, signal)
+            } finally {
+                signal.removeEventListener('abort', abort);
+                client.close();
+                if (client.options.auth) client.options.auth.pass = ''
+            }
+        }, external)
+    }
+
+    private async selected(ids?: string[], agent = false): Promise<MailAccount[]> {
+        if (ids !== undefined && (!Array.isArray(ids) || ids.length > 20 || ids.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9_-]{16}$/.test(id)))) throw new MailError('invalid_args', '邮箱筛选条件无效。')
+        const all = await this.accounts.list(), allowed = all.filter(account => !agent || account.enabled)
+        if (ids?.some(id => !allowed.some(account => account.id === id))) throw new MailError('forbidden', '所选邮箱不存在或未授权读取。')
+        return ids?.length ? allowed.filter(account => ids.includes(account.id)) : allowed
+    }
+
+    private async listFolders(client: ImapFlow, account: StoredMailAccount): Promise<MailFolder[]> {
+        const rows = await client.list({statusQuery: {messages: true, unseen: true}})
+        return resolveMailFolders(rows.filter(folder => folder.path && folder.path.length <= 1000 && !/[\x00-\x1f\x7f]/.test(folder.path))
+            .map(folder => ({accountId: account.id, path: folder.path, name: folder.name || folder.path,
+                delimiter: folder.delimiter || null, selectable: !folder.flags?.has('\\Noselect'),
+                specialUse: folder.specialUse ?? null, messages: folder.status?.messages ?? null, unread: folder.status?.unseen ?? null})))
+    }
+
+    private chooseFolders(folders: MailFolder[], scope: MailScope, folder?: string): MailFolder[] {
+        if (folder) {
+            const selected = folders.find(value => value.path === folder && value.selectable !== false)
+            if (!selected) throw new MailError('not_found', '文件夹已不存在，请刷新文件夹列表。')
+            return [selected]
+        }
+        return mailFoldersForScope(folders, scope)
+    }
+
+    private async selectMessage(client: ImapFlow, id: string, readOnly: boolean) {
+        const reference = parseMailReference(id), box = await client.mailboxOpen(reference.folder, {readOnly})
+        if (box.uidValidity.toString() !== reference.validity) throw new MailError('not_found', '邮件引用已失效，请刷新列表。')
+        const message = await client.fetchOne(reference.uid, {
+            uid: true,
+            envelope: true,
+            flags: true,
+            internalDate: true,
+            bodyStructure: true,
+            headers: ['references']
+        }, {uid: true})
+        if (!message) throw new MailError('not_found', '邮件已被移走或删除，请刷新列表。')
+        return {reference, message}
     }
 }
