@@ -253,8 +253,8 @@ export function CommunityPanel() {
         </div>}
         {status?.message && showMessage && <p className="community-message">{status.message}</p>}
         {error && <p className="community-error" role="alert">{error}</p>}
-        <div className="community-actions">
-            <button type="button" className="secondary-button community-action" data-busy={phase === 'connect'}
+        <div className={`community-actions${schoolReady ? ' is-ready' : ''}`}>
+            <button type="button" className="secondary-button community-action community-action-school" data-busy={phase === 'connect'}
                     disabled={busy || !api}
                     onClick={() => api && void run('connect', () => api.connectSchool())}>
                 {phase === 'connect' ? <Spin/> : <Icon name="external"/>}
@@ -262,7 +262,7 @@ export function CommunityPanel() {
                     : schoolReady ? (direct ? '改用学校 WebVPN' : '重新打开学校登录窗口')
                         : '连接学校网络'}</span>
             </button>
-            <button type="button" className="secondary-button community-action" data-busy={phase === 'check'}
+            <button type="button" className="secondary-button community-action community-action-check" data-busy={phase === 'check'}
                     disabled={busy || !api}
                     onClick={() => api && void run('check', () => api.checkSchool())}>
                 {phase === 'check' ? <Spin/> : <Icon name="refresh"/>}

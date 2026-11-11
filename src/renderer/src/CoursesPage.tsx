@@ -300,7 +300,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
             </div>
         </header>
         {error && <p className="courses-error" role="alert">{error}</p>}
-        {tab === 'reviews' && <div className="courses-body">
+        {tab === 'reviews' && <div className={`courses-body${group ? '' : ' is-single'}`}>
             <section className="courses-column">
                 <div className="courses-search" aria-busy={!!busy}>
                     <form className="courses-search-form" onSubmit={search}>
@@ -328,10 +328,10 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                     </ul>
                     {groups.length >= pageSize && <button type="button" className="secondary-button"
                                                          disabled={!!busy} onClick={() => void moreGroups()}>加载更多课程</button>}
+                    {!group && groups.length > 0 && <p className="courses-hint">点选课程组，查看开课记录与课评。</p>}
                 </div>
             </section>
             <section className="courses-detail">
-                {!group && <div className="courses-detail-empty"><p>搜索课程组后，这里显示开课记录与课评</p></div>}
                 {group && <>
                     <div className="courses-group-head">
                         <div>

@@ -451,6 +451,18 @@
 
 .secondary-button.community-action-danger {
     color: var(--color-danger);
+    /* 破坏性操作固定排到最右，避免在就绪态抢占最显眼的位置。 */
+    order: 3;
+    margin-left: auto;
+}
+
+/* 网络已就绪时，「重新检测通路」比换通路更常用，排到最前。 */
+.community-actions.is-ready .community-action-check {
+    order: 1;
+}
+
+.community-actions.is-ready .community-action-school {
+    order: 2;
 }
 
 .community-action[data-busy="true"] {

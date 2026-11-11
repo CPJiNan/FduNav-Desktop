@@ -58,16 +58,11 @@
     box-shadow: var(--shadow-sm);
 }
 
-.courses-detail-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 10rem;
-    padding: var(--space-4);
-    border: 1px dashed var(--color-border-subtle);
-    border-radius: var(--radius-lg);
+.courses-hint {
+    margin: var(--space-3) 0 0;
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
+    line-height: 1.6;
 }
 
 .courses-body {
@@ -77,6 +72,20 @@
     align-items: start;
     flex: 1;
     min-height: 0;
+}
+
+/* 未选中课程组时收起详情栏，让课程组列表占满可用宽度。 */
+.courses-body.is-single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+/* 单栏时搜索框不要被拉到整页宽，否则输入区域过宽反而难扫读。 */
+.courses-body.is-single .courses-search-form {
+    max-width: 42rem;
+}
+
+.courses-body.is-single .courses-detail {
+    display: none;
 }
 
 .courses-plan-layout {
