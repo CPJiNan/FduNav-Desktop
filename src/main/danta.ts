@@ -106,6 +106,10 @@ export function registerDantaHandlers(db: AppDatabase, accounts: AccountService,
         integer(input.offset, 0), integer(input.limit, 10)))
     query('danta:read-thread', input => service.readThread(
         integer(input.holeId, 0), integer(input.offset, 0), integer(input.limit, 10)))
+    query('danta:feed', input => service.feed(
+        typeof input.feedId === 'string' ? input.feedId : '',
+        typeof input.cursor === 'string' && input.cursor ? input.cursor : null,
+        integer(input.limit, 10)))
     query('danta:search-courses', input => service.searchCourses(
         typeof input.query === 'string' ? input.query : '', integer(input.page, 1), integer(input.pageSize, 10)))
     query('danta:course-group', input => service.courseGroup(integer(input.id, 0)))

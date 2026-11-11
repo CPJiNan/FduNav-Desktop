@@ -221,6 +221,23 @@ const thread: CampusPage = {
     thread: {id: 51234, timeCreated: at(-7_300_000), timeUpdated: null, reply: 12},
 }
 
+const feedHoles = [
+    {holeId: 763125, floorId: 6904575, timeCreated: at(-3_600_000), view: 143, reply: 19, tags: ['选课', '学习'],
+        content: '这学期概率论 H 的总评是 30 平时 + 30 期中 + 40 期末，期中平均分 82，不调分。老师板书为主，不点名，课件上传 ehall。![](dx_onfire)',
+        truncated: false, redacted: false},
+    {holeId: 762725, floorId: 6901808, timeCreated: at(-9_000_000), view: 250, reply: 9, tags: ['提问'],
+        content: '请问二专的课程可以算进毕业学分吗？培养方案里写的选修模块是 12 学分，但我看 ehall 上只显示了 8 学分。',
+        truncated: false, redacted: false},
+    {holeId: 344578, floorId: 5012345, timeCreated: at(-86_400_000), view: 8842, reply: 156, tags: ['攻略', '选课'],
+        content: '【老帖重发】数院选课避坑指南：泛函分析 H 一定要跟作业，数理方程 H 期中后会加速，概率论 H 的作业题和考试题型差得比较远。',
+        truncated: false, redacted: false},
+] as const
+
+const feedPage = (feedId: string) => ({
+    feedId, results: feedHoles.map(item => ({...item, tags: [...item.tags]})), cursor: null, limit: 10,
+    rawCount: feedHoles.length, notice: '常驻分区来自旦挞公开列表；正文已做基础脱敏，未确认已遍历全部帖子。',
+})
+
 const groups = [
     {id: 1201, name: '概率论', code: 'MATH130001', department: '数学科学学院', weekHour: 4, credits: [4], courseCount: 12, reviewCount: 47},
     {id: 1202, name: '概率论与数理统计', code: 'MATH130002', department: '大数据学院', weekHour: 4, credits: [4], courseCount: 5, reviewCount: 18},
@@ -270,6 +287,7 @@ window.danta = {
     setAgentEnabled: enabled => result({...dantaStatus, agentEnabled: enabled}),
     searchPosts: () => result({results: posts, offset: 0, limit: 10, rawCount: 3, nextOffset: null, complete: false,
         notice: thread.notice, thread: null}),
+    feed: input => result(feedPage(input.feedId)),
     readThread: () => result(thread),
     searchCourses: () => result({page: 1, pageSize: 10, total: 2, items: groups}),
     getCourseGroup: () => result(groupDetail),

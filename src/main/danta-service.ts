@@ -5,6 +5,7 @@ import {webvpnLoginUrl, webvpnRoute, isWebvpnHost} from './webvpn'
 import {
     DantaError,
     nextOffsetFor,
+    parseCampusHoles,
     parseCampusPosts,
     parseCourseGroup,
     parseCourseGroups,
@@ -12,7 +13,10 @@ import {
     parseThreadMeta,
 } from './danta-parse'
 import {
+    campusFeedNotice,
     campusPostNotice,
+    communityFeeds,
+    type CampusFeedPage,
     type CampusPage,
     type CourseGroupDetail,
     type CourseReviewsResult,
@@ -441,7 +445,10 @@ export class DantaService implements DantaSession {
             return url.origin === 'https://auth.fduhole.com' && ['/api/login', '/api/refresh'].includes(url.pathname)
         }
         if (url.origin === 'https://forum.fduhole.com') {
-            return url.pathname === '/api/floors/search' || /^\/api\/holes\/[1-9]\d*(?:\/floors)?$/.test(url.pathname)
+            return url.pathname === '/api/floors/search' ||
+                url.pathname === '/api/holes' ||
+                url.pathname === '/api/holes/_homepage' ||
+                /^\/api\/holes\/[1-9]\d*(?:\/floors)?$/.test(url.pathname)
         }
         if (url.origin === 'https://danke.fduhole.com') {
             return url.pathname === '/api/v3/course_groups/search' ||
@@ -472,6 +479,38 @@ export class DantaService implements DantaSession {
             results, offset, limit, rawCount: Array.isArray(raw) ? raw.length : 0,
             nextOffset: nextOffsetFor(offset, limit, Array.isArray(raw) ? raw.length : 0),
             complete: false, notice: campusPostNotice, thread: null,
+        }
+    }
+
+    /**
+     * 常驻分区：精选读 /holes/_homepage，其余按标签读 /holes。
+     * 服务端一次最多返回 10 条且不认 length>10，所以 limit 上限收紧为 10。
+     */
+    async feed(feedId: string, cursor: string | null = null, limit = 10): Promise<CampusFeedPage> {
+        const feed = communityFeeds.find(item => item.id === feedId)
+        if (!feed) throw new DantaError('invalid_input', '未知的树洞分区。')
+        if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new DantaError('invalid_input', '每页数量需在 1–10 之间。')
+        if (cursor !== null && (typeof cursor !== 'string' || Number.isNaN(Date.parse(cursor)))) {
+            throw new DantaError('invalid_input', '分页位置无效。')
+        }
+        let raw: unknown
+        if (feed.kind === 'homepage') {
+            raw = await this.get(`${FORUM_BASE}/holes/_homepage?size=${limit}`)
+        } else {
+            const params = new URLSearchParams({length: String(limit), tag: feed.tag ?? ''})
+            if (cursor) params.set('start_time', cursor)
+            raw = await this.get(`${FORUM_BASE}/holes?${params}`)
+        }
+        const results = parseCampusHoles(raw, {limit})
+        const oldest = results.reduce<string | null>((acc, item) =>
+            acc === null || Date.parse(item.timeCreated) < Date.parse(acc) ? item.timeCreated : acc, null)
+        return {
+            feedId,
+            results,
+            limit,
+            cursor: oldest,
+            rawCount: Array.isArray(raw) ? raw.length : 0,
+            notice: campusFeedNotice,
         }
     }
 

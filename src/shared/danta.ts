@@ -139,8 +139,51 @@ export interface PlanItem {
     addedAt: string
 }
 
+export type CommunityFeedKind = 'homepage' | 'tag'
+
+/** 常驻分区：精选走官方首页推荐流，攻略与选课按标签拉取；两者都只读。 */
+export interface CommunityFeed {
+    id: string
+    label: string
+    kind: CommunityFeedKind
+    tag: string | null
+    hint: string
+}
+
+export const communityFeeds: CommunityFeed[] = [
+    {id: 'featured', label: '精选', kind: 'homepage', tag: null, hint: '旦挞首页推荐流'},
+    {id: 'guide', label: '攻略', kind: 'tag', tag: '攻略', hint: '同学写的经验与攻略'},
+    {id: 'selection', label: '选课', kind: 'tag', tag: '选课', hint: '选课、退课与换课讨论'},
+]
+
+/** 常驻分区的一条帖子：取首层正文，附标签、回复数与浏览量。 */
+export interface CampusHolePost {
+    holeId: number
+    floorId: number
+    content: string
+    timeCreated: string
+    reply: number | null
+    view: number | null
+    tags: string[]
+    truncated: boolean
+    redacted: boolean
+}
+
+export interface CampusFeedPage {
+    feedId: string
+    results: CampusHolePost[]
+    cursor: string | null
+    limit: number
+    rawCount: number
+    notice: string
+}
+
+export const campusFeedNotice = '常驻分区来自旦挞公开列表，只读；正文已做基础脱敏，排序由服务端决定。'
+
 export interface DantaAPI {
     status(): Promise<Result<DantaStatus>>
+
+    feed(input: { feedId: string; cursor?: string | null; limit?: number }): Promise<Result<CampusFeedPage>>
 
     connectSchool(): Promise<Result<DantaStatus>>
 

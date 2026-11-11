@@ -1,5 +1,11 @@
 import {type FormEvent, useEffect, useRef, useState} from 'react'
-import type {CampusPage, CampusPost, DantaStatus} from '../../shared/danta'
+import {
+    type CampusHolePost,
+    type CampusPage,
+    type CampusPost,
+    type DantaStatus,
+    communityFeeds,
+} from '../../shared/danta'
 import {Icon} from './Icon'
 import {PostContent} from './dx-emoji'
 import './styles/danta.css'
@@ -25,6 +31,13 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
     const [thread, setThread] = useState<CampusPage | null>(null)
     const [summary, setSummary] = useState('')
     const [summaryError, setSummaryError] = useState('')
+    const [mode, setMode] = useState<'feed' | 'search'>('feed')
+    const [feedId, setFeedId] = useState(communityFeeds[0].id)
+    const [feedResults, setFeedResults] = useState<CampusHolePost[]>([])
+    const [feedCursor, setFeedCursor] = useState<string | null>(null)
+    const [feedLoaded, setFeedLoaded] = useState(false)
+    const [feedBusy, setFeedBusy] = useState('')
+    const feedRequest = useRef(0)
     const api = window.danta
     const requestId = useRef(0)
 
@@ -43,6 +56,40 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
     }, [api])
 
     const connected = status?.account === 'connected'
+
+    async function loadFeed(target: string, cursor: string | null) {
+        if (!api || feedBusy) return
+        const current = ++feedRequest.current
+        setFeedBusy('正在加载分区…')
+        try {
+            const result = await api.feed({feedId: target, cursor, limit: pageSize})
+            if (current !== feedRequest.current) return
+            if (!result.ok) setError(result.error)
+            else {
+                setFeedResults(previous => {
+                    if (!cursor) return result.data.results
+                    const seen = new Set(previous.map(item => item.holeId))
+                    return [...previous, ...result.data.results.filter(item => !seen.has(item.holeId))]
+                })
+                setFeedCursor(result.data.cursor)
+                setFeedLoaded(true)
+            }
+        } catch {
+            if (current === feedRequest.current) setError('分区加载失败，请稍后重试。')
+        } finally {
+            if (current === feedRequest.current) setFeedBusy('')
+        }
+    }
+
+    useEffect(() => {
+        if (!connected || mode !== 'feed') return
+        // 切换分区时清空旧结果，避免把上一个分区的帖子留在列表里。
+        setFeedResults([])
+        setFeedCursor(null)
+        setFeedLoaded(false)
+        void loadFeed(feedId, null)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [connected, mode, feedId])
 
     async function search(event: FormEvent) {
         event.preventDefault()
@@ -165,25 +212,69 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
         </header>
         {error && <p className="danta-error" role="alert">{error}</p>}
         <div className="danta-body">
-            <section className="danta-list" aria-busy={!!busy}>
-                <form className="danta-search" onSubmit={search}>
-                    <input type="search" value={query} onChange={event => setQuery(event.target.value)}
-                           placeholder="搜索帖子关键词，例如 图书馆" maxLength={200} aria-label="搜索树洞"/>
-                    <button type="submit" className="primary-button" disabled={!!busy || !query.trim()}>搜索</button>
-                </form>
-                {!searched && <p className="danta-empty-note">输入关键词后回车搜索。命中的是楼层，点开可看完整帖子。</p>}
-                {searched && results.length === 0 && !busy && <p className="danta-empty-note">没有命中结果。可以换更具体的词。</p>}
-                <ul className="danta-results">
-                    {results.map(item => <li key={`${item.holeId}:${item.floorId}`}>
-                        <button type="button" className="danta-result" onClick={() => void openThread(item.holeId)}>
-                            <span className="danta-result-meta">帖子 #{item.holeId} · 楼层 #{item.floorId} · {formatTime(item.timeCreated)}
-                                {item.redacted && <span className="danta-badge">已脱敏</span>}</span>
-                            <span className="danta-result-content"><PostContent text={item.content}/></span>
+            <section className="danta-list" aria-busy={!!busy || !!feedBusy}>
+                <div className="danta-tabs" role="tablist" aria-label="树洞分区">
+                    {communityFeeds.map(feed => <button key={feed.id} type="button" role="tab"
+                                                       aria-selected={mode === 'feed' && feedId === feed.id}
+                                                       className={`danta-tab${mode === 'feed' && feedId === feed.id ? ' is-active' : ''}`}
+                                                       onClick={() => {
+                                                           setMode('feed')
+                                                           setFeedId(feed.id)
+                                                           setThread(null)
+                                                       }}>{feed.label}</button>)}
+                    <button type="button" role="tab" aria-selected={mode === 'search'}
+                            className={`danta-tab${mode === 'search' ? ' is-active' : ''}`}
+                            onClick={() => setMode('search')}>搜索</button>
+                </div>
+                {mode === 'search' && <>
+                    <form className="danta-search" onSubmit={search}>
+                        <input type="search" value={query} onChange={event => setQuery(event.target.value)}
+                               placeholder="搜索帖子关键词，例如 图书馆" maxLength={200} aria-label="搜索树洞"/>
+                        <button type="submit" className="primary-button"
+                                disabled={!!busy || !query.trim()}>搜索
                         </button>
-                    </li>)}
-                </ul>
-                {nextOffset !== null && <button type="button" className="secondary-button danta-more"
-                                               disabled={!!busy} onClick={() => void moreResults()}>加载更多结果</button>}
+                    </form>
+                    {!searched && <p className="danta-empty-note">输入关键词后回车搜索。命中的是楼层，点开可看完整帖子。</p>}
+                    {searched && results.length === 0 && !busy &&
+                        <p className="danta-empty-note">没有命中结果。可以换更具体的词。</p>}
+                    <ul className="danta-results">
+                        {results.map(item => <li key={`${item.holeId}:${item.floorId}`}>
+                            <button type="button" className="danta-result" onClick={() => void openThread(item.holeId)}>
+                                <span className="danta-result-meta">帖子 #{item.holeId} · 楼层 #{item.floorId} · {formatTime(item.timeCreated)}
+                                    {item.redacted && <span className="danta-badge">已脱敏</span>}</span>
+                                <span className="danta-result-content"><PostContent text={item.content}/></span>
+                            </button>
+                        </li>)}
+                    </ul>
+                    {nextOffset !== null && <button type="button" className="secondary-button danta-more"
+                                                   disabled={!!busy} onClick={() => void moreResults()}>加载更多结果</button>}
+                </>}
+                {mode === 'feed' && <>
+                    <p className="danta-empty-note">
+                        {communityFeeds.find(feed => feed.id === feedId)?.hint ?? ''}
+                        {feedLoaded ? ' · 只读列表，点开可看完整帖子。' : ''}
+                    </p>
+                    {feedLoaded && feedResults.length === 0 && !feedBusy &&
+                        <p className="danta-empty-note">这个分区暂时没有内容。</p>}
+                    <ul className="danta-results">
+                        {feedResults.map(item => <li key={item.holeId}>
+                            <button type="button" className="danta-result" onClick={() => void openThread(item.holeId)}>
+                                <span className="danta-result-meta">帖子 #{item.holeId}
+                                    {item.reply !== null && ` · ${item.reply} 条回复`}
+                                    {item.view !== null && ` · ${item.view} 次浏览`}
+                                    {` · ${formatTime(item.timeCreated)}`}
+                                    {item.redacted && <span className="danta-badge">已脱敏</span>}</span>
+                                <span className="danta-result-content"><PostContent text={item.content}/></span>
+                                {item.tags.length > 0 && <span className="danta-tags">
+                                    {item.tags.slice(0, 3).map(tag => <span key={tag} className="danta-tag">{tag}</span>)}
+                                </span>}
+                            </button>
+                        </li>)}
+                    </ul>
+                    {feedBusy && <p className="danta-empty-note" role="status">{feedBusy}</p>}
+                    {!feedBusy && feedCursor !== null && <button type="button" className="secondary-button danta-more"
+                                                                onClick={() => void loadFeed(feedId, feedCursor)}>加载更多</button>}
+                </>}
             </section>
             <aside className="danta-thread">
                 {!thread && <p className="danta-empty-note">从左侧选择一条结果，查看帖子上下文。</p>}

@@ -25,6 +25,7 @@ const danta: DantaAPI = {
     setAgentEnabled: enabled => ipcRenderer.invoke('danta:set-agent-enabled', enabled),
     searchPosts: input => ipcRenderer.invoke('danta:search-posts', input),
     readThread: input => ipcRenderer.invoke('danta:read-thread', input),
+    feed: input => ipcRenderer.invoke('danta:feed', input),
     searchCourses: input => ipcRenderer.invoke('danta:search-courses', input),
     getCourseGroup: id => ipcRenderer.invoke('danta:course-group', {id}),
     getCourseReviews: courseId => ipcRenderer.invoke('danta:course-reviews', {courseId}),

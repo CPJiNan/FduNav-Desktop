@@ -2,10 +2,10 @@ import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {dantaHosts, webvpnLoginUrl, webvpnRoute} from '../src/main/webvpn.ts'
 import {
-    DantaError, maxPostChars, maxReviewChars, nextOffsetFor, parseCampusPosts, parseCourseGroups,
-    parseCourseGroup, parseReviews, parseThreadMeta, redactPersonal
+    DantaError, maxPostChars, maxReviewChars, nextOffsetFor, parseCampusHoles, parseCampusPosts,
+    parseCourseGroups, parseCourseGroup, parseReviews, parseThreadMeta, redactPersonal
 } from '../src/main/danta-parse.ts'
-import {academicTerm} from '../src/shared/danta.ts'
+import {academicTerm, communityFeeds} from '../src/shared/danta.ts'
 
 test('webvpn route only rewrites the three community hosts through the official gateway', () => {
     assert.deepEqual([...dantaHosts].sort(), ['auth.fduhole.com', 'danke.fduhole.com', 'forum.fduhole.com'])
@@ -144,4 +144,43 @@ test('agent exposes the four read-only community tools with bounded arguments', 
     assert.equal((search.parameters.properties as Record<string, {maximum?: number}>).limit.maximum, 10)
     assert.deepEqual(byName.get('read_campus_thread')!.parameters.required, ['holeId'])
     assert.deepEqual(byName.get('read_course_reviews')!.parameters.required, ['courseId'])
+})
+
+test('resident feeds stay read-only and keep their declared source', () => {
+    assert.deepEqual(communityFeeds.map(feed => feed.id), ['featured', 'guide', 'selection'])
+    const featured = communityFeeds.find(feed => feed.id === 'featured')!
+    assert.equal(featured.kind, 'homepage')
+    assert.equal(featured.tag, null)
+    for (const feed of communityFeeds.filter(item => item.kind === 'tag')) {
+        assert.ok(feed.tag, `${feed.id} must carry a tag name`)
+        assert.ok(feed.label.trim())
+    }
+})
+
+test('hole lists parse thread shape, drop hidden or empty holes, and bound each post', () => {
+    const raw = [
+        {
+            hole_id: 900, view: 12, reply: 3, time_created: '2026-11-11T08:00:00+08:00',
+            tags: [{name: '选课'}, {name: '攻略'}],
+            floors: {first_floor: {id: 1, floor_id: 5, content: '第一层内容', time_created: '2026-11-11T08:00:00+08:00'}},
+        },
+        {hole_id: 901, hidden: true, floors: {first_floor: {id: 2, content: 'x', time_created: '2026-11-11T08:00:00+08:00'}}},
+        {hole_id: 902, floors: {first_floor: {id: 3, content: '   ', time_created: '2026-11-11T08:00:00+08:00'}}},
+        {
+            hole_id: 903, view: null, reply: null, time_created: '2026-11-10T08:00:00+08:00',
+            tags: [], floors: {first_floor: {id: 4, content: 'z'.repeat(maxPostChars + 1), time_created: '2026-11-10T08:00:00+08:00'}},
+        },
+    ]
+    const posts = parseCampusHoles(raw, {limit: 10})
+    assert.equal(posts.length, 2)
+    assert.equal(posts[0].holeId, 900)
+    assert.equal(posts[0].floorId, 5)
+    assert.deepEqual(posts[0].tags, ['选课', '攻略'])
+    assert.equal(posts[0].view, 12)
+    assert.equal(posts[0].timeCreated, '2026-11-11T08:00:00+08:00')
+    assert.equal(posts[1].view, null)
+    assert.equal(posts[1].truncated, true)
+    assert.equal(posts[1].content.length, maxPostChars)
+    assert.throws(() => parseCampusHoles({}, {limit: 10}), /数据格式/)
+    assert.throws(() => parseCampusHoles([{hole_id: 1, floors: {}}], {limit: 10}), /数据格式/)
 })

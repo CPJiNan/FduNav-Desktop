@@ -1,4 +1,5 @@
 import {
+    type CampusHolePost,
     type CampusPost,
     type CampusThreadMeta,
     type CourseGroupDetail,
@@ -86,6 +87,55 @@ export function parseCampusPosts(value: unknown, options: {limit: number; holeId
 }
 
 const numberOrNull = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null
+
+function parseTagNames(value: unknown): string[] {
+    if (!Array.isArray(value)) return []
+    const names: string[] = []
+    for (const entry of value) {
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+        const name = (entry as Record<string, unknown>).name
+        if (typeof name === 'string' && name) names.push(name)
+    }
+    return names
+}
+
+/**
+ * 解析 /api/holes 与 /api/holes/_homepage 返回的帖子列表（每条是一个帖子，不是楼层）。
+ * 正文字段在 floors.first_floor.content 内，隐藏、冻结、已删除或空正文的帖子会被跳过。
+ */
+export function parseCampusHoles(value: unknown, options: {limit: number}): CampusHolePost[] {
+    if (!Array.isArray(value)) throw schemaError()
+    const posts: CampusHolePost[] = []
+    for (const entry of value) {
+        if (posts.length >= options.limit) break
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) throw schemaError()
+        const hole = entry as Record<string, unknown>
+        const holeId = positive(hole.hole_id) ?? positive(hole.id)
+        if (!holeId) throw schemaError()
+        if (hole.hidden === true || hole.frozen === true) continue
+        if (hole.floors === null || typeof hole.floors !== 'object' || Array.isArray(hole.floors)) throw schemaError()
+        const first = (hole.floors as Record<string, unknown>).first_floor
+        if (first === null || typeof first !== 'object' || Array.isArray(first)) throw schemaError()
+        const floor = first as Record<string, unknown>
+        if (floor.deleted === true) continue
+        if (typeof floor.content !== 'string' || !floor.content.trim()) continue
+        const created = time(floor.time_created) ?? time(hole.time_created)
+        if (!created) throw schemaError()
+        const redacted = redactPersonal(floor.content)
+        posts.push({
+            holeId,
+            floorId: positive(floor.floor_id) ?? holeId,
+            content: redacted.text.slice(0, maxPostChars),
+            timeCreated: created,
+            reply: numberOrNull(hole.reply),
+            view: numberOrNull(hole.view),
+            tags: parseTagNames(hole.tags),
+            truncated: redacted.text.length > maxPostChars,
+            redacted: redacted.redacted,
+        })
+    }
+    return posts
+}
 
 function parseCredits(value: unknown): number[] {
     if (!Array.isArray(value)) return []
