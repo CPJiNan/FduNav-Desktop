@@ -5,7 +5,10 @@ import {
     DantaError, maxPostChars, maxReviewChars, nextOffsetFor, parseCampusHoles, parseCampusPosts,
     parseCourseGroups, parseCourseGroup, parseReviews, parseThreadMeta, redactPersonal
 } from '../src/main/danta-parse.ts'
-import {academicTerm, communityFeeds} from '../src/shared/danta.ts'
+import {academicTerm, communityFeeds, type CampusPage, type CourseOffering, type CourseReviewsResult, type CourseSearchPage} from '../src/shared/danta.ts'
+import {
+    presentedReviewChars, presentCampusPage, presentCourseReviews, presentCourseSearch, presentTime
+} from '../src/main/danta-present.ts'
 
 test('webvpn route only rewrites the three community hosts through the official gateway', () => {
     assert.deepEqual([...dantaHosts].sort(), ['auth.fduhole.com', 'danke.fduhole.com', 'forum.fduhole.com'])
@@ -142,6 +145,11 @@ test('agent exposes the four read-only community tools with bounded arguments', 
     const search = byName.get('search_campus_posts')!
     assert.deepEqual(search.parameters.required ?? [], ['query'])
     assert.equal((search.parameters.properties as Record<string, {maximum?: number}>).limit.maximum, 10)
+    // 检索词必须在 schema 层就限长，否则超长 query 会直接打到上游
+    const campusQuery = (search.parameters.properties as Record<string, {maxLength?: number}>).query
+    assert.equal(campusQuery.maxLength, 200)
+    const courseQuery = (byName.get('search_courses')!.parameters.properties as Record<string, {maxLength?: number}>).query
+    assert.equal(courseQuery.maxLength, 200)
     assert.deepEqual(byName.get('read_campus_thread')!.parameters.required, ['holeId'])
     assert.deepEqual(byName.get('read_course_reviews')!.parameters.required, ['courseId'])
 })
@@ -183,4 +191,84 @@ test('hole lists parse thread shape, drop hidden or empty holes, and bound each 
     assert.equal(posts[1].content.length, maxPostChars)
     assert.throws(() => parseCampusHoles({}, {limit: 10}), /数据格式/)
     assert.throws(() => parseCampusHoles([{hole_id: 1, floors: {}}], {limit: 10}), /数据格式/)
+})
+
+const offering: CourseOffering = {
+    id: 28112, name: '概率论 H', code: 'MATH120001', codeId: '3f2a', credit: 5,
+    department: '数学科学学院', teachers: '张三', year: 2024, semester: 1, reviewCount: 1,
+}
+
+test('tool output drops internal metadata and normalises timestamps to Beijing time', () => {
+    const page: CampusPage = {
+        results: [{
+            holeId: 900, floorId: 55, content: '图书馆  周一\t闭馆![](dx_overwhelm)', timeCreated: '2026-11-11T08:00:00Z',
+            timeUpdated: null, truncated: false, redacted: true,
+        }],
+        offset: 0, limit: 10, rawCount: 1, nextOffset: null, complete: true,
+        notice: '只读', thread: {id: 900, timeCreated: '2026-11-11T00:00:00Z', timeUpdated: null, reply: 3},
+    }
+    const presented = presentCampusPage(page)
+    // 只留判断相关性需要的三个字段：floorId / redacted / timeUpdated 不进模型上下文
+    assert.deepEqual(Object.keys(presented.posts[0]).sort(), ['content', 'holeId', 'time'])
+    assert.equal(presented.posts[0].content, '图书馆 周一 闭馆')
+    assert.equal(presented.posts[0].time, '2026-11-11 16:00')
+    assert.equal(presented.thread?.time, '2026-11-11 08:00')
+    assert.equal(presented.thread?.replies, 3)
+    // offset / limit / rawCount 是分页实现细节，模型只需要 nextOffset
+    assert.ok(!('offset' in presented) && !('rawCount' in presented) && !('limit' in presented))
+    assert.equal(presentedTimeSafe(), 'ok')
+})
+
+function presentedTimeSafe() {
+    assert.equal(presentTime('2026-11-11T10:00:00+08:00'), '2026-11-11 10:00')
+    assert.equal(presentTime('not a date'), null)
+    assert.equal(presentTime(null), null)
+    return 'ok'
+}
+
+test('tool output stays inside a character budget and says what it dropped', () => {
+    const page: CampusPage = {
+        results: Array.from({length: 10}, (_, index) => ({
+            holeId: 900 + index, floorId: index, content: 'x'.repeat(900),
+            timeCreated: '2026-11-11T08:00:00Z', timeUpdated: null, truncated: false, redacted: false,
+        })),
+        offset: 0, limit: 10, rawCount: 10, nextOffset: 10, complete: true, notice: '只读', thread: null,
+    }
+    const presented = presentCampusPage(page)
+    assert.ok(presented.posts.length < 10, 'budget must drop trailing posts')
+    assert.equal(presented.truncated, true)
+    assert.equal(presented.complete, false)
+    assert.match(presented.note ?? '', /省略了 \d+ 条结果/)
+    assert.ok(JSON.stringify(presented).length <= 6_400)
+    for (const post of presented.posts) assert.equal(post.truncated, true)
+})
+
+test('course search keeps planning fields and flags a missing total', () => {
+    const page: CourseSearchPage = {
+        page: 2, pageSize: 10, total: null,
+        items: [{id: 249, name: '概率论', code: 'MATH120001', department: '数学科学学院', weekHour: 4,
+            credits: [5, 4], courseCount: 3, reviewCount: 16}],
+    }
+    const presented = presentCourseSearch(page)
+    assert.deepEqual(Object.keys(presented.groups[0]).sort(), ['code', 'department', 'id', 'name', 'reviewCount', 'weekHour'])
+    assert.equal(presented.page, 2)
+    assert.equal(presented.hasTotal, false)
+    assert.equal(presented.total, null)
+    assert.match(presented.note ?? '', /未返回总数/)
+    assert.equal(presentCourseSearch({...page, total: 3}).hasTotal, true)
+})
+
+test('course reviews are clipped per entry and drop internal ids', () => {
+    const result: CourseReviewsResult = {
+        course: offering, truncated: false,
+        reviews: [{id: 77, title: '值得选', content: 'y'.repeat(1200), timeCreated: '2026-11-10T20:00:00+08:00',
+            vote: 3, truncated: false, redacted: true}],
+    }
+    const presented = presentCourseReviews(result)
+    assert.ok(!('id' in presented.reviews[0]))
+    assert.equal(presented.reviews[0].content.length, presentedReviewChars + 1)
+    assert.equal(presented.reviews[0].truncated, true)
+    assert.equal(presented.reviews[0].time, '2026-11-10 20:00')
+    assert.equal(presented.course.term, academicTerm(2024, 1))
+    assert.ok(!('codeId' in presented.course) && !('department' in presented.course))
 })

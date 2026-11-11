@@ -2,6 +2,7 @@ import {ToolError} from '../shared/agent'
 import type {CampusToolAccess} from './chat-tools'
 import {DantaService} from './danta-service'
 import {DantaError} from './danta-parse'
+import {presentCampusPage, presentCourseReviews, presentCourseSearch} from './danta-present'
 import type {ToolErrorCode} from '../shared/agent'
 
 const codes: Record<string, ToolErrorCode> = {
@@ -34,9 +35,13 @@ export function createCampusToolAccess(service: DantaService): CampusToolAccess 
             const state = service.agentToolState()
             return {ready: state.enabled, reason: state.reason}
         },
-        searchPosts: (query, offset, limit) => wrap(() => service.searchPosts(query, offset, limit)),
-        readThread: (holeId, offset, limit) => wrap(() => service.readThread(holeId, offset, limit)),
-        searchCourses: (query, page, pageSize) => wrap(() => service.searchCourses(query, page, pageSize)),
-        courseReviews: courseId => wrap(() => service.courseReviews(courseId)),
+        searchPosts: (query, offset, limit) =>
+            wrap(async () => presentCampusPage(await service.searchPosts(query, offset, limit))),
+        readThread: (holeId, offset, limit) =>
+            wrap(async () => presentCampusPage(await service.readThread(holeId, offset, limit))),
+        searchCourses: (query, page, pageSize) =>
+            wrap(async () => presentCourseSearch(await service.searchCourses(query, page, pageSize))),
+        courseReviews: courseId =>
+            wrap(async () => presentCourseReviews(await service.courseReviews(courseId))),
     }
 }

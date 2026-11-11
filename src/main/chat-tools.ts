@@ -108,7 +108,7 @@ export const chatTools: ChatTool[] = [
     }, ['id']),
     tool('delete_event', {id: str('日程 ID，来自 list_events')}, ['id']),
     tool('search_campus_posts', {
-        query: str('树洞检索词，1–500 字'), offset: {type: 'integer', minimum: 0},
+        query: {...str('树洞检索词，1–200 字'), maxLength: 200}, offset: {type: 'integer', minimum: 0},
         limit: {type: 'integer', minimum: 1, maximum: 10},
     }, ['query']),
     tool('read_campus_thread', {
@@ -116,7 +116,8 @@ export const chatTools: ChatTool[] = [
         limit: {type: 'integer', minimum: 1, maximum: 10},
     }, ['holeId']),
     tool('search_courses', {
-        query: str('课程名称或课程代码关键词'), page: {type: 'integer', minimum: 1, maximum: 200},
+        query: {...str('课程名称或课程代码关键词，1–200 字'), maxLength: 200},
+        page: {type: 'integer', minimum: 1, maximum: 200},
         pageSize: {type: 'integer', minimum: 1, maximum: 10},
     }, ['query']),
     tool('read_course_reviews', {courseId: {type: 'integer', minimum: 1}}, ['courseId']),
@@ -128,13 +129,14 @@ export const campusToolNames = new Set(['search_campus_posts', 'read_campus_thre
 export interface CampusToolAccess {
     available(): {ready: boolean; reason: string}
 
-    searchPosts(query: string, offset: number, limit: number): Promise<CampusPage>
+    /** 已按模型可见的形态裁剪过（见 danta-present.ts），不是原样的 CampusPage。 */
+    searchPosts(query: string, offset: number, limit: number): Promise<unknown>
 
-    readThread(holeId: number, offset: number, limit: number): Promise<CampusPage>
+    readThread(holeId: number, offset: number, limit: number): Promise<unknown>
 
-    searchCourses(query: string, page: number, pageSize: number): Promise<CourseSearchPage>
+    searchCourses(query: string, page: number, pageSize: number): Promise<unknown>
 
-    courseReviews(courseId: number): Promise<CourseReviewsResult>
+    courseReviews(courseId: number): Promise<unknown>
 }
 
 export function configuredChatTools(descriptions: Record<ChatToolName, string>): ChatTool[] {
@@ -313,12 +315,14 @@ export function createChatToolRunner(db: AppDatabase, username: string,
                 type?: string | string[];
                 enum?: unknown[];
                 minimum?: number;
-                maximum?: number
+                maximum?: number;
+                maxLength?: number
             }
             const types = Array.isArray(rule.type) ? rule.type : [rule.type]
             const valid = types.some(type => type === 'null' ? value === null : type === 'integer' ? Number.isSafeInteger(value) : typeof value === type)
             if (!valid || (rule.enum && !rule.enum.includes(value)) ||
-                (typeof value === 'number' && (!Number.isFinite(value) || (rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)))) {
+                (typeof value === 'number' && (!Number.isFinite(value) || (rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum))) ||
+                (typeof value === 'string' && rule.maxLength !== undefined && value.length > rule.maxLength)) {
                 throw new ToolError('invalid_args', `${key} 参数类型或范围无效。`)
             }
         }
@@ -326,7 +330,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             const state = campus?.available() ?? {ready: false, reason: '社区只读工具未启用。'}
             if (!state.ready) throw new ToolError('forbidden', state.reason || '社区只读工具不可用。')
             if (name === 'search_campus_posts') {
-                return campus!.searchPosts(textArg(input, 'query', true, 500),
+                return campus!.searchPosts(textArg(input, 'query', true, 200),
                     intArg(input, 'offset', 0, 0, 2_147_483_647), intArg(input, 'limit', 10, 1, 10))
             }
             if (name === 'read_campus_thread') {
