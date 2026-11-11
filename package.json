@@ -18,7 +18,11 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "npm run typecheck && electron-vite build",
     "build:win": "npm run build && npx --yes electron-builder@26.0.12 --win --x64 --publish never",
-    "build:mac": "npm run build && npx --yes electron-builder@26.0.12 --mac --arm64 --publish never"
+    "build:mac": "npm run build && npx --yes electron-builder@26.0.12 --mac --arm64 --publish never",
+    "test": "node --experimental-transform-types --import ./tests/register.mjs --test tests/*.test.ts",
+    "eval:live": "node --experimental-transform-types --import ./tests/register.mjs tests/live-eval.ts",
+    "test:ui": "vite --config tests/vite.config.mjs",
+    "test:typecheck": "tsc --noEmit -p tsconfig.tests.json"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

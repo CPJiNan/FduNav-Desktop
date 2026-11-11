@@ -25,6 +25,7 @@ import {
     type MessagePreferences,
     validateMessagePreferences
 } from '../shared/message-preferences.ts'
+import type {PlanItem} from '../shared/danta'
 
 const defaultSourceRank = new Map<string, number>(defaultSources.map((source, index) => [source.id, index]))
 
@@ -69,7 +70,6 @@ export class AppDatabase {
                 position INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT '', data TEXT NOT NULL, details TEXT,
                 PRIMARY KEY (username, turn_id, event_id)
             );
-            CREATE INDEX IF NOT EXISTS chat_traces_kind ON chat_traces (username, kind);
             CREATE TABLE IF NOT EXISTS chat_trace_stats (username TEXT PRIMARY KEY, steps INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_payloads (
                 username TEXT NOT NULL, hash TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (username, hash)
@@ -115,6 +115,12 @@ export class AppDatabase {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 username TEXT NOT NULL, cookies BLOB NOT NULL,
                 target TEXT NOT NULL, last_login TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS community_auth (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                email TEXT NOT NULL,
+                tokens BLOB NOT NULL,
+                updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS mail_connections (
                 username TEXT PRIMARY KEY, encrypted_configuration BLOB NOT NULL
@@ -174,7 +180,20 @@ export class AppDatabase {
             );
         `)
         this.db.exec('PRAGMA foreign_keys = ON;')
+        this.ensureTraceKind()
         this.initializeSources()
+    }
+
+    /** Add `kind` to pre-existing trace tables and rebuild the incremental step counters once. */
+    private ensureTraceKind() {
+        const columns = new Set(this.db.prepare('PRAGMA table_info(chat_traces)').all().map(row => String(row.name)))
+        if (!columns.has('kind')) this.db.exec("ALTER TABLE chat_traces ADD COLUMN kind TEXT NOT NULL DEFAULT ''")
+        this.db.exec(`UPDATE chat_traces SET kind = COALESCE(json_extract(data, '$.kind'), '')
+            WHERE kind = ''`)
+        this.db.exec('CREATE INDEX IF NOT EXISTS chat_traces_kind ON chat_traces (username, kind)')
+        this.db.exec(`INSERT INTO chat_trace_stats (username, steps)
+            SELECT username, COUNT(*) FROM chat_traces WHERE kind = 'tool' GROUP BY username
+            ON CONFLICT(username) DO UPDATE SET steps = excluded.steps`)
     }
 
     saveChatTraceEvent(username: string, turnId: string, event: ChatTraceEvent, position: number) {
@@ -583,6 +602,47 @@ export class AppDatabase {
 
     clearAccount() {
         this.db.exec('DELETE FROM account; DELETE FROM timetable_cache; PRAGMA wal_checkpoint(TRUNCATE);')
+    }
+
+    getCommunityAuth(): {email: string; tokens: Uint8Array; updatedAt: string} | null {
+        const row = this.db.prepare('SELECT email, tokens, updated_at FROM community_auth WHERE id = 1').get()
+        if (!row) return null
+        return {email: String(row.email), tokens: row.tokens as Uint8Array, updatedAt: String(row.updated_at)}
+    }
+
+    saveCommunityAuth(email: string, tokens: Uint8Array) {
+        this.db.prepare(`INSERT INTO community_auth (id, email, tokens, updated_at) VALUES (1, ?, ?, ?)
+                         ON CONFLICT(id) DO UPDATE SET email = excluded.email, tokens = excluded.tokens,
+                         updated_at = excluded.updated_at`).run(email, tokens, new Date().toISOString())
+    }
+
+    clearCommunityAuth() {
+        this.db.exec('DELETE FROM community_auth;')
+    }
+
+    getCommunityAgentEnabled(): boolean {
+        return this.db.prepare('SELECT value FROM preferences WHERE key = ?').get('community_agent_enabled')?.value === 'true'
+    }
+
+    setCommunityAgentEnabled(enabled: boolean) {
+        this.db.prepare('INSERT INTO preferences (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .run('community_agent_enabled', JSON.stringify(enabled))
+    }
+
+    getCommunityPlan(username: string): PlanItem[] {
+        const row = this.db.prepare('SELECT value FROM preferences WHERE key = ?').get(`community_plan:${username}`)
+        if (!row) return []
+        try {
+            const parsed = JSON.parse(String(row.value))
+            return Array.isArray(parsed) ? parsed as PlanItem[] : []
+        } catch {
+            return []
+        }
+    }
+
+    saveCommunityPlan(username: string, items: PlanItem[]) {
+        this.db.prepare('INSERT INTO preferences (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .run(`community_plan:${username}`, JSON.stringify(items))
     }
 
     getTimetable(username: string, kind: Timetable['kind']): Timetable | null {

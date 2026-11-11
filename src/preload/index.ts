@@ -14,6 +14,35 @@ import type {MemoryAPI} from '../shared/memory'
 import type {ChatAPI, ChatPushState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
+import type {AiSearchStep, DantaAPI} from '../shared/danta'
+
+const danta: DantaAPI = {
+    status: () => ipcRenderer.invoke('danta:state'),
+    connectSchool: () => ipcRenderer.invoke('danta:connect-school'),
+    checkSchool: () => ipcRenderer.invoke('danta:check-school'),
+    login: input => ipcRenderer.invoke('danta:login', input),
+    logout: () => ipcRenderer.invoke('danta:logout'),
+    setAgentEnabled: enabled => ipcRenderer.invoke('danta:set-agent-enabled', enabled),
+    searchPosts: input => ipcRenderer.invoke('danta:search-posts', input),
+    readThread: input => ipcRenderer.invoke('danta:read-thread', input),
+    feed: input => ipcRenderer.invoke('danta:feed', input),
+    searchCourses: input => ipcRenderer.invoke('danta:search-courses', input),
+    getCourseGroup: id => ipcRenderer.invoke('danta:course-group', {id}),
+    getCourseReviews: courseId => ipcRenderer.invoke('danta:course-reviews', {courseId}),
+    summarizeThread: holeId => ipcRenderer.invoke('danta:summarize-thread', {holeId}),
+    summarizeCourse: courseId => ipcRenderer.invoke('danta:summarize-course', {courseId}),
+    aiSearch: input => ipcRenderer.invoke('danta:ai-search', input),
+    onAiSearchStep: listener => {
+        const handler = (_event: Electron.IpcRendererEvent, step: AiSearchStep) => listener(step)
+        ipcRenderer.on('danta:ai-search-step', handler)
+        return () => {
+            ipcRenderer.removeListener('danta:ai-search-step', handler)
+        }
+    },
+    getPlan: () => ipcRenderer.invoke('danta:plan-get'),
+    savePlan: items => ipcRenderer.invoke('danta:plan-save', {items}),
+}
+contextBridge.exposeInMainWorld('danta', danta)
 import type {MailAPI} from '../shared/mail'
 
 const mail: MailAPI = {

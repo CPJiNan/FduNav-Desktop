@@ -1,4 +1,5 @@
 import {maxToolResultChars, ToolError} from '../shared/agent'
+import type {CampusPage, CourseReviewsResult, CourseSearchPage} from '../shared/danta'
 import type {Memory} from '../shared/memory'
 import {memoryShortId, presentMemory, validateMemory} from '../shared/memory'
 import {type ChatToolName, defaultToolDescriptions} from '../shared/llm-prompts'
@@ -106,7 +107,37 @@ export const chatTools: ChatTool[] = [
         notes: str('新备注，可省略'),
     }, ['id']),
     tool('delete_event', {id: str('日程 ID，来自 list_events')}, ['id']),
+    tool('search_campus_posts', {
+        query: {...str('树洞检索词，1–200 字'), maxLength: 200}, offset: {type: 'integer', minimum: 0},
+        limit: {type: 'integer', minimum: 1, maximum: 10},
+    }, ['query']),
+    tool('read_campus_thread', {
+        holeId: {type: 'integer', minimum: 1}, offset: {type: 'integer', minimum: 0},
+        limit: {type: 'integer', minimum: 1, maximum: 10},
+    }, ['holeId']),
+    tool('search_courses', {
+        query: {...str('课程名称或课程代码关键词，1–200 字'), maxLength: 200},
+        page: {type: 'integer', minimum: 1, maximum: 200},
+        pageSize: {type: 'integer', minimum: 1, maximum: 10},
+    }, ['query']),
+    tool('read_course_reviews', {courseId: {type: 'integer', minimum: 1}}, ['courseId']),
 ]
+
+export const campusToolNames = new Set(['search_campus_posts', 'read_campus_thread', 'search_courses', 'read_course_reviews'])
+
+/** 社区只读工具的注入点：可用性与错误码由调用方决定，工具层只做参数校验。 */
+export interface CampusToolAccess {
+    available(): {ready: boolean; reason: string}
+
+    /** 已按模型可见的形态裁剪过（见 danta-present.ts），不是原样的 CampusPage。 */
+    searchPosts(query: string, offset: number, limit: number): Promise<unknown>
+
+    readThread(holeId: number, offset: number, limit: number): Promise<unknown>
+
+    searchCourses(query: string, page: number, pageSize: number): Promise<unknown>
+
+    courseReviews(courseId: number): Promise<unknown>
+}
 
 export function configuredChatTools(descriptions: Record<ChatToolName, string>): ChatTool[] {
     return chatTools.map(item => ({
@@ -115,6 +146,11 @@ export function configuredChatTools(descriptions: Record<ChatToolName, string>):
             description: descriptions[item.function.name as ChatToolName] ?? item.function.description,
         }
     }))
+}
+
+/** AI 搜索只需要四个社区只读工具，复用同一份 schema 与描述覆盖机制。 */
+export function getCampusChatTools(descriptions: Record<ChatToolName, string>): ChatTool[] {
+    return configuredChatTools(descriptions).filter(item => campusToolNames.has(item.function.name))
 }
 
 export const chatToolLabels: Record<string, string> = {
@@ -126,6 +162,8 @@ export const chatToolLabels: Record<string, string> = {
     list_todos: '查询待办', create_todo: '请求新增待办',
     update_todo: '请求修改待办', delete_todo: '请求删除待办',
     update_event: '请求修改日程', delete_event: '请求删除日程',
+    search_campus_posts: '检索树洞', read_campus_thread: '读取树洞帖子',
+    search_courses: '检索课程', read_course_reviews: '读取课评',
 }
 
 export function presentTodo(todo: Todo) {
@@ -217,11 +255,21 @@ function page<T>(items: T[], args: Fields) {
     return {total: items.length, items: items.slice(offset, offset + limit), hasMore: offset + limit < items.length}
 }
 
+function intArg(args: Fields, key: string, fallback: number, min: number, max: number): number {
+    const value = args[key]
+    if (value === undefined) return fallback
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+        throw new ToolError('invalid_args', `${key} 参数类型或范围无效。`)
+    }
+    return value
+}
+
 export function createChatToolRunner(db: AppDatabase, username: string,
                                      notices: ReturnType<typeof registerNoticeHandlers>,
                                      addCard: (card: ChatCard) => void, assertCurrent: () => void,
                                      requestSummary: (notice: Notice) => unknown, requestAction: (action: ChatAction) => unknown,
-                                     mail: Pick<MailService, 'list' | 'read'>, signal?: AbortSignal) {
+                                     mail: Pick<MailService, 'list' | 'read'>, signal?: AbortSignal,
+                                     campus: CampusToolAccess | null = null) {
     const seenNotices = new Set<string>()
     const noticeKey = (item: { sourceId: string; url: string }) => JSON.stringify([item.sourceId, item.url])
 
@@ -272,14 +320,33 @@ export function createChatToolRunner(db: AppDatabase, username: string,
                 type?: string | string[];
                 enum?: unknown[];
                 minimum?: number;
-                maximum?: number
+                maximum?: number;
+                maxLength?: number
             }
             const types = Array.isArray(rule.type) ? rule.type : [rule.type]
             const valid = types.some(type => type === 'null' ? value === null : type === 'integer' ? Number.isSafeInteger(value) : typeof value === type)
             if (!valid || (rule.enum && !rule.enum.includes(value)) ||
-                (typeof value === 'number' && (!Number.isFinite(value) || (rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)))) {
+                (typeof value === 'number' && (!Number.isFinite(value) || (rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum))) ||
+                (typeof value === 'string' && rule.maxLength !== undefined && value.length > rule.maxLength)) {
                 throw new ToolError('invalid_args', `${key} 参数类型或范围无效。`)
             }
+        }
+        if (campusToolNames.has(name)) {
+            const state = campus?.available() ?? {ready: false, reason: '社区只读工具未启用。'}
+            if (!state.ready) throw new ToolError('forbidden', state.reason || '社区只读工具不可用。')
+            if (name === 'search_campus_posts') {
+                return campus!.searchPosts(textArg(input, 'query', true, 200),
+                    intArg(input, 'offset', 0, 0, 2_147_483_647), intArg(input, 'limit', 10, 1, 10))
+            }
+            if (name === 'read_campus_thread') {
+                return campus!.readThread(intArg(input, 'holeId', 0, 1, Number.MAX_SAFE_INTEGER),
+                    intArg(input, 'offset', 0, 0, 2_147_483_647), intArg(input, 'limit', 10, 1, 10))
+            }
+            if (name === 'search_courses') {
+                return campus!.searchCourses(textArg(input, 'query', true, 200),
+                    intArg(input, 'page', 1, 1, 200), intArg(input, 'pageSize', 10, 1, 10))
+            }
+            return campus!.courseReviews(intArg(input, 'courseId', 0, 1, Number.MAX_SAFE_INTEGER))
         }
         if (name === 'list_emails' || name === 'get_email') {
             try {

@@ -1,0 +1,574 @@
+.courses-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    padding: var(--space-6);
+}
+
+.courses-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.courses-head h1 {
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+}
+
+.courses-subtitle {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.courses-head-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.courses-tabs {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+}
+
+.courses-tab {
+    padding: var(--space-1) var(--space-3);
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.courses-tab.is-active {
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.courses-hint {
+    margin: var(--space-3) 0 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+}
+
+.courses-body {
+    display: grid;
+    grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: start;
+    flex: 1;
+    min-height: 0;
+}
+
+/* 未选中课程组时收起详情栏，让课程组列表占满可用宽度。 */
+.courses-body.is-single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+/* 单栏时搜索框不要被拉到整页宽，否则输入区域过宽反而难扫读。 */
+.courses-body.is-single .courses-search-form {
+    max-width: 42rem;
+}
+
+.courses-body.is-single .courses-detail {
+    display: none;
+}
+
+.courses-plan-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: var(--space-4);
+    align-items: start;
+    flex: 1;
+    min-height: 0;
+}
+
+.courses-column,
+.courses-detail,
+.courses-side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-width: 0;
+}
+
+.courses-search,
+.courses-reviews,
+.courses-side,
+.courses-schedule {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-subtle);
+}
+
+.courses-search-form {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.courses-search-form input {
+    flex: 1;
+    min-width: 0;
+    min-height: var(--size-control-md);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--input-border);
+    border-radius: var(--input-radius);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+}
+
+.courses-groups,
+.courses-plan-list,
+.courses-offerings,
+.courses-review-list,
+.courses-exams {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.courses-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.courses-group:hover {
+    background: var(--color-bg-hover);
+}
+
+.courses-group.is-active {
+    border-color: var(--color-accent);
+    background: var(--color-accent-subtle);
+}
+
+.courses-group-name {
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+}
+
+.courses-group-meta {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-normal);
+}
+
+.courses-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.courses-block-head h2,
+.courses-block-head h3 {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-semibold);
+}
+
+.courses-count {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.courses-plan-list li,
+.courses-offerings li {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-surface);
+}
+
+/* 展开排课表单时切成上下两段，否则表单会和条目挤在同一行并溢出侧栏。 */
+.courses-plan-list li.is-editing {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.courses-plan-list li.is-editing .courses-plan-editor {
+    width: 100%;
+}
+
+.courses-plan-list strong {
+    display: block;
+    font-size: var(--font-size-sm);
+}
+
+.courses-offering-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.courses-offering-main strong {
+    font-size: var(--font-size-sm);
+}
+
+.courses-group-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-subtle);
+}
+
+.courses-group-head h2 {
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+}
+
+.courses-review-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.courses-review-actions .secondary-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    white-space: nowrap;
+}
+
+.courses-review-list li {
+    padding: var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-surface);
+}
+
+.courses-review-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.courses-review-list p {
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.courses-summary {
+    margin: 0;
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-subtle);
+    color: var(--color-on-accent-subtle);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+}
+
+.courses-notice {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+}
+
+.courses-exams li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-surface);
+}
+
+.courses-badge {
+    display: inline-block;
+    margin-top: var(--space-1);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-xs);
+    font-size: var(--font-size-xs);
+    background: var(--color-success-subtle);
+    color: var(--color-success);
+}
+
+.courses-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-8);
+    border: 1px dashed var(--color-border-default);
+    border-radius: var(--radius-md);
+}
+
+.courses-empty p {
+    margin: 0;
+}
+
+.courses-empty-note {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.courses-error {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--color-danger-subtle);
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+}
+
+.courses-feedback {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+/* ---------- 周课表 ---------- */
+.courses-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.courses-grid-head {
+    display: grid;
+    grid-template-columns: 2rem repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    padding-left: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    text-align: center;
+}
+
+.courses-grid-body {
+    position: relative;
+    display: flex;
+    padding-left: 2rem;
+}
+
+.courses-grid-periods {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 2rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.courses-grid-periods span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.courses-grid-slots {
+    position: relative;
+    flex: 1;
+    border-top: 1px solid var(--color-border-subtle);
+    background-image:
+        repeating-linear-gradient(to bottom, transparent 0 calc(100% / 15 - 1px), var(--color-border-subtle) calc(100% / 15 - 1px) calc(100% / 15)),
+        repeating-linear-gradient(to right, transparent 0 calc(100% / 7 - 1px), var(--color-border-subtle) calc(100% / 7 - 1px) calc(100% / 7));
+}
+
+.courses-slot {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 3px 4px;
+    border: 1px solid rgb(0 0 0 / 8%);
+    border-radius: var(--radius-xs);
+    color: #22303c;
+    text-align: left;
+    overflow: hidden;
+    cursor: pointer;
+}
+
+.courses-slot strong {
+    font-size: 0.72rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.courses-slot span {
+    font-size: 0.65rem;
+    line-height: 1.2;
+    color: rgb(34 48 60 / 70%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.courses-slot .courses-slot-warning {
+    color: var(--color-danger);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* 模拟排课的课程块：虚线描边 + 浅底纹，和已选课程区分开。 */
+.courses-slot.is-planned {
+    z-index: 3;
+    border: 1px dashed var(--color-accent, #2f6fed);
+    background: color-mix(in srgb, var(--color-accent, #2f6fed) 18%, var(--color-bg-elevated));
+    color: var(--color-text-primary);
+}
+
+.courses-slot.is-planned span {
+    color: var(--color-text-muted);
+}
+
+/* 与已选课程撞时段时盖在上面，避免两层文字叠在一起糊成一片。 */
+.courses-slot.is-conflict {
+    z-index: 4;
+    border: 1px dashed var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 16%, var(--color-bg-elevated));
+}
+
+.courses-plan-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.courses-plan-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.courses-plan-slot {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.courses-plan-slot.is-conflict {
+    color: var(--color-danger);
+    font-weight: var(--font-weight-semibold);
+}
+
+.text-button {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.text-button:hover:not(:disabled) {
+    background: var(--color-bg-subtle);
+    color: var(--color-text-primary);
+}
+
+.courses-plan-editor {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+}
+
+.courses-plan-editor label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.courses-plan-editor select {
+    width: 4.5rem;
+}
+
+.courses-plan-editor input {
+    width: 3.5rem;
+    padding: 3px 6px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-xs);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+}
+
+.courses-plan-editor-actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+
+@media (max-width: 960px) {
+    .courses-body,
+    .courses-plan-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.courses-semester {
+    min-height: var(--size-control-md);
+    max-width: 16rem;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--input-border);
+    border-radius: var(--input-radius);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+}

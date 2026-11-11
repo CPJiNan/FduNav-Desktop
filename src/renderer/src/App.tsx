@@ -14,8 +14,11 @@ import {MailboxPage} from './MailboxPage'
 import {NotificationSettingsPanel} from './NotificationSettingsPanel'
 import {SummaryQueuePanel} from './SummaryQueuePanel'
 import {AboutPanel} from './AboutPanel'
+import {CommunityPanel} from './CommunityPanel'
 import {DashboardPage} from './DashboardPage'
 import {ChatPage} from './ChatPage'
+import {DantaPage} from './DantaPage'
+import {CoursesPage} from './CoursesPage'
 import type {Notice} from '../../shared/notices'
 import type {CalendarView} from '../../shared/calendar'
 import type {AccountState} from '../../shared/accounts'
@@ -26,6 +29,7 @@ const tabs = [
     {id: 'general', label: '通用', icon: 'settings'},
     {id: 'notifications', label: '通知', icon: 'notices'},
     {id: 'account', label: '账号', icon: 'user'},
+    {id: 'community', label: '社区', icon: 'compass'},
     {id: 'messages', label: '消息偏好', icon: 'tag'},
     {id: 'sources', label: '消息来源', icon: 'folder'},
     {id: 'llm', label: 'LLM', icon: 'processor'},
@@ -35,10 +39,13 @@ const tabs = [
 type Tab = typeof tabs[number]['id']
 const noticesNavigation = {label: '通知', icon: 'notices'} as const
 const calendarNavigation = {label: '日历', icon: 'calendar'} as const
+const dantaNavigation = {label: '树洞', icon: 'compass'} as const
+const coursesNavigation = {label: '课评', icon: 'book'} as const
+type Page = 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'danta' | 'courses' | 'mail'
 
 export default function App() {
     const [settings, setSettings] = useState(false)
-    const [page, setPage] = useState<'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'mail'>('dashboard')
+    const [page, setPage] = useState<Page>('dashboard')
     const [noticeToOpen, setNoticeToOpen] = useState<Notice | null>(null)
     const [calendarInitialView, setCalendarInitialView] = useState<CalendarView>('week')
     const [tab, setTab] = useState<Tab>('general')
@@ -59,6 +66,8 @@ export default function App() {
     const showTodosPage = !showSettings && page === 'todos'
     const showDashboardPage = !showSettings && page === 'dashboard'
     const showChatPage = !showSettings && page === 'chat'
+    const showDantaPage = !showSettings && page === 'danta'
+    const showCoursesPage = !showSettings && page === 'courses'
     const showMailPage = !showSettings && page === 'mail'
     const settingsButton = useRef<HTMLButtonElement>(null)
     const settingsWasOpen = useRef(false)
@@ -120,7 +129,7 @@ export default function App() {
         return () => window.removeEventListener('keydown', onKey)
     }, [needsSetup])
 
-    function openPage(next: 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'mail', calendarView: CalendarView = 'week') {
+    function openPage(next: Page, calendarView: CalendarView = 'week') {
         if (next === 'calendar') setCalendarInitialView(calendarView)
         setPage(next)
         if (needsLogin) {
@@ -158,6 +167,14 @@ export default function App() {
                 <button type="button" className={`icon-button rail-button ${showChatPage ? 'is-active' : ''}`}
                         aria-label="聊天" title="聊天" aria-current={showChatPage ? 'page' : undefined}
                         onClick={() => openPage('chat')}><Icon name="chat"/></button>
+                <button type="button" className={`icon-button rail-button ${showDantaPage ? 'is-active' : ''}`}
+                        aria-label={dantaNavigation.label} title={dantaNavigation.label}
+                        aria-current={showDantaPage ? 'page' : undefined}
+                        onClick={() => openPage('danta')}><Icon name={dantaNavigation.icon}/></button>
+                <button type="button" className={`icon-button rail-button ${showCoursesPage ? 'is-active' : ''}`}
+                        aria-label={coursesNavigation.label} title={coursesNavigation.label}
+                        aria-current={showCoursesPage ? 'page' : undefined}
+                        onClick={() => openPage('courses')}><Icon name={coursesNavigation.icon}/></button>
                 <button type="button" className={`icon-button rail-button ${showMailPage ? 'is-active' : ''}`}
                         aria-label="邮箱" title="邮箱"
                         aria-current={showMailPage ? 'page' : undefined} onClick={() => openPage('mail')}><Icon
@@ -209,6 +226,7 @@ export default function App() {
                                     {tab === 'general' && showSettings && <GeneralPanel/>}
                                     {tab === 'notifications' && showSettings && <NotificationSettingsPanel/>}
                                     {tab === 'account' && <AccountPanel account={account} onChange={setAccount}/>}
+                                    {tab === 'community' && <CommunityPanel/>}
                                     {tab === 'about' && <AboutPanel/>}
                                     <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
                                                campusUsername={account?.username ?? undefined}/>
@@ -254,6 +272,16 @@ export default function App() {
                                           initialView={calendarInitialView}/>}
                         {showTodosPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <TodosPage key={account?.username}/>}
+                        {showDantaPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                            <DantaPage onSettings={() => {
+                                setTab('community');
+                                setSettings(true)
+                            }}/>}
+                        {showCoursesPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                            <CoursesPage onSettings={() => {
+                                setTab('community');
+                                setSettings(true)
+                            }}/>}
                         {showMailPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <MailboxPage key={account?.username} onSettings={() => {
                                 setTab('mail');

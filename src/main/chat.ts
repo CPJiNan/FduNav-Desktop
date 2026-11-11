@@ -31,9 +31,13 @@ import {
     toolFailure,
     toolSuccess
 } from '../shared/agent'
-import {buildMemoryDigest, type Memory, memoryLine, selectMemories, validateMemory} from '../shared/memory'
 import {
+    buildMemoryDigest, type Memory, type MemoryInput, memoryLine, memoryShortId, selectMemories, validateMemory
+} from '../shared/memory'
+import {
+    campusToolNames,
     chatToolLabels,
+    type CampusToolAccess,
     configuredChatTools,
     createChatToolRunner,
     presentAction,
@@ -103,7 +107,8 @@ interface RunningChat {
 export function registerChatHandlers(db: AppDatabase, accounts: AccountService, llm: LlmSettingsService,
                                      notices: ReturnType<typeof registerNoticeHandlers>, calendar: ReturnType<typeof registerCalendarHandlers>,
                                      todos: ReturnType<typeof registerTodoHandlers>, mail: MailService,
-                                     trusted: (event: IpcMainInvokeEvent) => boolean) {
+                                     trusted: (event: IpcMainInvokeEvent) => boolean,
+                                     campus: CampusToolAccess | null = null) {
     const running = new Map<string, RunningChat>()
     const memoryCarry = new Map<string, string[]>()
     const summaryJobs = new Set<string>()
@@ -562,6 +567,9 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 let request = requests.find(item => JSON.stringify(item.action) === JSON.stringify(action) && item.status !== 'undone')
                 if (!request) {
                     if (requests.length >= 20) throw new ToolError('forbidden', '本轮最多请求 20 个操作，请缩小范围。')
+                    if (action.kind === 'remember' && !turn.user.includes(action.memory.evidence)) {
+                        throw new ToolError('invalid_args', '记忆依据必须是本轮用户消息中的原话；请先向用户确认。')
+                    }
                     request = {id: randomUUID(), action, status: 'pending'};
                     requests.push(request)
                 }
@@ -569,7 +577,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     requestId: request.id, status: request.status, action: presentAction(request.action),
                     message: '请求卡片已显示，等待用户允许，尚未执行。'
                 }
-            }, mail, signal)
+            }, mail, signal, campus)
             let calls = 0, turnToolChars = 0
             for (let round = 0; round <= 8; round++) {
                 assertCurrent()
@@ -582,7 +590,9 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     role: 'user',
                     content: '本轮工具或上下文预算已耗尽。不要调用工具。请基于已有结果明确总结完成、待批准与未完成的部分，并说明下一步。'
                 })
-                const availableTools = final ? [] : configuredChatTools(llm.get().toolDescriptions)
+                const campusReady = campus?.available().ready ?? false
+                const availableTools = (final ? [] : configuredChatTools(llm.get().toolDescriptions))
+                    .filter(item => campusReady || !campusToolNames.has(item.function.name))
                 const requestDetails = {
                     model: connection.model, ...summarizeContext(context),
                     tools: availableTools.map(item => item.function.name), round: round + 1,
