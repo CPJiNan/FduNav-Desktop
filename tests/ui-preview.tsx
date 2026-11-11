@@ -127,9 +127,64 @@ window.memory = {get: () => result(memories), setEnabled: enabled => {memories.e
 
 /* ---------- 校园社区模拟数据 ---------- */
 const dantaStatus: DantaStatus = {
-    school: 'ready', account: 'connected', email: 'demo@fudan.edu.cn',
+    school: 'ready', transport: 'webvpn', transportIssue: null, account: 'connected', email: 'demo@fudan.edu.cn',
     lastLogin: at(-86_400_000), message: '校园社区账号已连接。', agentEnabled: true,
+    waitingLogin: false,
 }
+
+/* 社区连接过程中的各种中间态：动态 UI 只有在这些状态里才看得出来。 */
+const communityScenes: {id: string; label: string; status: DantaStatus}[] = [
+    {id: 'ready', label: '已连接', status: dantaStatus},
+    {
+        id: 'direct', label: '直连可用', status: {
+            ...dantaStatus, school: 'ready', transport: 'direct', transportIssue: null, account: 'signed-out', email: null, lastLogin: null,
+            message: '可以直连旦挞社区，无需登录学校网络。', waitingLogin: false,
+        },
+    },
+    {
+        id: 'gateway', label: '被网关拦截', status: {
+            ...dantaStatus, school: 'unavailable', transport: 'webvpn', transportIssue: 'gateway', account: 'signed-out', email: null, lastLogin: null,
+            message: '直连和 WebVPN 都不通，请检查网络或代理设置后重试。', waitingLogin: false,
+        },
+    },
+    {
+        id: 'idle', label: '未开始', status: {
+            ...dantaStatus, school: 'unknown', transport: 'unknown', transportIssue: null, account: 'signed-out', email: null, lastLogin: null,
+            message: '尚未连接校园社区账号。', waitingLogin: false,
+        },
+    },
+    {
+        id: 'checking', label: '检测中', status: {
+            ...dantaStatus, school: 'checking', transport: 'unknown', transportIssue: null, account: 'signed-out', email: null, lastLogin: null,
+            message: '正在检测学校网络…', waitingLogin: false,
+        },
+    },
+    {
+        id: 'waiting', label: '等待窗口登录', status: {
+            ...dantaStatus, school: 'checking', transport: 'unknown', transportIssue: null, account: 'signed-out', email: null, lastLogin: null,
+            message: '正在打开学校 WebVPN 登录窗口…', waitingLogin: true,
+        },
+    },
+    {
+        id: 'login-required', label: '需登录校园网', status: {
+            ...dantaStatus, school: 'login-required', transport: 'webvpn', transportIssue: null, account: 'signed-out', email: null, lastLogin: null,
+            message: '请先连接到学校网络（WebVPN）。', waitingLogin: false,
+        },
+    },
+    {
+        id: 'sign-in', label: '待登录账号', status: {
+            ...dantaStatus, account: 'signed-out', email: null, lastLogin: null,
+            message: '尚未连接校园社区账号。',
+        },
+    },
+    {
+        id: 'expired', label: '账号失效', status: {
+            ...dantaStatus, account: 'expired', lastLogin: at(-5 * 86_400_000),
+            message: '社区登录已失效，请重新登录。', waitingLogin: false,
+        },
+    },
+]
+let communityCurrent: DantaStatus = dantaStatus
 
 const posts: CampusPage['results'] = [
     {
@@ -144,7 +199,7 @@ const posts: CampusPage['results'] = [
     },
     {
         holeId: 50771, floorId: 902015, timeCreated: at(-172_800_000), timeUpdated: null,
-        content: '请问图书馆的研讨间怎么预约？需要几个人起约，能借多久？',
+        content: '请问图书馆的研讨间怎么预约？需要几个人起约，能借多久？![](dx_confused)',
         truncated: false, redacted: false,
     },
 ]
@@ -158,7 +213,7 @@ const thread: CampusPage = {
             content: '补充：一楼靠门口那片会很吵，讨论区经常有人打电话；二楼东侧有插座，适合带电脑。',
             truncated: false, redacted: true},
         {holeId: 51234, floorId: 903003, timeCreated: at(-6_500_000), timeUpdated: null,
-            content: '文理馆四楼确实安静，但晚上九点半就关了；图书馆一楼开到十点半。',
+            content: '文理馆四楼确实安静，但晚上九点半就关了；图书馆一楼开到十点半。![](dx_cry)![](dx_unknown_probe)',
             truncated: false, redacted: false},
     ],
     offset: 0, limit: 10, rawCount: 3, nextOffset: null, complete: false,
@@ -207,7 +262,7 @@ const exams: CalendarEvent[] = [
 ]
 
 window.danta = {
-    status: () => result(dantaStatus),
+    status: () => result(communityCurrent),
     connectSchool: () => result(dantaStatus),
     checkSchool: () => result(dantaStatus),
     login: () => result(dantaStatus),
@@ -243,7 +298,15 @@ window.calendar = {
 type PreviewPage = 'chat' | 'memory' | 'danta' | 'courses' | 'community'
 
 function Preview() {
-    const [page, setPage] = useState<PreviewPage>('chat')
+    const [page, setPage] = useState<PreviewPage>(() => {
+        const value = new URLSearchParams(location.search).get('page')
+        return value === 'memory' || value === 'danta' || value === 'courses' || value === 'community' ? value : 'chat'
+    })
+    const [scene, setScene] = useState(() => {
+        const found = communityScenes.find(item => item.id === (new URLSearchParams(location.search).get('scene') ?? 'ready'))
+        communityCurrent = found ? found.status : dantaStatus
+        return found ? found.id : 'ready'
+    })
     const [thinking, setThinking] = useState(false)
     function toggleThinking() {
         const next = !thinking
@@ -280,9 +343,22 @@ function Preview() {
             </div>}
             {page === 'danta' && <DantaPage onSettings={() => setPage('community')}/>}
             {page === 'courses' && <CoursesPage onSettings={() => setPage('community')}/>}
-            {page === 'community' && <div style={{maxWidth: 850, margin: 'auto', padding: 24}}><CommunityPanel/></div>}
+            {page === 'community' && <div style={{maxWidth: 850, margin: 'auto', padding: 24}}>
+                <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16}}>
+                    {communityScenes.map(item => <button type="button" key={item.id}
+                        className={scene === item.id ? 'primary-button' : 'secondary-button'}
+                        onClick={() => {
+                            communityCurrent = item.status
+                            setScene(item.id)
+                        }}>{item.label}</button>)}
+                </div>
+                <CommunityPanel key={scene}/>
+            </div>}
         </main>
     </div>
 }
+
+const initialTheme = new URLSearchParams(location.search).get('theme')
+if (initialTheme === 'dark' || initialTheme === 'light') document.documentElement.dataset.theme = initialTheme
 
 createRoot(document.getElementById('root')!).render(<Preview/>)

@@ -101,6 +101,19 @@ test('course group detail keeps offerings separate from the group', () => {
     assert.equal(academicTerm(detail.courses[1].year, detail.courses[1].semester), '2024-2025 学年 春季')
 })
 
+test('offerings without review_list count as zero reviews', () => {
+    // 真实接口只在有课评时才带 review_list；缺失与 null 都表示没有课评，不能当成「未知」。
+    const detail = parseCourseGroup({
+        id: 249, name: '概率论与数理统计', code: 'COMP130006',
+        course_list: [
+            {id: 497, name: '概率论与数理统计', teachers: '金玲飞', year: 2022, semester: 1},
+            {id: 28112, name: '概率论与数理统计', teachers: '王勇', year: 2023, semester: 1, review_list: null},
+            {id: 28113, name: '概率论与数理统计', teachers: '王勇', year: 2023, semester: 1, review_list: [{id: 1}]},
+        ],
+    })
+    assert.deepEqual(detail.courses.map(item => item.reviewCount), [0, 0, 1])
+})
+
 test('reviews drop deleted entries and bound long text', () => {
     const parsed = parseReviews([
         {id: 1, title: '板书很多', content: '推导清楚', time_created: '2026-11-10T08:00:00Z', vote: 24},

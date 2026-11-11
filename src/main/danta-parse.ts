@@ -114,6 +114,7 @@ function parseCourse(value: unknown): CourseOffering {
     const course = object(value)
     const id = positive(course.id)
     if (!id) throw schemaError()
+    // 接口只在有课评时才给 review_list；缺失或 null 等价于 0 条（实测与 /courses/{id}/reviews 一致）。
     const reviewList = Array.isArray(course.review_list) ? course.review_list : []
     return {
         id,
