@@ -2,7 +2,21 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-    max-width: 44rem;
+    max-width: 46rem;
+}
+
+.community-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.community-head-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
 }
 
 .community-panel h2 {
@@ -18,83 +32,425 @@
     line-height: var(--line-height-relaxed);
 }
 
-.community-status {
-    display: grid;
-    gap: var(--space-2);
-    margin: 0;
-    padding: var(--space-4);
-    border: 1px solid var(--color-border-subtle);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg-subtle);
-}
-
-.community-status > div {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    font-size: var(--font-size-sm);
-}
-
-.community-status dt {
-    min-width: 6rem;
-    color: var(--color-text-secondary);
-}
-
-.community-status dd {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
-}
-
-.community-badge {
+/* ---------- 总状态胶囊：一眼看出“在动”还是“好了” ---------- */
+.community-summary {
     display: inline-flex;
     align-items: center;
-    padding: 0 var(--space-2);
-    border-radius: var(--radius-xs);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    background: var(--color-bg-hover);
+    gap: 6px;
+    flex: none;
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-full);
+    background: var(--color-bg-subtle);
     color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
 }
 
-.community-badge.is-ready,
-.community-badge.is-connected {
+.community-summary.is-busy {
+    border-color: var(--color-accent-subtle);
+    background: var(--color-accent-subtle);
+    color: var(--color-accent);
+}
+
+.community-summary.is-done {
+    border-color: var(--color-success-subtle);
     background: var(--color-success-subtle);
     color: var(--color-success);
 }
 
-.community-badge.is-login-required,
-.community-badge.is-expired {
+.community-summary .icon {
+    width: 12px;
+    height: 12px;
+}
+
+/* ---------- 两步连接流程 ---------- */
+.community-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.community-step {
+    position: relative;
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+    overflow: hidden;
+    transition: border-color var(--duration-normal) var(--ease-standard),
+    background var(--duration-normal) var(--ease-standard);
+}
+
+.community-step.is-busy {
+    border-color: var(--color-border-default);
+}
+
+.community-step.is-done {
+    border-color: var(--color-success-subtle);
+}
+
+.community-step.is-warn {
+    border-color: var(--color-warning-subtle);
+}
+
+.community-step.is-error {
+    border-color: var(--color-danger-subtle);
+}
+
+/* 进行中的不确定进度：一条高光从左往右扫，比百分比更诚实（这里本来就不知道要多久）。 */
+.community-step-sweep {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+    background-size: 40% 100%;
+    background-repeat: no-repeat;
+    opacity: 0.7;
+    animation: community-sweep 1.3s linear infinite;
+}
+
+@keyframes community-sweep {
+    from {
+        background-position: -40% 0;
+    }
+    to {
+        background-position: 140% 0;
+    }
+}
+
+.community-step-rail {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: var(--color-bg-hover);
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    transition: background var(--duration-normal) var(--ease-standard),
+    color var(--duration-normal) var(--ease-standard);
+}
+
+.community-step-rail .icon {
+    width: 12px;
+    height: 12px;
+}
+
+.community-step.is-busy .community-step-rail {
+    background: var(--color-accent-subtle);
+    color: var(--color-accent);
+}
+
+.community-step.is-done .community-step-rail {
+    background: var(--color-success-subtle);
+    color: var(--color-success);
+    animation: community-pop var(--duration-normal) var(--ease-standard);
+}
+
+.community-step.is-warn .community-step-rail {
     background: var(--color-warning-subtle);
     color: var(--color-warning);
 }
 
-.community-badge.is-unavailable {
+.community-step.is-error .community-step-rail {
     background: var(--color-danger-subtle);
     color: var(--color-danger);
 }
 
-.community-email {
+.community-step-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.community-step-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.community-step-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.community-step-desc {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+}
+
+.community-step-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    margin: var(--space-1) 0 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+}
+
+/* 失败原因用琥珀色侧条单独呈现：它是“该怎么办”的依据，不能被正文淹没。 */
+.community-step-hint {
+    position: relative;
+    margin: var(--space-2) 0 0;
+    padding: 2px 0 2px var(--space-3);
+    border-left: 2px solid var(--color-warning, #b26a00);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+}
+
+.community-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-xs);
+    background: var(--color-bg-hover);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+}
+
+.community-state.is-busy {
+    background: var(--color-accent-subtle);
+    color: var(--color-accent);
+}
+
+.community-state.is-done {
+    background: var(--color-success-subtle);
+    color: var(--color-success);
+    animation: community-pop var(--duration-normal) var(--ease-standard);
+}
+
+.community-state.is-warn {
+    background: var(--color-warning-subtle);
+    color: var(--color-warning);
+}
+
+.community-state.is-error {
+    background: var(--color-danger-subtle);
+    color: var(--color-danger);
+}
+
+/* ---------- 等待用户在学校窗口登录 ---------- */
+.community-wait {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-accent-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-subtle);
+    animation: community-fade-in var(--duration-slow) var(--ease-standard);
+}
+
+.community-wait-orb {
+    position: relative;
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: var(--color-accent);
+}
+
+.community-wait-orb::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px solid var(--color-accent);
+    opacity: 0;
+    animation: community-orb 1.8s ease-out infinite;
+}
+
+@keyframes community-orb {
+    from {
+        opacity: 0.55;
+        transform: scale(0.6);
+    }
+    to {
+        opacity: 0;
+        transform: scale(1.7);
+    }
+}
+
+.community-wait-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.community-wait-text strong {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-primary);
+}
+
+.community-wait-text p {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text-secondary);
+}
+
+.community-wait-text b {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-primary);
+}
+
+/* ---------- 动效零件 ---------- */
+.community-spin {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    animation: community-spin 0.7s linear infinite;
+}
+
+@keyframes community-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.community-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 1px;
+}
+
+.community-dots i {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.25;
+    animation: community-dot 1.15s ease-in-out infinite;
+}
+
+.community-dots i:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.community-dots i:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
+@keyframes community-dot {
+    0%, 70%, 100% {
+        opacity: 0.25;
+        transform: translateY(0);
+    }
+    35% {
+        opacity: 1;
+        transform: translateY(-1px);
+    }
+}
+
+@keyframes community-pop {
+    from {
+        transform: scale(0.86);
+        opacity: 0.4;
+    }
+    to {
+        transform: none;
+        opacity: 1;
+    }
+}
+
+@keyframes community-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(-2px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* ---------- 首次读取状态时的骨架屏 ---------- */
+.community-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.community-skeleton i {
+    display: block;
+    height: 3.25rem;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--color-bg-subtle) 25%, var(--color-bg-hover) 37%, var(--color-bg-subtle) 63%);
+    background-size: 400% 100%;
+    animation: community-shimmer 1.6s ease infinite;
+}
+
+.community-skeleton i:last-child {
+    height: 2.25rem;
+}
+
+@keyframes community-shimmer {
+    from {
+        background-position: 100% 0;
+    }
+    to {
+        background-position: 0 0;
+    }
+}
+
+/* ---------- 提示与操作 ---------- */
+.community-message {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-left: 2px solid var(--color-border-default);
+    border-radius: var(--radius-xs);
+    background: var(--color-bg-subtle);
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
 }
 
-.community-message,
 .community-error {
     margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-}
-
-.community-error {
     color: var(--color-danger);
+    font-size: var(--font-size-sm);
 }
 
 .community-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
+}
+
+.community-action .icon {
+    width: 14px;
+    height: 14px;
+}
+
+.community-action[data-busy="true"] {
+    cursor: progress;
 }
 
 .community-form {
@@ -130,6 +486,7 @@
 
 .community-form .primary-button {
     align-self: flex-start;
+    min-width: 11rem;
 }
 
 .community-toggle {
@@ -151,6 +508,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    min-width: 0;
 }
 
 .community-toggle small {
@@ -159,16 +517,47 @@
     line-height: var(--line-height-relaxed);
 }
 
-.community-feedback {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
+.community-toggle .community-spin {
+    margin-top: 0.2rem;
+    color: var(--color-text-muted);
 }
 
-.community-feedback .icon {
-    width: 1rem;
-    height: 1rem;
+@media (max-width: 640px) {
+    .community-head {
+        flex-direction: column;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .community-spin {
+        animation: none;
+        border-top-color: currentColor;
+        opacity: 0.55;
+    }
+
+    .community-dots i {
+        animation: none;
+        opacity: 0.6;
+    }
+
+    .community-step-sweep {
+        animation: none;
+        opacity: 0.35;
+    }
+
+    .community-wait-orb::after {
+        animation: none;
+        opacity: 0.35;
+        transform: none;
+    }
+
+    .community-skeleton i {
+        animation: none;
+    }
+
+    .community-step.is-done .community-step-rail,
+    .community-state.is-done,
+    .community-wait {
+        animation: none;
+    }
 }
