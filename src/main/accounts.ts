@@ -19,11 +19,11 @@ import {
     readMyFudanPage as readMyFudanPageFromBrowser
 } from './authenticated-page'
 import type {AccountState, LoginInput, Result, Theme} from '../shared/accounts'
-import type {TimetableCourse} from '../shared/timetable'
+import type {Timetable, TimetableCourse} from '../shared/timetable'
 import {secureStorage} from './secure-storage'
 import {readCampusCardWithBrowser} from './campus-card-browser'
 import {resolveCourseReplay} from './course-replay-browser'
-import {courseReplayLoginUrl} from './course-replay-data'
+import {courseReplayLoginUrl, courseReplayUrl} from './course-replay-data'
 import {syncMyFudanPreferences} from './my-fudan-preferences'
 
 const signedOut = (): AccountState => ({username: null, status: 'signed-out', lastLogin: null, message: ''})
@@ -33,6 +33,7 @@ export class AccountService {
     private jar: CookieJar | null = null
     private target = ''
     private operationTail: Promise<void> = Promise.resolve()
+    private readonly replayCourseIds = new Map<string, string>()
 
     constructor(private db: AppDatabase) {
     }
@@ -70,6 +71,7 @@ export class AccountService {
             if (!await secureStorage.available()) {
                 throw new AuthError('系统安全存储不可用，暂时无法安全保存登录会话。')
             }
+            this.replayCourseIds.clear()
             await clearReaderSession()
             const transport = new FudanTransport()
             const username = input.username.trim()
@@ -116,6 +118,7 @@ export class AccountService {
                     cookies: await secureStorage.encrypt(JSON.stringify(this.jar.serializeSync()))
                 })
                 else {
+                    this.replayCourseIds.clear()
                     this.jar = null;
                     this.db.clearAccount()
                 }
@@ -133,6 +136,7 @@ export class AccountService {
             this.jar = null
             this.target = ''
             this.state = signedOut()
+            this.replayCourseIds.clear()
             await clearReaderSession()
             return this.getState()
         })
@@ -143,6 +147,7 @@ export class AccountService {
             const page = await new FudanTransport(this.jar ?? undefined).request(url)
             if (isAuthUrl(page.url)) {
                 if (this.state.username) {
+                    this.replayCourseIds.clear()
                     this.state = {...this.state, status: 'expired', message: '登录已过期，请重新登录。'}
                     this.jar = null
                     this.db.clearAccount()
@@ -176,16 +181,25 @@ export class AccountService {
         await openAuthenticatedPage(url, this.jar, parent)
     }
 
-    async openCourseReplay(course: TimetableCourse, startDate: string | null, parent?: BrowserWindow): Promise<void> {
+    async openCourseReplay(course: TimetableCourse, timetable: Timetable, parent?: BrowserWindow): Promise<void> {
         return this.exclusive(async () => {
             if (this.state.status !== 'signed-in' || !this.jar || !this.state.username) throw new AuthError('请先登录账号。')
-            const result = await resolveCourseReplay(course, startDate, this.state.username, this.jar, parent)
+            const key = JSON.stringify([this.state.username, timetable.kind, timetable.semesterId,
+                timetable.updatedAt, timetable.startDate, course.id])
+            const knownId = this.replayCourseIds.get(key)
+            if (knownId) {
+                await shell.openExternal(courseReplayUrl(knownId))
+                return
+            }
+
+            const result = await resolveCourseReplay(course, timetable.startDate, this.state.username, this.jar, parent)
             this.db.saveAccount({
                 username: this.state.username, target: this.target, last_login: this.state.lastLogin!,
                 cookies: await secureStorage.encrypt(JSON.stringify(result.jar.serializeSync())),
             })
             this.jar = result.jar
             await shell.openExternal(courseReplayLoginUrl(result.courseId))
+            this.replayCourseIds.set(key, result.courseId)
         })
     }
 

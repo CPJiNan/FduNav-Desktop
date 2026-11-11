@@ -28,6 +28,7 @@ export function harness() {
     const notice = {sourceId: 'test', sourceName: '数学学院', title: '讲座通知', url: 'https://example.com/n', published: '2026-11-07', read: false}
     const notices = {list: () => ({items: [notice]}), detail: async () => ({content: '讲座详情'.repeat(5000)})}
     const register = () => registerChatHandlers(db, accounts as never, llm, notices as never, calendar as never, todos as never,
+        {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never,
         event => !!(event as any).trusted)
     register()
     const snapshots: ChatState[] = []

@@ -14,9 +14,11 @@ import type {ChatAPI} from '../../shared/chat'
 import type {CampusCardAPI} from '../../shared/campus-card'
 import type {LibraryAPI} from '../../shared/library'
 import type {DantaAPI} from '../../shared/danta'
+import type {MailAPI} from '../../shared/mail'
 
 declare global {
     interface Window {
+        mail?: MailAPI
         library?: LibraryAPI
         campusCard?: CampusCardAPI
         memory?: MemoryAPI

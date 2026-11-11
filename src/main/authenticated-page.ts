@@ -98,6 +98,7 @@ export async function readAuthenticatedPage(value: string, jar: CookieJar | null
 }
 
 const readerWindows = new Map<string, BrowserWindow>()
+const pendingPageLoads = new WeakMap<BrowserWindow, () => void>()
 
 export async function openAuthenticatedPage(value: string, jar: CookieJar | null,
                                             parent?: BrowserWindow, title = '教学大纲'): Promise<void> {
@@ -153,16 +154,23 @@ export async function openAuthenticatedPage(value: string, jar: CookieJar | null
         }
     }
     const loadingWindow = pageWindow
+    pendingPageLoads.get(loadingWindow)?.()
     await new Promise<void>((resolve, reject) => {
+        let finished = false
+        const contents = loadingWindow.webContents
         const finish = (error?: Error) => {
-            loadingWindow.webContents.removeListener('dom-ready', ready)
+            if (finished) return
+            finished = true
+            pendingPageLoads.delete(loadingWindow)
+            contents.removeListener('dom-ready', ready)
             loadingWindow.removeListener('closed', closed)
             if (error) reject(error)
             else resolve()
         }
         const ready = () => finish()
         const closed = () => finish(new Error('窗口已关闭。'))
-        loadingWindow.webContents.once('dom-ready', ready)
+        pendingPageLoads.set(loadingWindow, () => finish(new Error('已切换页面。')))
+        contents.once('dom-ready', ready)
         loadingWindow.once('closed', closed)
         void loadingWindow.loadURL(url).catch(error => {
             if (error?.code !== 'ERR_ABORTED') finish(error)

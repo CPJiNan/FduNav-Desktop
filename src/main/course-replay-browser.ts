@@ -79,7 +79,13 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
             if (mainFrame) guard(event, url)
         })
         loginWindow.webContents.on('render-process-gone', () => controller.abort(new AuthError('学校认证窗口异常退出，请重试。')))
-        const identity = await new Promise<{ token: string; userId: string }>((resolve, reject) => {
+        const readIdentity = async () => {
+            const cookies = await reader.cookies.get({url: origin, name: '_token'})
+            const token = cookies.map(cookie => replayToken(cookie.value)).find(Boolean)
+            if (!token) return null
+            return {token, userId: replayUser(await getJson('/userapi/v1/infosimple', token), username)}
+        }
+        const login = () => new Promise<{ token: string; userId: string }>((resolve, reject) => {
             let settled = false
             let checking = false
             let ready = false
@@ -111,19 +117,17 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
                 serviceSince ||= Date.now()
                 checking = true
                 try {
-                    const cookies = await reader.cookies.get({url: origin, name: '_token'})
-                    const token = cookies.map(cookie => replayToken(cookie.value)).find(Boolean)
-                    if (!token) {
+                    const identity = await readIdentity()
+                    if (!identity) {
                         if (Date.now() - serviceSince > 15_000) finish(new AuthError('未能完成 iCourse 登录，请重新登录学校账号后重试。'))
                         return
                     }
-                    const userId = replayUser(await getJson('/userapi/v1/infosimple', token), username)
-                    if (!userId) {
+                    if (!identity.userId) {
                         finish(new AuthError('iCourse 登录账号与应用账号不一致，请使用同一学校账号登录。'))
                         return
                     }
                     loginWindow.hide()
-                    finish(undefined, {token, userId})
+                    finish(undefined, {token: identity.token, userId: identity.userId})
                 } catch {
                     if (Date.now() - serviceSince > 15_000) finish(new AuthError('iCourse 登录验证失败，请检查网络并重新登录。'))
                 } finally {
@@ -143,6 +147,9 @@ export async function resolveCourseReplay(course: TimetableCourse, startDate: st
                 if (error?.code !== 'ERR_ABORTED') finish(new AuthError('无法打开学校课程回放登录页面。'))
             })
         })
+        const existing = await readIdentity().catch(() => null)
+        controller.signal.throwIfAborted()
+        const identity = existing?.userId ? {token: existing.token, userId: existing.userId} : await login()
         const candidates: ReplayCourse[] = []
         for (const week of weeks) {
             controller.signal.throwIfAborted()

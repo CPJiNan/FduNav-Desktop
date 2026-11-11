@@ -9,6 +9,8 @@ import {MessagePreferencesPanel} from './MessagePreferencesPanel'
 import {SourcesPanel} from './SourcesPanel'
 import {LlmPanel} from './LlmPanel'
 import {GeneralPanel} from './GeneralPanel'
+import {MailPanel} from './MailPanel'
+import {MailboxPage} from './MailboxPage'
 import {NotificationSettingsPanel} from './NotificationSettingsPanel'
 import {SummaryQueuePanel} from './SummaryQueuePanel'
 import {AboutPanel} from './AboutPanel'
@@ -31,6 +33,7 @@ const tabs = [
     {id: 'messages', label: '消息偏好', icon: 'tag'},
     {id: 'sources', label: '消息来源', icon: 'folder'},
     {id: 'llm', label: 'LLM', icon: 'processor'},
+    {id: 'mail', label: '邮箱', icon: 'mail'},
     {id: 'about', label: '关于', icon: 'info'},
 ] as const
 type Tab = typeof tabs[number]['id']
@@ -38,7 +41,7 @@ const noticesNavigation = {label: '通知', icon: 'notices'} as const
 const calendarNavigation = {label: '日历', icon: 'calendar'} as const
 const dantaNavigation = {label: '树洞', icon: 'compass'} as const
 const coursesNavigation = {label: '课评', icon: 'book'} as const
-type Page = 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'danta' | 'courses'
+type Page = 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'danta' | 'courses' | 'mail'
 
 export default function App() {
     const [settings, setSettings] = useState(false)
@@ -65,6 +68,7 @@ export default function App() {
     const showChatPage = !showSettings && page === 'chat'
     const showDantaPage = !showSettings && page === 'danta'
     const showCoursesPage = !showSettings && page === 'courses'
+    const showMailPage = !showSettings && page === 'mail'
     const settingsButton = useRef<HTMLButtonElement>(null)
     const settingsWasOpen = useRef(false)
 
@@ -117,6 +121,7 @@ export default function App() {
 
     useEffect(() => {
         function onKey(event: globalThis.KeyboardEvent) {
+            if (event.defaultPrevented || document.querySelector('dialog:modal')) return
             if (event.key === 'Escape' && !needsSetup) setSettings(false)
         }
 
@@ -170,6 +175,10 @@ export default function App() {
                         aria-label={coursesNavigation.label} title={coursesNavigation.label}
                         aria-current={showCoursesPage ? 'page' : undefined}
                         onClick={() => openPage('courses')}><Icon name={coursesNavigation.icon}/></button>
+                <button type="button" className={`icon-button rail-button ${showMailPage ? 'is-active' : ''}`}
+                        aria-label="邮箱" title="邮箱"
+                        aria-current={showMailPage ? 'page' : undefined} onClick={() => openPage('mail')}><Icon
+                    name="mail"/></button>
                 <button type="button" className={`icon-button rail-button ${showCalendarPage ? 'is-active' : ''}`}
                         aria-label={calendarNavigation.label}
                         title={calendarNavigation.label} aria-current={showCalendarPage ? 'page' : undefined}
@@ -219,6 +228,8 @@ export default function App() {
                                     {tab === 'account' && <AccountPanel account={account} onChange={setAccount}/>}
                                     {tab === 'community' && <CommunityPanel/>}
                                     {tab === 'about' && <AboutPanel/>}
+                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
+                                               campusUsername={account?.username ?? undefined}/>
                                     <div hidden={tab !== 'messages'}><MessagePreferencesPanel
                                         key={account?.status === 'signed-in' ? account.username : 'signed-out'}
                                         requiredProfile={account?.status === 'signed-in'}
@@ -227,7 +238,8 @@ export default function App() {
                                     }}/></div>
                                     <div hidden={tab !== 'sources'}><SourcesPanel
                                         active={showSettings && tab === 'sources'}/></div>
-                                    <div hidden={tab !== 'llm'}><LlmPanel key={account?.username} active={settings && tab === 'llm'}/></div>
+                                    <div hidden={tab !== 'llm'}><LlmPanel key={account?.username}
+                                                                          active={settings && tab === 'llm'}/></div>
                                 </section>
                             </div>
                         </div>
@@ -268,6 +280,11 @@ export default function App() {
                         {showCoursesPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <CoursesPage onSettings={() => {
                                 setTab('community');
+                                setSettings(true)
+                            }}/>}
+                        {showMailPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                            <MailboxPage key={account?.username} onSettings={() => {
+                                setTab('mail');
                                 setSettings(true)
                             }}/>}
                     </main>

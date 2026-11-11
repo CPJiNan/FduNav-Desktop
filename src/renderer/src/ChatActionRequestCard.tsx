@@ -1,4 +1,4 @@
-import {type ChatActionRequest, chatActionTitles as titles, chatActionStatusLabels as statuses} from '../../shared/chat'
+import {type ChatActionRequest, chatActionStatusLabels as statuses, chatActionTitles as titles} from '../../shared/chat'
 import type {CalendarEventInput} from '../../shared/calendar'
 import type {TodoInput} from '../../shared/todos'
 import {calendarReminderOptions} from '../../shared/calendar-reminders'
@@ -20,7 +20,10 @@ function factRows(value: CalendarEventInput | TodoInput) {
         </>}
         <dt>提醒</dt>
         <dd>{todo && !value.dueDate ? '无' : reminder}</dd>
-        {value.notes && <><dt>备注</dt><dd>{value.notes}</dd></>}
+        {value.notes && <>
+            <dt>备注</dt>
+            <dd>{value.notes}</dd>
+        </>}
     </dl>
 }
 
@@ -28,35 +31,41 @@ function Preview({value}: { value: CalendarEventInput | TodoInput }) {
     return <><p className="chat-action-title">{value.title}</p>{factRows(value)}</>
 }
 
-export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onManageMemory}: {
-    request: ChatActionRequest; disabled: boolean; onDecide: (allow: boolean) => void; onUndo: () => void; onManageMemory: () => void
+export function ChatActionRequestCard({request, disabled, onDecide, onUndo}: {
+    request: ChatActionRequest;
+    disabled: boolean;
+    onDecide: (allow: boolean) => void;
+    onUndo: () => void
 }) {
     const {action} = request
     const payload = action.kind === 'create_todo' ? action.todo
         : action.kind === 'update_todo' ? action.after
-        : action.kind === 'create_event' || action.kind === 'update_event' ? action.after
-        : action.kind === 'delete_todo' || action.kind === 'delete_event' ? action.before : null
+            : action.kind === 'create_event' || action.kind === 'update_event' ? action.after
+                : action.kind === 'delete_todo' || action.kind === 'delete_event' ? action.before : null
     const title = payload?.title ?? ''
     const heading = action.kind === 'remember' && action.targetId ? '更新已有记忆' : titles[action.kind]
-    return <section className="chat-summary-request" aria-label={`${heading}请求`}>
-        <header><strong><Icon name={action.kind === 'create_todo' ? 'todo' : action.kind === 'remember' ? 'sparkles' : 'calendar'}/>{heading}
+    return <section className="chat-summary-request" aria-label={`请求${heading}`}>
+        <header><strong><Icon
+            name={action.kind === 'create_todo' ? 'todo' : action.kind === 'remember' ? 'sparkles' : 'calendar'}/>{heading}
             {title && <span className="chat-action-title">{title}</span>}</strong>
             <span role="status">{statuses[request.status]}</span></header>
         {action.kind === 'delete_todo' || action.kind === 'delete_event' ? <dl className="chat-action-facts">
-            <dt>将删除</dt><dd>{action.before.title}</dd>
-            <dt>说明</dt><dd>允许后删除，撤销可恢复。</dd>
+            <dt>将删除</dt>
+            <dd>{action.before.title}</dd>
+            <dt>说明</dt>
+            <dd>允许后删除，撤销可恢复。</dd>
         </dl> : action.kind === 'remember' || action.kind === 'forget' ? <dl className="chat-action-facts">
             {action.kind === 'remember' && action.targetId ? <>
-                <dt>原内容</dt><dd className="memory-diff-old">− {action.previousText ?? '（原记忆）'}</dd>
-                <dt>新内容</dt><dd className="memory-diff-new">＋ {action.memory.text}</dd>
+                <dt>原内容</dt>
+                <dd className="memory-diff-old">− {action.previousText ?? '（原记忆）'}</dd>
+                <dt>新内容</dt>
+                <dd className="memory-diff-new">＋ {action.memory.text}</dd>
             </> : <>
-                <dt>内容</dt><dd>{action.memory.text}</dd>
+                <dt>内容</dt>
+                <dd>{action.memory.text}</dd>
             </>}
-            <dt>依据</dt><dd>{action.memory.evidence}</dd>
-            <dt>说明</dt><dd>{action.kind === 'remember' ? '允许后保存在本机；记忆启用时可随对话发送给模型服务。' : '允许后从记忆库删除。'}</dd>
-            {request.status === 'completed' && action.kind === 'remember' && <><dt/><dd>
-                <button type="button" className="chat-ghost-button" onClick={onManageMemory}>查看或删除记忆</button>
-            </dd></>}
+            <dt>依据</dt>
+            <dd>{action.memory.evidence}</dd>
         </dl> : <Preview value={payload as CalendarEventInput | TodoInput}/>}
         {request.status === 'pending' && <div className="chat-summary-actions">
             <button type="button" className="secondary-button chat-ghost-button" disabled={disabled}
@@ -66,7 +75,8 @@ export function ChatActionRequestCard({request, disabled, onDecide, onUndo, onMa
             </button>
         </div>}
         {request.status === 'completed' && request.checkpoint && <div className="chat-summary-actions">
-            <button type="button" className="secondary-button" disabled={disabled} onClick={onUndo}>撤销{titles[action.kind]}</button>
+            <button type="button" className="secondary-button" disabled={disabled}
+                    onClick={onUndo}>撤销{titles[action.kind]}</button>
         </div>}
         {request.error && <p className="chat-error" role="alert">{request.error}</p>}
     </section>

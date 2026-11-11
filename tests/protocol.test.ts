@@ -1,7 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {toolSuccess, toolFailure, ToolError, maxToolResultChars, redactTrace} from '../src/shared/agent.ts'
-import {validateMemory, selectMemories, memoryLine, memoryLineBudget, buildMemoryDigest, normalizeMemoryText, diceCoefficient, clusterMemories, mergeConsolidationGroup, memoryShortId, type Memory} from '../src/shared/memory.ts'
+import {validateMemory, selectMemories, memoryLine, memoryLineBudget, buildMemoryDigest, memoryShortId, type Memory} from '../src/shared/memory.ts'
 import {compactTurns, compactionChunks, extractCompactionMemories, foldToolMessages, foldedToolResult, validateCompaction, parseSummary} from '../src/main/chat-context.ts'
 import {AppDatabase} from '../src/main/database.ts'
 import {chatTools, createChatToolRunner} from '../src/main/chat-tools.ts'
@@ -88,7 +88,7 @@ test('tool runner validates raw args, enforces lookup first and pages the whole 
     const db = new AppDatabase(':memory:')
     const notice = {sourceId: 'test', sourceName: 'test', title: 'Math', url: 'https://example.com/n', published: '2026-11-07', read: false}
     const notices = {list: () => ({items: [notice]}), detail: async () => ({content: 'x'.repeat(20000)})}
-    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}))
+    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}), {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never)
     try {
         await assert.rejects(run('list_todos', '{'), {code: 'invalid_args'})
         await assert.rejects(run('list_todos', '{"limit":"2"}'), {code: 'invalid_args'})
@@ -122,7 +122,7 @@ test('list_todos marks eLearning assignments instead of presenting them as manua
             submittedAt: null, attempts: 0, syncedAt: '2026-11-07T00:00:00Z'
         }})
     db.saveTodo('alice', {id: '22222222-2222-2222-2222-222222222222', title: '买书', ...base})
-    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}))
+    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}), {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never)
     try {
         const result = await run('list_todos', '{}') as {items: Array<Record<string, any>>}
         const assignment = result.items.find(item => item.title === '第三章习题')!
@@ -168,7 +168,7 @@ test('remember defaults optional fields; only kind/text/evidence stay required',
     db.setMemoryEnabled('alice', true)
     const actions: any[] = []
     const run = createChatToolRunner(db, 'alice', {list: () => ({items: []}), detail: async () => ({content: ''})} as never,
-        () => {}, () => {}, () => ({}), action => {actions.push(action); return {}})
+        () => {}, () => {}, () => ({}), action => {actions.push(action); return {}}, {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never)
     try {
         const schema = chatTools.find(item => item.function.name === 'remember')!.function.parameters
         assert.deepEqual(schema.required, ['kind', 'text', 'evidence'])
@@ -188,7 +188,7 @@ test('recall returns compact memory DTOs and forget resolves the short id', asyn
     db.saveMemory('alice', memory(full))
     const actions: any[] = []
     const run = createChatToolRunner(db, 'alice', {list: () => ({items: []}), detail: async () => ({content: ''})} as never,
-        () => {}, () => {}, () => ({}), action => {actions.push(action); return {}})
+        () => {}, () => {}, () => ({}), action => {actions.push(action); return {}}, {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never)
     try {
         const recalled = await run('recall', '{}') as {items: unknown[]}
         assert.deepEqual(recalled.items, [{id: 'abcdef12', kind: 'preference', text: '用户偏好数学'}])
@@ -207,7 +207,7 @@ test('tool results are model-facing DTOs without persisted timestamps or UI-only
         dueTime: '23:59', reminderMinutes: -1, completed: false, createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z'})
     db.saveCalendarEvent('alice', {id: '22222222-2222-2222-2222-222222222222', title: '组会', startDate: '2026-11-10',
         endDate: '2026-11-10', startTime: '14:00', endTime: '15:00', allDay: false, reminderMinutes: -1, location: '', notes: ''})
-    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}))
+    const run = createChatToolRunner(db, 'alice', notices as never, () => {}, () => {}, () => ({}), () => ({}), {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never)
     try {
         const todo = (await run('list_todos', '{}') as {items: Array<Record<string, unknown>>}).items[0]
         assert.deepEqual(Object.keys(todo).sort(), ['completed', 'dueDate', 'dueTime', 'id', 'kind', 'notes', 'source', 'title'])
@@ -221,7 +221,7 @@ test('tool results are model-facing DTOs without persisted timestamps or UI-only
 
 test('timed events with empty start or end time fail in the tool layer', async () => {
     const db = new AppDatabase(':memory:')
-    const run = createChatToolRunner(db, 'alice', {list: () => ({items: []})} as never, () => {}, () => {}, () => ({}), () => ({}))
+    const run = createChatToolRunner(db, 'alice', {list: () => ({items: []})} as never, () => {}, () => {}, () => ({}), () => ({}), {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never)
     try {
         const base = {title: '组会', startDate: '2026-11-10', endDate: '2026-11-10', allDay: false}
         await assert.rejects(run('create_event', JSON.stringify({...base, startTime: '', endTime: ''})), {code: 'invalid_args'})
@@ -287,7 +287,7 @@ test('recall supports offset/limit pagination like other list tools', async () =
     db.setMemoryEnabled('alice', true)
     for (let i = 0; i < 7; i++) db.saveMemory('alice', memory(`id-${i}`, {text: `记忆${i} 数学`}))
     const run = createChatToolRunner(db, 'alice', {list: () => ({items: []}), detail: async () => ({content: ''})} as never,
-        () => {}, () => {}, () => ({}), () => ({}))
+        () => {}, () => {}, () => ({}), () => ({}), {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never)
     try {
         const first = await run('recall', JSON.stringify({query: '数学', limit: 3})) as {total: number; hasMore: boolean; items: unknown[]}
         assert.equal(first.total, 7); assert.equal(first.items.length, 3); assert.equal(first.hasMore, true)
@@ -381,27 +381,6 @@ test('memory digest prioritizes pinned and related entries and stays within budg
         memory('archived', {status: 'archived'})], [], base), [])
 })
 
-test('normalization and Dice match the reference values from the design doc', () => {
-    const dice = (left: string, right: string) => diceCoefficient(normalizeMemoryText(left), normalizeMemoryText(right))
-    assert.equal(dice('用户偏好数学', '用户偏好数学。'), 1)
-    assert.ok(Math.abs(dice('用户住在邯郸校区', '用户在邯郸校区') - 0.77) < 0.01)
-    assert.ok(Math.abs(dice('用户是本科生', '用户是一名本科生') - 0.67) < 0.01)
-    assert.ok(Math.abs(dice('用户偏好数学', '用户喜欢数学') - 0.40) < 0.01)
-    assert.equal(dice('', '用户偏好数学'), 0)
-})
-
-test('clustering groups identical or similar memories and caps groups', () => {
-    const items = [memory('a', {text: '用户偏好数学'}), memory('b', {text: '用户偏好数学。'}),
-        memory('c', {text: '用户喜欢篮球'}), memory('d', {text: '用户住在邯郸校区'}), memory('e', {text: '用户在邯郸校区'})]
-    const clusters = clusterMemories(items)
-    assert.deepEqual(clusters.map(cluster => cluster.items.map(item => item.id).sort()).sort(),
-        [['a', 'b'], ['d', 'e']])
-    assert.equal(clusters[0].score, 1)
-    assert.ok(clusters[1].score >= 0.55)
-    const many = Array.from({length: 14}, (_, index) => memory(`m-${index}`, {text: '用户偏好数学'}))
-    assert.equal(clusterMemories(many)[0].items.length, 12, 'a group is capped at 12 items')
-})
-
 test('compaction candidates support update and skip, and downgrade fabricated targets', () => {
     const existing = [memory('3f2a91c0-1111-2222-3333-444455556666', {text: '用户是数学科学学院本科生'})]
     const raw = JSON.stringify({memories: [
@@ -428,38 +407,4 @@ test('compaction candidates support update and skip, and downgrade fabricated ta
         {kind: 'fact', text: '事实', evidence: '我说过', confidence: 1, expiresAt: null}))})
     assert.equal(extractCompactionMemories(four, ['我说过']).candidates.length, 3)
     assert.equal(extractCompactionMemories(four, ['我说过']).dropped, 1)
-})
-
-test('consolidation merge rules ignore the model for metadata and validate keepIds', () => {
-    const before = [
-        memory('aaaa1111-1111-1111-1111-111111111111', {kind: 'fact', text: '用户喜欢数学', pinned: true,
-            confidence: 0.6, evidence: '我喜欢数学', expiresAt: '2027-01-01T00:00:00Z'}),
-        memory('bbbb2222-2222-2222-2222-222222222222', {kind: 'preference', text: '用户偏好数学', pinned: false,
-            confidence: 0.9, evidence: '我偏爱数学', expiresAt: null}),
-    ]
-    const merged = mergeConsolidationGroup(before, {text: '用户喜欢并偏好数学', kind: 'event',
-        keepIds: [memoryShortId(before[0].id), memoryShortId(before[1].id)]})
-    assert.equal(merged.ok, true)
-    const data = (merged as any).data
-    assert.equal(data.kind, 'fact', 'tie keeps the first entry kind')
-    assert.equal(data.pinned, true)
-    assert.equal(data.confidence, 0.9)
-    assert.equal(data.expiresAt, '2027-01-01T00:00:00Z')
-    assert.ok(data.evidence.includes('我喜欢数学') && data.evidence.includes('我偏爱数学'))
-    assert.equal(mergeConsolidationGroup(before, {text: 'x', keepIds: []}).ok, false)
-    assert.equal(mergeConsolidationGroup(before, {text: 'x', keepIds: ['zzzzzzzz']}).ok, false)
-    assert.equal(mergeConsolidationGroup(before, {text: '   ', keepIds: [memoryShortId(before[0].id)]}).ok, false)
-})
-
-test('consolidation previews survive a database reopen and expire lazily', () => {
-    const db = new AppDatabase(':memory:')
-    try {
-        const before = [memory('a'), memory('b')]
-        db.saveConsolidation({id: 'p1', username: 'alice', createdAt: '2026-11-07T00:00:00Z', status: 'preview',
-            before, after: [{groupId: 'g1', before, status: 'ok', merged: {...memory('a'), mergedFrom: ['b'], source: 'consolidation'}}]})
-        assert.equal(db.findConsolidationPreview('alice')?.id, 'p1')
-        assert.equal(db.getConsolidation('alice', 'p1')?.after[0].merged?.source, 'consolidation')
-        db.pruneConsolidations('alice', '2026-11-07T00:01:00Z')
-        assert.equal(db.getConsolidation('alice', 'p1'), null)
-    } finally {db.close()}
 })

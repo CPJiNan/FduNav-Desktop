@@ -46,7 +46,7 @@ export function TodosPage() {
     const restoreFocus = useRef(false)
     const api = window.todos
 
-    async function syncElearning(interactive = false) {
+    async function syncElearning(interactive: boolean) {
         if (!api || syncPending.current || pending.current || pendingToggles.current.size || editor) return
         syncPending.current = true
         setSyncing(true)
@@ -99,9 +99,7 @@ export function TodosPage() {
 
     useEffect(() => {
         active.current = true
-        const start = window.setTimeout(() => void load().then(() => {
-            if (active.current) void syncElearning()
-        }), 0)
+        const start = window.setTimeout(() => void load(), 0)
         let timer: number
 
         function updateClock() {

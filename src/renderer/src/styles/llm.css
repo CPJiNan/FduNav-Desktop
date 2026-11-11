@@ -2,6 +2,11 @@
     width: 100%;
 }
 
+.llm-section-heading {
+    margin: 0 0 12px;
+    font-size: 16px;
+}
+
 .llm-enable-field {
     margin-bottom: var(--space-4);
 }
@@ -268,37 +273,198 @@
     }
 }
 
-.agent-settings {border-top: 1px solid var(--color-border-subtle); padding-top: 24px; margin-top: 28px; min-width: 0;}
-.agent-settings h3 {font-size: 16px; margin-bottom: 12px;}
-.agent-settings p, .agent-settings small {font-size: var(--font-size-sm); line-height: 1.7; overflow-wrap: anywhere;}
-.agent-settings > p, .agent-settings small {color: var(--color-text-muted);}
-.memory-enable {display: flex; align-items: center; gap: 10px; margin: 16px 0;}
-.memory-enable input {width: 18px; height: 18px; accent-color: var(--color-accent);}
-.memory-list {list-style: none; padding: 0; margin: 16px 0;}
-.memory-list > li {padding: 16px 0; border-bottom: 1px solid var(--color-border-subtle);}
-.memory-import {cursor: pointer; position: relative;}
-.memory-import input {width: 1px; height: 1px; position: absolute; opacity: 0;}
-.memory-import:focus-within {outline: 2px solid var(--color-accent); outline-offset: 3px;}
-.memory-editor {display: grid; gap: 12px; margin: 16px 0; padding: 16px; border: 1px solid var(--color-border-control); border-radius: 12px;}
-.memory-editor label {display: grid; gap: 6px; font-size: var(--font-size-sm);}
-.memory-editor textarea {min-height: 70px; resize: vertical;}
-.memory-editor :is(textarea, input, select) {width: 100%; padding: 10px; border: 1px solid var(--color-border-control); border-radius: 8px;
-    font: inherit; color: var(--color-text-primary); background: var(--color-bg-surface);}
-.usage-grid {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0;}
-@media (max-width: 600px) {.usage-grid {grid-template-columns: 1fr;}}
+.agent-settings {
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 24px;
+    margin-top: 28px;
+    min-width: 0;
+}
 
-.memory-toolbar {align-items: center; flex-wrap: wrap;}
-.memory-consolidate {display: grid; gap: 12px; margin: 16px 0; padding: 16px;
-    border: 1px solid var(--color-border-control); border-radius: 12px;}
-.memory-consolidate h4 {font-size: 14px;}
-.memory-groups {list-style: none; padding: 0; margin: 0; display: grid; gap: 12px;}
-.memory-groups > li {display: grid; gap: 8px; padding: 12px;
-    border: 1px solid var(--color-border-subtle); border-radius: 10px;}
-.memory-groups > li[data-status="failed"] {opacity: .7;}
-.memory-groups label {display: flex; gap: 8px; align-items: center; font-size: var(--font-size-sm);}
-.memory-group-old {list-style: none; padding: 0; margin: 0; color: var(--color-text-muted);}
-.memory-group-old s {text-decoration: line-through; overflow-wrap: anywhere;}
-.memory-diff-old {color: var(--color-text-muted); text-decoration: line-through;}
-.memory-diff-new {color: var(--color-accent);}
-.memory-select {display: flex; gap: 10px; align-items: flex-start;}
-.memory-select input {margin-top: 4px; width: 16px; height: 16px; accent-color: var(--color-accent); flex-shrink: 0;}
+.agent-settings h3 {
+    font-size: 16px;
+    margin-bottom: 12px;
+}
+
+.agent-settings p, .agent-settings small {
+    font-size: var(--font-size-sm);
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+
+.agent-settings > p, .agent-settings small {
+    color: var(--color-text-muted);
+}
+
+.memory-list {
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+}
+
+.memory-list > li {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.memory-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+html:has(.memory-list-dialog[open]) {
+    overflow: hidden;
+}
+
+.calendar-dialog.memory-list-dialog {
+    width: min(680px, calc(100vw - 32px));
+    padding: 0;
+    overflow: hidden;
+    background: var(--color-bg-surface);
+}
+
+.memory-list-dialog[open] {
+    display: flex;
+    flex-direction: column;
+}
+
+.memory-list-dialog .memory-list-header {
+    flex-shrink: 0;
+    align-items: center;
+    margin: 0;
+    padding: var(--space-4) var(--space-4) var(--space-2);
+    border-bottom: var(--border-width) solid var(--color-border-subtle);
+}
+
+.memory-list-header h3 {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1;
+}
+
+.memory-list-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: 0 var(--space-6);
+}
+
+.memory-list-body .memory-list {
+    margin: 0;
+}
+
+.memory-list > li:last-child {
+    border-bottom: 0;
+}
+
+.memory-row-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+}
+
+.memory-row-heading > p {
+    flex: 1;
+    min-width: 0;
+    margin: var(--space-1) 0 0;
+    white-space: pre-wrap;
+}
+
+.memory-row-meta {
+    margin-top: var(--space-2);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.memory-actions .memory-remove:not(:disabled):hover {
+    color: var(--color-danger);
+    background: var(--color-danger-subtle);
+}
+
+.memory-list-empty {
+    padding: var(--space-12) var(--space-3);
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.memory-list-empty p {
+    color: var(--color-text-primary);
+}
+
+@media (max-width: 480px) {
+    .memory-list-body {
+        padding: 0 var(--space-4);
+    }
+
+    .memory-row-heading {
+        gap: var(--space-2);
+    }
+}
+
+.memory-actions .icon-button {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+}
+
+.memory-actions .icon-button .icon {
+    width: 15px;
+    height: 15px;
+}
+
+.memory-actions .icon-button[aria-pressed="true"] {
+    color: var(--color-accent);
+}
+
+.usage-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+}
+
+.usage-grid > div {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    padding: 16px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-md);
+    background: transparent;
+}
+
+.usage-grid h4 {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.usage-grid p {
+    margin: 0;
+}
+
+@media (max-width: 600px) {
+    .usage-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.memory-toolbar {
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.memory-diff-old {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+}
+
+.memory-diff-new {
+    color: var(--color-accent);
+}

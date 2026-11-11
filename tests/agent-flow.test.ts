@@ -32,7 +32,7 @@ function harness() {
         remove: (_u: string, id: string) => db.removeCalendarEvent(_u, id)}
     const todos = {save: (owner: string, input: unknown) => service.save(owner, input), remove: (owner: string, id: string) => service.remove(owner, id)}
     const notices = {list: () => ({items: []}), detail: async () => ({content: ''})}
-    registerChatHandlers(db, accounts as never, llm, notices as never, calendar as never, todos as never, () => true)
+    registerChatHandlers(db, accounts as never, llm, notices as never, calendar as never, todos as never, {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never, () => true)
     const event = {trusted: true, sender: {once: () => {}, isDestroyed: () => false, send: () => {}}}
     const invoke = (channel: string, input?: unknown): any => handlers.get(channel)!(event, input)
     const state = (): any => invoke('chat:get').data

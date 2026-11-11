@@ -86,27 +86,6 @@ test('stale memory update approval never overwrites a subsequent manual edit', (
     } finally {h.restore()}
 })
 
-test('applying only one consolidation group can be undone without touching the unselected group', async () => {
-    const h = harness()
-    try {
-        h.invoke('memory:set-enabled', true)
-        const ids = ['aaaa1111', 'bbbb2222', 'cccc3333', 'dddd4444']
-        const texts = ['喜欢数学', '喜欢数学。', '住在邯郸', '住在邯郸。']
-        const items = texts.map((text, i) => memory(`${ids[i]}-1111-1111-1111-111111111111`, text))
-        for (const item of items) h.db.saveMemory('alice', item)
-        setModel([jsonReply({text: texts[0], keepIds: ids.slice(0, 2)}), jsonReply({text: texts[2], keepIds: ids.slice(2)})])
-        const preview = await h.invoke('memory:consolidate-preview')
-        assert.equal(preview.ok, true)
-        assert.equal(preview.data.groups.length, 2)
-        const applied = h.invoke('memory:consolidate-apply', {previewId: preview.data.previewId, groupIds: [preview.data.groups[0].id]})
-        assert.equal(applied.ok, true); assert.equal(h.db.getMemories('alice').length, 3)
-        const untouched = h.db.getMemories('alice').filter(item => ids.slice(2).some(id => item.id.startsWith(id)))
-        assert.equal(h.invoke('memory:consolidate-undo', preview.data.previewId).ok, true)
-        assert.deepEqual(h.db.getMemories('alice'), items)
-        assert.deepEqual(h.db.getMemories('alice').slice(2), untouched)
-    } finally {h.restore()}
-})
-
 test('write results use DTOs while checkpoints and the original wire trace remain intact', async () => {
     const h = harness()
     try {

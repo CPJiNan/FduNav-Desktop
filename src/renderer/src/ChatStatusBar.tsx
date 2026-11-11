@@ -11,8 +11,7 @@ const empty: ChatStats = {
     elapsedMs: 0, lastPromptTokens: 0, cacheHitRate: null, tokensPerSecond: null, turnElapsedMs: 0
 }
 
-/** Session counters. Live activity is rendered inside the running turn, not here. */
-export function ChatStatusBar({stats}: {stats?: ChatStats}) {
+export function ChatStatusBar({stats}: { stats?: ChatStats }) {
     const data = stats ?? empty
     const tokens = data.promptTokens + data.completionTokens
     const cache = data.cacheHitRate === null ? null : Math.round(data.cacheHitRate * 1000) / 10

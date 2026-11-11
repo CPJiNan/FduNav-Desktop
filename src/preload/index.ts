@@ -34,6 +34,31 @@ const danta: DantaAPI = {
     savePlan: items => ipcRenderer.invoke('danta:plan-save', {items}),
 }
 contextBridge.exposeInMainWorld('danta', danta)
+import type {MailAPI} from '../shared/mail'
+
+const mail: MailAPI = {
+    accounts: () => ipcRenderer.invoke('mail:accounts'),
+    saveAccount: input => ipcRenderer.invoke('mail:save-account', input),
+    testAccount: input => ipcRenderer.invoke('mail:test-account', input),
+    cancelSetup: () => ipcRenderer.invoke('mail:cancel-setup'),
+    setAgentAccess: input => ipcRenderer.invoke('mail:set-agent-access', input),
+    removeAccount: id => ipcRenderer.invoke('mail:remove-account', id),
+    folders: ids => ipcRenderer.invoke('mail:folders', ids),
+    messages: input => ipcRenderer.invoke('mail:messages', input),
+    message: input => ipcRenderer.invoke('mail:message', input),
+    setFlags: input => ipcRenderer.invoke('mail:set-flags', input),
+    moveToTrash: id => ipcRenderer.invoke('mail:trash', id),
+    downloadAttachment: input => ipcRenderer.invoke('mail:download-attachment', input),
+    readAttachment: input => ipcRenderer.invoke('mail:read-attachment', input),
+    drafts: () => ipcRenderer.invoke('mail:drafts'),
+    draft: id => ipcRenderer.invoke('mail:draft', id),
+    saveDraft: input => ipcRenderer.invoke('mail:save-draft', input),
+    releaseDraft: id => ipcRenderer.invoke('mail:release-draft', id),
+    deleteDraft: id => ipcRenderer.invoke('mail:delete-draft', id),
+    send: input => ipcRenderer.invoke('mail:send', input),
+    openLink: url => ipcRenderer.invoke('mail:open-link', url),
+}
+contextBridge.exposeInMainWorld('mail', mail)
 
 const library: LibraryAPI = {
     crowding: refresh => ipcRenderer.invoke('library:crowding', refresh),
@@ -53,11 +78,6 @@ const memory: MemoryAPI = {
     setEnabled: enabled => ipcRenderer.invoke('memory:set-enabled', enabled),
     importJson: (json, username) => ipcRenderer.invoke('memory:import', {json, username}),
     exportJson: () => ipcRenderer.invoke('memory:export'),
-    consolidatePreview: input => ipcRenderer.invoke('memory:consolidate-preview', input),
-    consolidateApply: input => ipcRenderer.invoke('memory:consolidate-apply', input),
-    consolidateUndo: consolidationId => ipcRenderer.invoke('memory:consolidate-undo', consolidationId),
-    consolidateDiscard: previewId => ipcRenderer.invoke('memory:consolidate-discard', previewId),
-    consolidateCancel: () => ipcRenderer.invoke('memory:consolidate-cancel'),
 }
 contextBridge.exposeInMainWorld('memory', memory)
 

@@ -1,4 +1,3 @@
-import {streamLlmWithTools} from './llm-stream'
 import type {LlmConnectionTest} from '../shared/llm'
 import {defaultConnectionTestPrompt} from '../shared/llm-prompts'
 
@@ -19,19 +18,17 @@ export interface ToolCall {
     function: { name: string; arguments: string }
 }
 
-export type ToolChatMessage = ChatMessage | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[]; reasoning_content?: string } |
+export type ToolChatMessage = ChatMessage | {
+    role: 'assistant';
+    content: string | null;
+    tool_calls?: ToolCall[];
+    reasoning_content?: string
+} |
     { role: 'tool'; tool_call_id: string; content: string }
 
 export interface ChatTool {
     type: 'function'
     function: { name: string; description: string; parameters: Record<string, unknown> }
-}
-
-export async function completeLlmWithTools(connection: Connection, messages: ToolChatMessage[], tools: ChatTool[],
-                                           signal: AbortSignal): Promise<Extract<ToolChatMessage, {
-    role: 'assistant'
-}>> {
-    return streamLlmWithTools(connection, messages, tools, signal)
 }
 
 export async function completeLlm(connection: Connection, messages: ChatMessage[], signal: AbortSignal,
@@ -85,17 +82,25 @@ export async function fetchLlmModels(connection: Connection, request: typeof fet
     return models
 }
 
-class TransientLlmError extends Error {}
+class TransientLlmError extends Error {
+}
 
 async function requestLlmJson(connection: Connection, path: string, init: RequestInit,
                               request: typeof fetch, timeoutMs: number, enabledSignal?: AbortSignal): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
-        try {return await requestLlmJsonOnce(connection, path, init, request, timeoutMs, enabledSignal)}
-        catch (error) {
+        try {
+            return await requestLlmJsonOnce(connection, path, init, request, timeoutMs, enabledSignal)
+        } catch (error) {
             if (!(error instanceof TransientLlmError) || attempt >= 2 || enabledSignal?.aborted) throw error
             await new Promise<void>((resolve, reject) => {
-                const abort = () => {clearTimeout(timer); reject(new Error('LLM 请求已取消。'))}
-                const timer = setTimeout(() => {enabledSignal?.removeEventListener('abort', abort); resolve()}, [1000, 3000][attempt])
+                const abort = () => {
+                    clearTimeout(timer);
+                    reject(new Error('LLM 请求已取消。'))
+                }
+                const timer = setTimeout(() => {
+                    enabledSignal?.removeEventListener('abort', abort);
+                    resolve()
+                }, [1000, 3000][attempt])
                 enabledSignal?.addEventListener('abort', abort, {once: true})
                 if (enabledSignal?.aborted) abort()
             })
@@ -104,7 +109,7 @@ async function requestLlmJson(connection: Connection, path: string, init: Reques
 }
 
 async function requestLlmJsonOnce(connection: Connection, path: string, init: RequestInit,
-                              request: typeof fetch, timeoutMs: number, enabledSignal?: AbortSignal): Promise<unknown> {
+                                  request: typeof fetch, timeoutMs: number, enabledSignal?: AbortSignal): Promise<unknown> {
     if (enabledSignal?.aborted) throw new Error('LLM 已停用。')
     const timeout = AbortSignal.timeout(timeoutMs)
     const signal = enabledSignal ? AbortSignal.any([timeout, enabledSignal]) : timeout

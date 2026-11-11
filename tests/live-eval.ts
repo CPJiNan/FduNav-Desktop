@@ -44,6 +44,7 @@ for (const scenario of cases) {
         {list: () => ({items: [notice]}), detail: async () => ({content: '数学讲座在数学楼203举行。与组会地点不同，请以正文为准。'})} as never,
         {save: (owner: string, input: object) => {const value = {...input, id: randomUUID()}; db.saveCalendarEvent(owner, value as never); return value}, remove: (owner: string, id: string) => db.removeCalendarEvent(owner, id)} as never,
         {save: (owner: string, input: unknown) => service.save(owner, input), remove: (owner: string, id: string) => service.remove(owner, id)} as never,
+        {list: async () => {throw new Error('mail stub')}, read: async () => ({} as never)} as never,
         () => true)
     const event = {sender: {once: () => {}, isDestroyed: () => false, send: () => {}}}
     const invoke = (channel: string, input?: unknown): any => handlers.get(channel)!(event, input)
