@@ -4,14 +4,32 @@ import type {Result} from './accounts'
 export type SchoolNetworkState = 'unknown' | 'checking' | 'ready' | 'login-required' | 'unavailable'
 export type CommunityAccountState = 'signed-out' | 'connected' | 'expired'
 
+/**
+ * 到达社区域名的方式：direct 直连 *.fduhole.com（校内网或能直连的环境），
+ * webvpn 经学校 WebVPN 转发。直连优先，探测失败才退回 WebVPN。
+ */
+export type CommunityTransport = 'unknown' | 'direct' | 'webvpn'
+
+/**
+ * 直连探测失败的具体原因。区分它们是为了给用户可执行的建议：
+ * gateway 是校园网/企业网关拦截，tls 是握手被打断，timeout 是目标无响应，network 是解析或建连失败。
+ */
+export type CommunityTransportIssue = 'gateway' | 'tls' | 'timeout' | 'network'
+
 export interface DantaStatus {
     school: SchoolNetworkState
+    /** 当前实际使用的通路；unknown 表示还没检测过。 */
+    transport: CommunityTransport
+    /** 最近一次直连探测失败的原因；直连成功时为 null。 */
+    transportIssue: CommunityTransportIssue | null
     account: CommunityAccountState
     email: string | null
     lastLogin: string | null
     message: string
     /** Agent 只读工具总开关；关闭时工具不注册、不执行。 */
     agentEnabled: boolean
+    /** 学校登录窗口是否还开着。渲染层据此决定要不要轮询状态，避免窗口已关还显示“等待中”。 */
+    waitingLogin: boolean
 }
 
 export interface DantaLoginInput {
@@ -70,6 +88,10 @@ export interface CourseOffering {
     teachers: string
     year: number | null
     semester: number | null
+    /**
+     * 课程组详情的 course_list 只在有课评时才带 review_list（实测 2026-11-11：字段与「是否有课评」一一对应，
+     * 且长度等于真实课评数）；字段缺失或为 null 表示这门开课没有课评，因此这里用 0 而不是 null。
+     */
     reviewCount: number
 }
 

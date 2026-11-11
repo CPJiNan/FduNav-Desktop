@@ -17,6 +17,8 @@ import {
     type CourseGroupDetail,
     type CourseReviewsResult,
     type CourseSearchPage,
+    type CommunityTransport,
+    type CommunityTransportIssue,
     type DantaLoginInput,
     type DantaStatus,
     type SchoolNetworkState,
@@ -27,7 +29,24 @@ export const FORUM_BASE = 'https://forum.fduhole.com/api'
 export const DANKE_BASE = 'https://danke.fduhole.com/api'
 const PARTITION = 'fdunav-danta'
 const timeoutMs = 15_000
+/** 直连探测要快：慢到 5 秒还不通，就当作不可直连，改走 WebVPN。 */
+const directTimeoutMs = 5_000
 const maxResponseBytes = 3 * 1024 * 1024
+
+/**
+ * iOA 一类企业网关会用 502/503 加 x-proxy-by 头返回拦截页。
+ * 这里不能用 response.url 判断：Electron 的 net.fetch 不填充该字段（45.0.0 实测恒为空字符串），
+ * redirected 标志同样不可靠，所以只能看响应本身。
+ */
+function isGatewayResponse(response: Response): boolean {
+    return Boolean(response.headers.get('x-proxy-by')) || response.status === 502 || response.status === 503
+}
+
+/** 期望 JSON 却拿到 HTML，通常是被劫持到拦截页或登录页。 */
+function looksLikeHtml(response: Response, body: string): boolean {
+    if ((response.headers.get('content-type') ?? '').toLowerCase().includes('html')) return true
+    return /^\s*</.test(body.slice(0, 64))
+}
 
 interface Tokens {
     access: string
@@ -47,8 +66,12 @@ export interface DantaSession {
 /** 社区账号与学校 WebVPN 通路是两套凭据；token 只在这里解密、只在这里使用。 */
 export class DantaService implements DantaSession {
     private school: SchoolNetworkState = 'unknown'
+    private transport: CommunityTransport = 'unknown'
+    private transportIssue: CommunityTransportIssue | null = null
     private schoolMessage = ''
     private tokens: Tokens | null = null
+    /** 同一时刻只允许一次通路探测，避免并发请求各自打开探测。 */
+    private probing: Promise<void> | null = null
     private email: string | null = null
     private lastLogin: string | null = null
     private expired = false
@@ -83,11 +106,14 @@ export class DantaService implements DantaSession {
                     : this.schoolMessage || '校园社区账号已连接。'
         return {
             school: this.school,
+            transport: this.transport,
+            transportIssue: this.transportIssue,
             account: this.tokens ? (this.expired ? 'expired' : 'connected') : 'signed-out',
             email: this.email,
             lastLogin: this.lastLogin,
             message,
             agentEnabled: this.db.getCommunityAgentEnabled(),
+            waitingLogin: this.loginWindow !== null && !this.loginWindow.isDestroyed(),
         }
     }
 
@@ -155,8 +181,74 @@ export class DantaService implements DantaSession {
         if (this.school === 'ready' && !window.isDestroyed()) window.close()
     }
 
+    /**
+     * 直连探测：向蛋挞课程搜索发一次未认证请求。只要拿到落在社区域名上的 HTTP 响应，
+     * 就说明网络本身可达——401 只代表没登录，不代表网络不通。
+     * 失败要区分原因：网关拦截、TLS 被打断、超时、解析或建连失败，对应的处理方式完全不同。
+     */
+    private async probeDirect(): Promise<{ok: boolean; issue: CommunityTransportIssue | null}> {
+        try {
+            const response = await this.campusSession().fetch(
+                `${DANKE_BASE}/v3/course_groups/search?query=${encodeURIComponent('概率论')}&page=1&page_size=1`,
+                {
+                    method: 'GET',
+                    redirect: 'follow',
+                    signal: AbortSignal.timeout(directTimeoutMs),
+                    headers: {Accept: 'application/json', 'User-Agent': 'FduNav/0.1 (desktop)'},
+                })
+            // 不能靠 response.url 判断落点（Electron 的 net.fetch 恒返回空串），
+            // 只能反过来问：这个响应像不像我们要的 API 响应？
+            if (isGatewayResponse(response)) return {ok: false, issue: 'gateway'}
+            let body = ''
+            try {
+                body = (await response.text()).slice(0, 4096)
+            } catch {
+                // 读不到正文就按普通网络失败处理，不影响后面的 WebVPN 回退。
+            }
+            if (/M0003|AIO-Forward|智能网关/.test(body)) return {ok: false, issue: 'gateway'}
+            if (looksLikeHtml(response, body)) return {ok: false, issue: 'network'}
+            // 401/400 都说明网络可达，只是没登录或参数不对。
+            return {ok: true, issue: null}
+        } catch (error) {
+            const cause = (error as {cause?: {code?: string}} | null)?.cause
+            const signal = [
+                cause?.code ?? '',
+                error instanceof Error ? error.name : '',
+                error instanceof Error ? error.message : '',
+            ].join(' ')
+            if (/TIMEOUT|TimeoutError|TIME/i.test(signal)) return {ok: false, issue: 'timeout'}
+            if (/SSL|TLS|CERT|WRONG_VERSION/i.test(signal)) return {ok: false, issue: 'tls'}
+            return {ok: false, issue: 'network'}
+        }
+    }
+
+    /** 先试直连，不通再退回学校 WebVPN；两条路都不需要用户额外操作。 */
     async probeSchool(): Promise<DantaStatus> {
         this.school = 'checking'
+        this.schoolMessage = '正在检测网络通路…'
+        if (this.probing) {
+            await this.probing
+            return this.status()
+        }
+        this.probing = (async () => {
+            const direct = await this.probeDirect()
+            this.transportIssue = direct.ok ? null : direct.issue
+            if (direct.ok) {
+                this.transport = 'direct'
+                this.school = 'ready'
+                this.schoolMessage = '可以直连旦挞社区，无需登录学校网络。'
+                return
+            }
+            this.transport = 'webvpn'
+            await this.probeViaWebvpn()
+        })().finally(() => {
+            this.probing = null
+        })
+        await this.probing
+        return this.status()
+    }
+
+    private async probeViaWebvpn(): Promise<void> {
         try {
             await this.send('GET', `${DANKE_BASE}/v3/course_groups/search?query=${encodeURIComponent('概率论')}&page=1&page_size=1`)
             this.school = 'ready'
@@ -165,8 +257,8 @@ export class DantaService implements DantaSession {
             if (error instanceof DantaError && (error.code === 'school_login_required' || error.code === 'network' || error.code === 'timeout')) {
                 this.school = error.code === 'school_login_required' ? 'login-required' : 'unavailable'
                 this.schoolMessage = error.code === 'school_login_required'
-                    ? '请先连接到学校网络（WebVPN）。'
-                    : '无法连接学校 WebVPN，请检查网络后重试。'
+                    ? '直连不可用，需要先连接到学校网络（WebVPN）。'
+                    : '直连不可用，也连不上学校 WebVPN，请检查网络后重试。'
             } else if (error instanceof DantaError && ['auth', 'forbidden', 'not_found'].includes(error.code)) {
                 // 学校通路正常，只是社区 token 未登录或被拒绝。
                 this.school = 'ready'
@@ -176,7 +268,6 @@ export class DantaService implements DantaSession {
                 this.schoolMessage = '无法连接学校 WebVPN，请检查网络后重试。'
             }
         }
-        return this.status()
     }
 
     async login(input: DantaLoginInput): Promise<DantaStatus> {
@@ -206,7 +297,9 @@ export class DantaService implements DantaSession {
             this.expired = false
             this.email = email
             this.lastLogin = new Date().toISOString()
-            this.schoolMessage = '学校网络已连接，社区账号已登录。'
+            this.schoolMessage = this.transport === 'direct'
+                ? '直连旦挞社区可用，社区账号已登录。'
+                : '学校网络已连接，社区账号已登录。'
             await this.db.saveCommunityAuth(email, await secureStorage.encrypt(JSON.stringify(this.tokens)))
             return this.status()
         } finally {
@@ -282,12 +375,14 @@ export class DantaService implements DantaSession {
     }
 
     private async send(method: 'GET' | 'POST', url: string, body?: string, headers: Record<string, string> = {}): Promise<unknown> {
+        // 还没确定通路时先探一次，避免第一次查询直接失败。
+        if (this.transport === 'unknown') await this.probeSchool()
         let route: string
         try {
             // 只要白名单内主机的固定路径；webvpnRoute 同时拒绝其他主机与端口。
             const parsed = new URL(url)
             if (!this.allowed(method, parsed)) throw new DantaError('forbidden', '不允许请求这个社区接口。')
-            route = webvpnRoute(url)
+            route = this.transport === 'webvpn' ? webvpnRoute(url) : url
         } catch (error) {
             if (error instanceof DantaError) throw error
             throw new DantaError('forbidden', '不允许请求这个社区接口。')
@@ -307,27 +402,34 @@ export class DantaService implements DantaSession {
                 ...(body ? {body} : {}),
             })
         } catch (error) {
+            // 直连在请求阶段就失败，说明当前网络变了；退回 WebVPN，让下次探测重新选择。
+            if (this.transport === 'direct') this.transport = 'webvpn'
             if (error instanceof DOMException && error.name === 'TimeoutError') {
                 throw new DantaError('timeout', '社区服务请求超时，请稍后重试。')
             }
             throw new DantaError('network', '暂时无法连接社区服务，请检查学校网络后重试。')
         }
-        let finalHost = ''
-        try {
-            finalHost = new URL(response.url).hostname
-        } catch {
-        }
-        if (finalHost !== 'webvpn.fudan.edu.cn') {
-            this.school = 'login-required'
-            this.schoolMessage = '学校网络会话已失效，请重新登录学校网络。'
-            throw new DantaError('school_login_required', '学校 WebVPN 会话已失效，请重新登录学校网络。')
-        }
         const buffer = new Uint8Array(await response.arrayBuffer().catch(() => new Uint8Array()))
         if (buffer.byteLength > maxResponseBytes) throw new DantaError('too_large', '社区服务返回内容过大，已停止读取。')
+        const payload = Buffer.from(buffer).toString('utf8')
+        // Electron 的 net.fetch 不填充 response.url，没法用最终 URL 判断是否被重定向，
+        // 于是改成检查内容：该给 JSON 的接口返回 HTML，就是登录页或拦截页。
+        if (looksLikeHtml(response, payload) || isGatewayResponse(response)) {
+            if (this.transport === 'webvpn') {
+                this.school = 'login-required'
+                this.schoolMessage = '学校网络会话已失效，请重新登录学校网络。'
+                throw new DantaError('school_login_required', '学校 WebVPN 会话已失效，请重新登录学校网络。')
+            }
+            // 直连被劫持到别处，说明这条路现在不可用。
+            this.transport = 'webvpn'
+            this.school = 'unknown'
+            this.schoolMessage = '直连旦挞社区失败，已改用学校 WebVPN 通路。'
+            throw new DantaError('network', '直连旦挞社区失败，已切回学校 WebVPN 通路，请重试。')
+        }
         this.checkStatus(response.status)
         if (!buffer.byteLength) return null
         try {
-            return JSON.parse(Buffer.from(buffer).toString('utf8'))
+            return JSON.parse(payload)
         } catch {
             throw new DantaError('schema', '社区服务没有返回有效 JSON。')
         }
