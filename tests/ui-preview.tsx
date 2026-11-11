@@ -266,7 +266,10 @@ const plan: PlanItem[] = [
 ]
 
 const timetable: Timetable = {
-    kind: 'undergraduate', semesters: [{id: '2025-1', name: '2025-2026 学年 秋季', startDate: '2025-09-07'}],
+    kind: 'undergraduate', semesters: [
+        {id: '2025-2', name: '2025-2026 学年 春季', startDate: '2026-02-23'},
+        {id: '2025-1', name: '2025-2026 学年 秋季', startDate: '2025-09-07'},
+    ],
     semesterId: '2025-1', startDate: '2025-09-07', updatedAt: at(-3600_000),
     courses: [
         {id: 'c1', lessonId: '50101', name: '泛函分析', teachers: ['张青青'], room: '第五教学楼 5301', weekday: 1, startUnit: 1, endUnit: 2, weeks: [1, 2, 3, 4, 5, 6, 7, 8]},
@@ -276,6 +279,7 @@ const timetable: Timetable = {
 
 const exams: CalendarEvent[] = [
     {id: 'e1', title: '泛函分析考试', startDate: '2026-01-08', endDate: '2026-01-08', startTime: '08:30', endTime: '10:30', allDay: false, reminderMinutes: 30, location: '第二教学楼 2101', notes: '座位 12'},
+    {id: 'e2', title: '概率论考试', startDate: '2026-06-24', endDate: '2026-06-24', startTime: '14:00', endTime: '16:00', allDay: false, reminderMinutes: 30, location: '第三教学楼 3308', notes: ''},
 ]
 
 window.danta = {

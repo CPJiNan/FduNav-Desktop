@@ -1,6 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {dantaHosts, webvpnLoginUrl, webvpnRoute} from '../src/main/webvpn.ts'
+import {semesterWindow} from '../src/shared/timetable.ts'
 import {
     DantaError, maxPostChars, maxReviewChars, nextOffsetFor, parseCampusHoles, parseCampusPosts,
     parseCourseGroups, parseCourseGroup, parseReviews, parseThreadMeta, redactPersonal
@@ -287,4 +288,18 @@ test('plan slots detect overlaps and credits only count known values', () => {
         {...base, courseId: 2, name: 'b', credit: null, slot: null},
         {...base, courseId: 3, name: 'c'},
     ]), 4)
+})
+
+test('semester window ends the day before the next term starts', () => {
+    const semesters = [
+        {id: '2', name: '2025-2026 学年 春季', startDate: '2026-02-23'},
+        {id: '1', name: '2025-2026 学年 秋季', startDate: '2025-09-01'},
+        {id: '3', name: '未知学期', startDate: null},
+    ]
+    assert.deepEqual(semesterWindow(semesters, '1'), {from: '2025-09-01', to: '2026-02-22'})
+    assert.deepEqual(semesterWindow(semesters, '2'), {from: '2026-02-23', to: '2026-08-23'})
+    // 缺开学日期的学期无法定位，调用方必须退回「不过滤」而不是丢数据
+    assert.equal(semesterWindow(semesters, '3'), null)
+    assert.equal(semesterWindow(semesters, 'missing'), null)
+    assert.equal(semesterWindow([], '1'), null)
 })

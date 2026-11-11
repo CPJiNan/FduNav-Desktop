@@ -62,3 +62,25 @@ export function currentWeek(startDate: string | null, today = new Date()) {
     const localDay = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
     return Math.floor((localDay - Date.parse(`${startDate}T00:00:00Z`)) / (7 * 86_400_000)) + 1
 }
+
+export interface SemesterWindow {
+    from: string
+    to: string
+}
+
+/**
+ * 推算某个学期的日期区间：截止到下个学期开学前一天。
+ * 最后一个学期没有下一个开学日可依，按 181 天（教学 18 周 + 考试与假期）估算。
+ * 学期缺少开学日期时返回 null，调用方应退回「不过滤」，避免误删数据。
+ */
+export function semesterWindow(semesters: Semester[], semesterId: string): SemesterWindow | null {
+    const dated = semesters
+        .filter(item => typeof item.startDate === 'string' && validDate(item.startDate))
+        .map(item => ({id: item.id, startDate: item.startDate as string}))
+        .sort((a, b) => (a.startDate < b.startDate ? -1 : 1))
+    const index = dated.findIndex(item => item.id === semesterId)
+    if (index < 0) return null
+    const from = dated[index].startDate
+    const next = dated[index + 1]?.startDate
+    return {from, to: next ? dateAfter(next, -1) : dateAfter(from, 181)}
+}

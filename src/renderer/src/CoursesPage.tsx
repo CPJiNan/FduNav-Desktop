@@ -5,7 +5,7 @@ import type {
 import {academicTerm, courseGroupLabel, planCredits, planSlotsOverlap} from '../../shared/danta'
 import type {CalendarEvent} from '../../shared/calendar'
 import type {Timetable, TimetableCourse} from '../../shared/timetable'
-import {courseStartTimes} from '../../shared/timetable'
+import {courseStartTimes, semesterWindow} from '../../shared/timetable'
 import {courseColor} from './timetable-colors'
 import {Icon} from './Icon'
 import './styles/courses.css'
@@ -303,6 +303,21 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
         }
     }
 
+    async function switchSemester(semesterId: string) {
+        if (busy || !window.timetable || !semesterId || semesterId === timetable?.semesterId) return
+        setBusy('正在切换学期…')
+        setError('')
+        try {
+            const result = await window.timetable.get({semesterId})
+            if (!result.ok) setError(result.error)
+            else setTimetable(result.data)
+        } catch {
+            setError('切换学期失败，请检查学校会话后重试。')
+        } finally {
+            setBusy('')
+        }
+    }
+
     async function syncExams() {
         if (busy || !window.calendar) return
         setBusy('正在同步考试日程…')
@@ -335,6 +350,12 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     </div>
 
     const schedule = timetable?.courses ?? []
+    // 考试日程来自教务，导入时不带学期标记；按所选学期的日期区间归位，缺开学日时不过滤。
+    const examWindow = timetable ? semesterWindow(timetable.semesters, timetable.semesterId) : null
+    const semesterExams = examWindow
+        ? exams.filter(item => item.startDate >= examWindow.from && item.startDate <= examWindow.to)
+        : exams
+    const otherTermExams = exams.length - semesterExams.length
     return <div className="courses-page">
         <header className="courses-head">
             <div>
@@ -457,14 +478,23 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                     <div>
                         <h2>本周课表</h2>
                         <p className="courses-group-meta">
-                            {timetable ? `已选 ${schedule.length} 门课 · ${timetable.semesterId || '当前学期'}` : '还没有课表缓存'}
+                            {timetable ? `已选 ${schedule.length} 门课 · ${timetable.semesters.find(item => item.id === timetable.semesterId)?.name ?? '当前学期'}` : '还没有课表缓存'}
                             {conflicts.size > 0 && ` · ${conflicts.size} 门课存在时间冲突`}
                             {plan.length > 0 && ` · 备选 ${plan.length} 门，已排 ${planned.length} 门，共 ${planCreditTotal} 学分`}
                         </p>
                     </div>
-                    <button type="button" className="secondary-button" disabled={!!busy}
-                            onClick={() => void refreshTimetable()}>刷新课表
-                    </button>
+                    <div className="courses-head-actions">
+                        {!!timetable && timetable.semesters.length > 1 &&
+                            <select className="courses-semester" aria-label="学期" value={timetable.semesterId}
+                                    disabled={!!busy}
+                                    onChange={event => void switchSemester(event.target.value)}>
+                                {timetable.semesters.map(semester => <option key={semester.id}
+                                                                             value={semester.id}>{semester.name}</option>)}
+                            </select>}
+                        <button type="button" className="secondary-button" disabled={!!busy}
+                                onClick={() => void refreshTimetable()}>刷新课表
+                        </button>
+                    </div>
                 </div>
                 {schedule.length === 0
                     ? <p className="courses-empty-note">点“刷新课表”从教务获取当前学期课程，之后可以对照备选课程看冲突。</p>
@@ -591,14 +621,15 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                             onClick={() => void syncExams()}>同步
                     </button>
                 </div>
-                {exams.length === 0 && <p className="courses-empty-note">还没有考试日程，点“同步”从教务导入。</p>}
-                {exams.length > 0 && <ul className="courses-exams">
-                    {exams.map(item => <li key={item.id}>
+                {semesterExams.length === 0 && <p className="courses-empty-note">这个学期还没有考试日程，点“同步”从教务导入。</p>}
+                {semesterExams.length > 0 && <ul className="courses-exams">
+                    {semesterExams.map(item => <li key={item.id}>
                         <strong>{item.title}</strong>
                         <span className="courses-group-meta">{item.startDate} {item.startTime}–{item.endTime}
                             {item.location ? ` · ${item.location}` : ''}</span>
                     </li>)}
                 </ul>}
+                {otherTermExams > 0 && <p className="courses-hint">另有 {otherTermExams} 场考试属于其他学期，切换到对应学期查看。</p>}
             </aside>
         </div>}
         {busy && <p className="courses-feedback" role="status">{busy}</p>}
