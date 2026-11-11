@@ -1,6 +1,7 @@
 import {type FormEvent, useEffect, useRef, useState} from 'react'
 import type {CampusPage, CampusPost, DantaStatus} from '../../shared/danta'
 import {Icon} from './Icon'
+import {PostContent} from './dx-emoji'
 import './styles/danta.css'
 
 const pageSize = 10
@@ -177,7 +178,7 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                         <button type="button" className="danta-result" onClick={() => void openThread(item.holeId)}>
                             <span className="danta-result-meta">帖子 #{item.holeId} · 楼层 #{item.floorId} · {formatTime(item.timeCreated)}
                                 {item.redacted && <span className="danta-badge">已脱敏</span>}</span>
-                            <span className="danta-result-content">{item.content}</span>
+                            <span className="danta-result-content"><PostContent text={item.content}/></span>
                         </button>
                     </li>)}
                 </ul>
@@ -204,7 +205,7 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                         {thread.results.map(floor => <li key={floor.floorId}>
                             <div className="danta-floor-meta">楼层 #{floor.floorId} · {formatTime(floor.timeCreated)}
                                 {floor.redacted && <span className="danta-badge">已脱敏</span>}</div>
-                            <p className="danta-floor-content">{floor.content}</p>
+                            <p className="danta-floor-content"><PostContent text={floor.content}/></p>
                         </li>)}
                     </ol>
                     {thread.nextOffset !== null && <button type="button" className="secondary-button"

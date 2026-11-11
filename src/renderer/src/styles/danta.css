@@ -168,6 +168,26 @@
     word-break: break-word;
 }
 
+/* 树洞表情：正文里的 ![](dx_*) 渲染成内联贴纸 */
+.dx-emoji {
+    display: inline-block;
+    height: 1.5em;
+    width: auto;
+    vertical-align: -0.35em;
+    margin: 0 1px;
+    user-select: none;
+}
+
+.dx-emoji-missing {
+    display: inline-block;
+    padding: 0 4px;
+    border-radius: 3px;
+    background: var(--color-bg-subtle);
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+    vertical-align: 1px;
+}
+
 .danta-summary {
     display: flex;
     flex-direction: column;
@@ -175,7 +195,6 @@
     padding-top: var(--space-3);
     border-top: 1px solid var(--color-border-subtle);
 }
-
 .danta-summary-head {
     display: flex;
     align-items: center;
