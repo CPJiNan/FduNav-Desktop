@@ -5,7 +5,10 @@ import type {LlmSettingsService} from './llm-settings'
 import {completeLlm} from './llm-connection'
 import {communityErrorText, DantaService} from './danta-service'
 import {DantaError} from './danta-parse'
-import type {DantaLoginInput, DantaStatus, DantaSummary} from '../shared/danta'
+import {createCampusToolAccess} from './danta-tools'
+import {getCampusChatTools} from './chat-tools'
+import {aiSearchTimeoutMs, runCampusSearch} from './danta-search'
+import type {AiSearchAnswer, DantaLoginInput, DantaStatus, DantaSummary} from '../shared/danta'
 import type {Result} from '../shared/accounts'
 
 const maxSummaryInput = 18_000
@@ -141,6 +144,51 @@ export function registerDantaHandlers(db: AppDatabase, accounts: AccountService,
         const courseId = integer(input.courseId, 0)
         const result = await service.courseReviews(courseId)
         return summarize(reviewSummaryPrompt, result)
+    })
+
+    let searching = false
+    ipcMain.handle('danta:ai-search', async (event, input: unknown): Promise<Result<AiSearchAnswer>> => {
+        if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
+        const raw = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}
+        const question = typeof raw.question === 'string' ? raw.question.trim() : ''
+        if (!question) return {ok: false, error: '请输入要搜索的问题。'}
+        if (question.length > 300) return {ok: false, error: '问题过长，请控制在 300 字以内。'}
+        if (searching) return {ok: false, error: '上一次搜索还在进行，请稍候。'}
+        searching = true
+        try {
+            await service.initialize()
+            const state = service.agentToolState()
+            if (!state.enabled) throw new DantaError('forbidden', '社区只读工具未启用，请在设置里开启「允许 AI 读取社区内容」后再搜索。')
+            const connection = await llm.getConnection()
+            const tools = getCampusChatTools(llm.get().toolDescriptions)
+            const campus = createCampusToolAccess(service)
+            const sender = event.sender
+            const runTool = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
+                if (name === 'search_campus_posts') {
+                    return campus.searchPosts(String(args.query ?? ''), Number(args.offset ?? 0), Number(args.limit ?? 10))
+                }
+                if (name === 'read_campus_thread') {
+                    return campus.readThread(Number(args.holeId ?? 0), Number(args.offset ?? 0), Number(args.limit ?? 10))
+                }
+                if (name === 'search_courses') {
+                    return campus.searchCourses(String(args.query ?? ''), Number(args.page ?? 1), Number(args.pageSize ?? 10))
+                }
+                if (name === 'read_course_reviews') return campus.courseReviews(Number(args.courseId ?? 0))
+                throw new DantaError('invalid_input', '不支持的检索工具。')
+            }
+            const data = await runCampusSearch({
+                question, connection, tools, runTool,
+                onStep: step => {
+                    if (!sender.isDestroyed()) sender.send('danta:ai-search-step', step)
+                },
+                signal: AbortSignal.timeout(aiSearchTimeoutMs),
+            })
+            return {ok: true, data}
+        } catch (error) {
+            return {ok: false, error: communityErrorText(error)}
+        } finally {
+            searching = false
+        }
     })
 
     return service

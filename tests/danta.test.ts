@@ -10,6 +10,7 @@ import {
     academicTerm, communityFeeds, planCredits, planSlotsOverlap,
     type CampusPage, type CourseOffering, type CourseReviewsResult, type CourseSearchPage,
 } from '../src/shared/danta.ts'
+import {parseToolArgs} from '../src/main/danta-search.ts'
 import {
     presentedReviewChars, presentCampusPage, presentCourseReviews, presentCourseSearch, presentTime
 } from '../src/main/danta-present.ts'
@@ -159,12 +160,12 @@ test('agent exposes the four read-only community tools with bounded arguments', 
 })
 
 test('resident feeds stay read-only and keep their declared source', () => {
-    assert.deepEqual(communityFeeds.map(feed => feed.id), ['featured', 'guide', 'selection'])
+    assert.deepEqual(communityFeeds.map(feed => feed.id), ['featured'])
     const featured = communityFeeds.find(feed => feed.id === 'featured')!
-    assert.equal(featured.kind, 'homepage')
-    assert.equal(featured.tag, null)
-    for (const feed of communityFeeds.filter(item => item.kind === 'tag')) {
-        assert.ok(feed.tag, `${feed.id} must carry a tag name`)
+    assert.equal(featured.tag, '#旦挞精选')
+    assert.equal(featured.label, '精选')
+    for (const feed of communityFeeds) {
+        assert.ok(feed.tag.trim(), `${feed.id} must carry a tag name`)
         assert.ok(feed.label.trim())
     }
 })
@@ -302,4 +303,26 @@ test('semester window ends the day before the next term starts', () => {
     assert.equal(semesterWindow(semesters, '3'), null)
     assert.equal(semesterWindow(semesters, 'missing'), null)
     assert.equal(semesterWindow([], '1'), null)
+})
+
+
+test('ai search rejects malformed tool arguments before they reach the network', () => {
+    const schema = {
+        type: 'object',
+        properties: {
+            query: {type: 'string', maxLength: 200},
+            limit: {type: 'integer', minimum: 1, maximum: 10},
+        },
+        required: ['query'],
+    }
+    assert.deepEqual(parseToolArgs(schema, JSON.stringify({query: '图书馆', limit: 3})), {query: '图书馆', limit: 3})
+    assert.throws(() => parseToolArgs(schema, 'not json'), /JSON/)
+    // 未知字段、缺必填、越界、超长都必须在这里被拦住
+    assert.throws(() => parseToolArgs(schema, JSON.stringify({query: 'x', evil: 1})), /未知字段/)
+    assert.throws(() => parseToolArgs(schema, JSON.stringify({limit: 3})), /缺失/)
+    assert.throws(() => parseToolArgs(schema, JSON.stringify({query: 'x', limit: 99})), /上限/)
+    assert.throws(() => parseToolArgs(schema, JSON.stringify({query: 'x', limit: 0})), /下限/)
+    assert.throws(() => parseToolArgs(schema, JSON.stringify({query: 'a'.repeat(201)})), /长度/)
+    assert.throws(() => parseToolArgs(schema, JSON.stringify({query: 5})), /类型/)
+    assert.throws(() => parseToolArgs(schema, JSON.stringify(['x'])), /对象/)
 })

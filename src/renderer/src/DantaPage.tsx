@@ -1,5 +1,7 @@
 import {type FormEvent, useEffect, useRef, useState} from 'react'
 import {
+    type AiSearchAnswer,
+    type AiSearchStep,
     type CampusHolePost,
     type CampusPage,
     type CampusPost,
@@ -31,7 +33,12 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
     const [thread, setThread] = useState<CampusPage | null>(null)
     const [summary, setSummary] = useState('')
     const [summaryError, setSummaryError] = useState('')
-    const [mode, setMode] = useState<'feed' | 'search'>('feed')
+    const [mode, setMode] = useState<'feed' | 'search' | 'ai'>('feed')
+    const [aiQuestion, setAiQuestion] = useState('')
+    const [aiAnswer, setAiAnswer] = useState<AiSearchAnswer | null>(null)
+    const [aiSteps, setAiSteps] = useState<AiSearchStep[]>([])
+    const [aiBusy, setAiBusy] = useState(false)
+    const [aiError, setAiError] = useState('')
     const [feedId, setFeedId] = useState(communityFeeds[0].id)
     const [feedResults, setFeedResults] = useState<CampusHolePost[]>([])
     const [feedCursor, setFeedCursor] = useState<string | null>(null)
@@ -56,6 +63,34 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
     }, [api])
 
     const connected = status?.account === 'connected'
+
+    useEffect(() => {
+        if (!connected) return
+        return api?.onAiSearchStep?.(step => setAiSteps(previous => [...previous, step]))
+    }, [api, connected])
+
+    async function runAiSearch(event: FormEvent) {
+        event.preventDefault()
+        if (!api || aiBusy) return
+        const text = aiQuestion.trim()
+        if (!text) {
+            setAiError('请输入要搜索的问题。')
+            return
+        }
+        setAiBusy(true)
+        setAiError('')
+        setAiAnswer(null)
+        setAiSteps([])
+        try {
+            const result = await api.aiSearch({question: text})
+            if (!result.ok) setAiError(result.error)
+            else setAiAnswer(result.data)
+        } catch {
+            setAiError('AI 搜索失败，请检查 LLM 设置后重试。')
+        } finally {
+            setAiBusy(false)
+        }
+    }
 
     async function loadFeed(target: string, cursor: string | null) {
         if (!api || feedBusy) return
@@ -225,6 +260,9 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                     <button type="button" role="tab" aria-selected={mode === 'search'}
                             className={`danta-tab${mode === 'search' ? ' is-active' : ''}`}
                             onClick={() => setMode('search')}>搜索</button>
+                    <button type="button" role="tab" aria-selected={mode === 'ai'}
+                            className={`danta-tab${mode === 'ai' ? ' is-active' : ''}`}
+                            onClick={() => setMode('ai')}>AI 搜索</button>
                 </div>
                 {mode === 'search' && <>
                     <form className="danta-search" onSubmit={search}>
@@ -275,6 +313,42 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                     {!feedBusy && feedCursor !== null && <button type="button" className="secondary-button danta-more"
                                                                 onClick={() => void loadFeed(feedId, feedCursor)}>加载更多</button>}
                 </>}
+                {mode === 'ai' && <div className="danta-ai">
+                    <form className="danta-search" onSubmit={runAiSearch}>
+                        <input type="search" value={aiQuestion} onChange={event => setAiQuestion(event.target.value)}
+                               placeholder="直接问，例如：概率论 H 的作业和给分怎么样" maxLength={300}
+                               aria-label="AI 搜索问题"/>
+                        <button type="submit" className="primary-button"
+                                disabled={aiBusy || !aiQuestion.trim()}>{aiBusy ? '检索中…' : '搜索'}</button>
+                    </form>
+                    {!aiAnswer && !aiBusy && !aiError &&
+                        <p className="danta-empty-note">AI 会先检索树洞帖子与课评，再给出带帖子编号的结论。</p>}
+                    {aiError && <p className="danta-error" role="alert">{aiError}</p>}
+                    {aiSteps.length > 0 && <div className="danta-ai-steps">
+                        <p className="danta-ai-steps-head">执行过程{aiBusy ? '（进行中）' : ''}</p>
+                        <ol>{aiSteps.map((step, index) => <li key={`${step.label}:${index}`}>
+                            <span className="danta-ai-step-label">{step.label}</span>
+                            {step.detail && <span className="danta-ai-step-detail">{step.detail}</span>}
+                        </li>)}</ol>
+                    </div>}
+                    {aiAnswer && <div className="danta-ai-answer">
+                        <p className="danta-ai-text">{aiAnswer.answer}</p>
+                        {aiAnswer.sources.length > 0 && <div className="danta-ai-sources">
+                            <h3>参考帖子</h3>
+                            <ul>{aiAnswer.sources.map(source => <li key={source.holeId}>
+                                <button type="button" className="danta-ai-source"
+                                        onClick={() => void openThread(source.holeId)}>
+                                    <span className="danta-result-meta">
+                                        #{source.holeId}{source.time && ` · ${source.time}`}
+                                    </span>
+                                    <span className="danta-ai-source-text"><PostContent text={source.content}/></span>
+                                </button>
+                            </li>)}</ul>
+                        </div>}
+                        {aiAnswer.truncated &&
+                            <p className="danta-empty-note">检索轮次已用完，结论可能不完整。</p>}
+                    </div>}
+                </div>}
             </section>
             <aside className="danta-thread">
                 {!thread && <p className="danta-empty-note">从左侧选择一条结果，查看帖子上下文。</p>}

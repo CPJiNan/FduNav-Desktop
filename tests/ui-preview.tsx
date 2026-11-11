@@ -298,6 +298,23 @@ window.danta = {
     getCourseReviews: () => result(reviews),
     summarizeThread: () => result({summary: '1. 一楼自习区期末满座，二楼东侧靠窗有位，可用插座。\n2. 一楼靠门较吵；文理馆四楼更安静但 21:30 关门。\n3. 图书馆一楼开到 22:30，适合晚间自习。', model: 'demo-model'}),
     summarizeCourse: () => result({summary: '教学：坚持板书、推导清楚，节奏偏快。\n作业：每周一次，认真做能跟上。\n考核：期末难度中等，给分正常。\n提醒：期中之后内容明显变难，建议提前复习。', model: 'demo-model'}),
+    aiSearch: () => result({
+        answer: '结论：作业每周一次，量不大但要按时交；期末难度中等，给分正常（#763115）。\n\n1. 教学：坚持板书推导，节奏偏快，课前预习有帮助（#762725）。\n2. 考核：期末占七成，平时作业与出勤占三成（#763125）。\n3. 建议：期中之后内容明显变难，提前两周复习（#763115）。',
+        sources: [
+            {index: 1, holeId: 763115, content: '期末占比七成，平时作业和出勤三成；作业每周一次，题量不算大。', time: '2026-11-11 18:46'},
+            {index: 2, holeId: 762725, content: '老师坚持板书，推导很细但节奏快，建议课前先看讲义。', time: '2026-11-10 21:03'},
+            {index: 3, holeId: 763125, content: '期中之后明显变难，建议提前两周开始复习。', time: '2026-11-11 19:02'},
+        ],
+        steps: [
+            {label: '理解问题', detail: '第 1 轮'},
+            {label: '检索树洞', detail: 'query=概率论 H'},
+            {label: '读取树洞帖子', detail: 'holeId=763115'},
+            {label: '整理检索结果', detail: '给出结论'},
+        ],
+        model: 'demo-model',
+        truncated: false,
+    }),
+    onAiSearchStep: () => () => {},
     getPlan: () => result(plan),
     savePlan: items => result(items),
 }

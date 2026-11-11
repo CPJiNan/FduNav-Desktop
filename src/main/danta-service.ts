@@ -447,7 +447,6 @@ export class DantaService implements DantaSession {
         if (url.origin === 'https://forum.fduhole.com') {
             return url.pathname === '/api/floors/search' ||
                 url.pathname === '/api/holes' ||
-                url.pathname === '/api/holes/_homepage' ||
                 /^\/api\/holes\/[1-9]\d*(?:\/floors)?$/.test(url.pathname)
         }
         if (url.origin === 'https://danke.fduhole.com') {
@@ -483,7 +482,7 @@ export class DantaService implements DantaSession {
     }
 
     /**
-     * 常驻分区：精选读 /holes/_homepage，其余按标签读 /holes。
+     * 常驻分区：按标签读 /holes（精选 = 「#旦挞精选」）。
      * 服务端一次最多返回 10 条且不认 length>10，所以 limit 上限收紧为 10。
      */
     async feed(feedId: string, cursor: string | null = null, limit = 10): Promise<CampusFeedPage> {
@@ -493,14 +492,9 @@ export class DantaService implements DantaSession {
         if (cursor !== null && (typeof cursor !== 'string' || Number.isNaN(Date.parse(cursor)))) {
             throw new DantaError('invalid_input', '分页位置无效。')
         }
-        let raw: unknown
-        if (feed.kind === 'homepage') {
-            raw = await this.get(`${FORUM_BASE}/holes/_homepage?size=${limit}`)
-        } else {
-            const params = new URLSearchParams({length: String(limit), tag: feed.tag ?? ''})
-            if (cursor) params.set('start_time', cursor)
-            raw = await this.get(`${FORUM_BASE}/holes?${params}`)
-        }
+        const params = new URLSearchParams({length: String(limit), tag: feed.tag})
+        if (cursor) params.set('start_time', cursor)
+        const raw = await this.get(`${FORUM_BASE}/holes?${params}`)
         const results = parseCampusHoles(raw, {limit})
         const oldest = results.reduce<string | null>((acc, item) =>
             acc === null || Date.parse(item.timeCreated) < Date.parse(acc) ? item.timeCreated : acc, null)

@@ -14,7 +14,7 @@ import type {MemoryAPI} from '../shared/memory'
 import type {ChatAPI, ChatPushState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
-import type {DantaAPI} from '../shared/danta'
+import type {AiSearchStep, DantaAPI} from '../shared/danta'
 
 const danta: DantaAPI = {
     status: () => ipcRenderer.invoke('danta:state'),
@@ -31,6 +31,14 @@ const danta: DantaAPI = {
     getCourseReviews: courseId => ipcRenderer.invoke('danta:course-reviews', {courseId}),
     summarizeThread: holeId => ipcRenderer.invoke('danta:summarize-thread', {holeId}),
     summarizeCourse: courseId => ipcRenderer.invoke('danta:summarize-course', {courseId}),
+    aiSearch: input => ipcRenderer.invoke('danta:ai-search', input),
+    onAiSearchStep: listener => {
+        const handler = (_event: Electron.IpcRendererEvent, step: AiSearchStep) => listener(step)
+        ipcRenderer.on('danta:ai-search-step', handler)
+        return () => {
+            ipcRenderer.removeListener('danta:ai-search-step', handler)
+        }
+    },
     getPlan: () => ipcRenderer.invoke('danta:plan-get'),
     savePlan: items => ipcRenderer.invoke('danta:plan-save', {items}),
 }

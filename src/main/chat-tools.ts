@@ -148,6 +148,11 @@ export function configuredChatTools(descriptions: Record<ChatToolName, string>):
     }))
 }
 
+/** AI 搜索只需要四个社区只读工具，复用同一份 schema 与描述覆盖机制。 */
+export function getCampusChatTools(descriptions: Record<ChatToolName, string>): ChatTool[] {
+    return configuredChatTools(descriptions).filter(item => campusToolNames.has(item.function.name))
+}
+
 export const chatToolLabels: Record<string, string> = {
     remember: '请求保存记忆', recall: '查询记忆', forget: '请求删除记忆',
     search_notices: '检索通知', get_notice: '读取通知',

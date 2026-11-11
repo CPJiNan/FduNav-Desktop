@@ -160,21 +160,16 @@ export function planCredits(items: PlanItem[]): number {
     return items.reduce((total, item) => total + (typeof item.credit === 'number' ? item.credit : 0), 0)
 }
 
-export type CommunityFeedKind = 'homepage' | 'tag'
-
-/** 常驻分区：精选走官方首页推荐流，攻略与选课按标签拉取；两者都只读。 */
+/** 常驻分区：目前只有「精选」，取带「#旦挞精选」标签的帖子，只读。 */
 export interface CommunityFeed {
     id: string
     label: string
-    kind: CommunityFeedKind
-    tag: string | null
+    tag: string
     hint: string
 }
 
 export const communityFeeds: CommunityFeed[] = [
-    {id: 'featured', label: '精选', kind: 'homepage', tag: null, hint: '旦挞首页推荐流'},
-    {id: 'guide', label: '攻略', kind: 'tag', tag: '攻略', hint: '同学写的经验与攻略'},
-    {id: 'selection', label: '选课', kind: 'tag', tag: '选课', hint: '选课、退课与换课讨论'},
+    {id: 'featured', label: '精选', tag: '#旦挞精选', hint: '带「#旦挞精选」标签的帖子'},
 ]
 
 /** 常驻分区的一条帖子：取首层正文，附标签、回复数与浏览量。 */
@@ -201,8 +196,34 @@ export interface CampusFeedPage {
 
 export const campusFeedNotice = '常驻分区来自旦挞公开列表，只读；正文已做基础脱敏，排序由服务端决定。'
 
+/** AI 搜索引用的一条帖子；编号在结果里按出现顺序从 1 开始。 */
+export interface AiSearchSource {
+    index: number
+    holeId: number
+    content: string
+    time: string | null
+}
+
+/** AI 搜索的一步执行记录：给界面显示「正在做什么」。 */
+export interface AiSearchStep {
+    label: string
+    detail: string
+}
+
+export interface AiSearchAnswer {
+    answer: string
+    sources: AiSearchSource[]
+    steps: AiSearchStep[]
+    model: string
+    truncated: boolean
+}
+
 export interface DantaAPI {
     status(): Promise<Result<DantaStatus>>
+
+    aiSearch(input: { question: string }): Promise<Result<AiSearchAnswer>>
+
+    onAiSearchStep(listener: (step: AiSearchStep) => void): () => void
 
     feed(input: { feedId: string; cursor?: string | null; limit?: number }): Promise<Result<CampusFeedPage>>
 
