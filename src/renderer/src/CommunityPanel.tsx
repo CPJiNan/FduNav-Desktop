@@ -183,7 +183,7 @@ export function CommunityPanel() {
             : phase === 'check' || school === 'checking' ? '正在探测网络通路'
                 : phase === 'login' ? '正在验证社区账号'
                     : phase === 'logout' ? '正在断开连接'
-                        : ready ? (direct ? '已就绪 · 直连' : '已就绪 · WebVPN')
+                        : ready ? '已就绪'
                             : schoolReady ? '等待社区登录' : '未连接'
 
     // 直连失败的原因单独一行：它决定了用户下一步该关网关还是换网络，不该混进状态描述里被跳过。
@@ -225,7 +225,7 @@ export function CommunityPanel() {
             <div className="community-head-text">
                 <h2>校园社区（树洞 / 课评）</h2>
                 <p className="community-note">
-                    社区数据来自旦挞（FDUHole / Danke），只读。打开面板会先探测能否直连：能直连就跳过学校 WebVPN，只登录社区账号；直连不通才需要走 WebVPN 转发。
+                    社区数据来自旦挞（FDUHole / Danke），只读。打开面板会自动探测：能直连就不用登录学校网络，直连不通才走 WebVPN。
                 </p>
             </div>
             <span className={`community-summary is-${summaryTone}`} role="status" aria-live="polite">
@@ -268,7 +268,7 @@ export function CommunityPanel() {
                 {phase === 'check' ? <Spin/> : <Icon name="refresh"/>}
                 <span>{school === 'ready' ? '重新检测通路' : '检测网络'}</span>
             </button>
-            {connected && <button type="button" className="secondary-button community-action" data-busy={phase === 'logout'}
+            {connected && <button type="button" className="secondary-button community-action community-action-danger" data-busy={phase === 'logout'}
                                   disabled={busy || !api}
                                   onClick={() => api && void run('logout', () => api.logout())}>
                 {phase === 'logout' ? <Spin/> : null}

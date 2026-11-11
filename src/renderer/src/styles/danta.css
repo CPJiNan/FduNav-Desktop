@@ -27,6 +27,14 @@
     font-size: var(--font-size-sm);
 }
 
+.danta-body.is-single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.danta-body.is-single .danta-thread {
+    display: none;
+}
+
 .danta-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
@@ -102,6 +110,7 @@
 }
 
 .danta-result-content {
+    max-width: 74ch;
     display: -webkit-box;
     overflow: hidden;
     -webkit-box-orient: vertical;

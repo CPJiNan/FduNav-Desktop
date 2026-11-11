@@ -193,7 +193,7 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
     if (status && !connected) return <div className="danta-page">
         <header className="danta-head"><div>
             <h1>树洞</h1>
-            <p className="danta-subtitle">搜索旦挞社区帖子，读取帖子上下文；只读，不会发帖或回复。</p>
+            <p className="danta-subtitle">浏览和搜索旦挞社区帖子；只读，不会发帖或回复。</p>
         </div></header>
         <div className="danta-empty">
             <p>还没有连接旦挞社区账号。</p>
@@ -206,12 +206,12 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
         <header className="danta-head">
             <div>
                 <h1>树洞</h1>
-                <p className="danta-subtitle">搜索旦挞社区帖子，读取帖子上下文；只读，不会发帖或回复。</p>
+                <p className="danta-subtitle">浏览和搜索旦挞社区帖子；只读，不会发帖或回复。</p>
             </div>
             <button type="button" className="secondary-button" onClick={onSettings}>账号设置</button>
         </header>
         {error && <p className="danta-error" role="alert">{error}</p>}
-        <div className="danta-body">
+        <div className={`danta-body${thread ? '' : ' is-single'}`}>
             <section className="danta-list" aria-busy={!!busy || !!feedBusy}>
                 <div className="danta-tabs" role="tablist" aria-label="树洞分区">
                     {communityFeeds.map(feed => <button key={feed.id} type="button" role="tab"
@@ -240,7 +240,7 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                     <ul className="danta-results">
                         {results.map(item => <li key={`${item.holeId}:${item.floorId}`}>
                             <button type="button" className="danta-result" onClick={() => void openThread(item.holeId)}>
-                                <span className="danta-result-meta">帖子 #{item.holeId} · 楼层 #{item.floorId} · {formatTime(item.timeCreated)}
+                                <span className="danta-result-meta">#{item.holeId} · 楼层 #{item.floorId} · {formatTime(item.timeCreated)}
                                     {item.redacted && <span className="danta-badge">已脱敏</span>}</span>
                                 <span className="danta-result-content"><PostContent text={item.content}/></span>
                             </button>
@@ -252,14 +252,14 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                 {mode === 'feed' && <>
                     <p className="danta-empty-note">
                         {communityFeeds.find(feed => feed.id === feedId)?.hint ?? ''}
-                        {feedLoaded ? ' · 只读列表，点开可看完整帖子。' : ''}
+                        {feedLoaded ? ' · 点开可看完整帖子。' : ''}
                     </p>
                     {feedLoaded && feedResults.length === 0 && !feedBusy &&
                         <p className="danta-empty-note">这个分区暂时没有内容。</p>}
                     <ul className="danta-results">
                         {feedResults.map(item => <li key={item.holeId}>
                             <button type="button" className="danta-result" onClick={() => void openThread(item.holeId)}>
-                                <span className="danta-result-meta">帖子 #{item.holeId}
+                                <span className="danta-result-meta">#{item.holeId}
                                     {item.reply !== null && ` · ${item.reply} 条回复`}
                                     {item.view !== null && ` · ${item.view} 次浏览`}
                                     {` · ${formatTime(item.timeCreated)}`}

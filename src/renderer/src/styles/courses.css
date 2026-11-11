@@ -58,6 +58,18 @@
     box-shadow: var(--shadow-sm);
 }
 
+.courses-detail-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 10rem;
+    padding: var(--space-4);
+    border: 1px dashed var(--color-border-subtle);
+    border-radius: var(--radius-lg);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
 .courses-body {
     display: grid;
     grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);

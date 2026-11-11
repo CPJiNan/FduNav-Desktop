@@ -283,7 +283,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
         <header className="courses-head">
             <div>
                 <h1>课评与选课</h1>
-                <p className="courses-subtitle">课程组 → 具体开课 → 课评；课表、备选与考试放在一起做选课规划。</p>
+                <p className="courses-subtitle">搜索课程组查看课评；课表、备选与考试统一规划。</p>
             </div>
             <div className="courses-head-actions">
                 <div className="courses-tabs" role="tablist" aria-label="课评与选课视图">
@@ -308,8 +308,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                                placeholder="课程名或代码，例如 概率论" maxLength={200} aria-label="搜索课程"/>
                         <button type="submit" className="primary-button" disabled={!!busy || !query.trim()}>搜索</button>
                     </form>
-                    {!searched && <p className="courses-empty-note">搜索结果先给课程组，点开能看到历次开课与课评。</p>}
-                    {searched && groups.length === 0 && !busy &&
+                                        {searched && groups.length === 0 && !busy &&
                         <p className="courses-empty-note">没有匹配的课程组。</p>}
                     <ul className="courses-groups">
                         {groups.map(item => <li key={item.id}>
@@ -332,7 +331,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                 </div>
             </section>
             <section className="courses-detail">
-                {!group && <p className="courses-empty-note">从左侧选一个课程组。</p>}
+                {!group && <div className="courses-detail-empty"><p>搜索课程组后，这里显示开课记录与课评</p></div>}
                 {group && <>
                     <div className="courses-group-head">
                         <div>

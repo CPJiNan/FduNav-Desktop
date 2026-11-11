@@ -449,6 +449,10 @@
     height: 14px;
 }
 
+.secondary-button.community-action-danger {
+    color: var(--color-danger);
+}
+
 .community-action[data-busy="true"] {
     cursor: progress;
 }
