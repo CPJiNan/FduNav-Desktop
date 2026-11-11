@@ -215,6 +215,16 @@
     background: var(--color-bg-surface);
 }
 
+/* 展开排课表单时切成上下两段，否则表单会和条目挤在同一行并溢出侧栏。 */
+.courses-plan-list li.is-editing {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.courses-plan-list li.is-editing .courses-plan-editor {
+    width: 100%;
+}
+
 .courses-plan-list strong {
     display: block;
     font-size: var(--font-size-sm);
@@ -443,6 +453,107 @@
 .courses-slot .courses-slot-warning {
     color: var(--color-danger);
     font-weight: var(--font-weight-semibold);
+}
+
+/* 模拟排课的课程块：虚线描边 + 浅底纹，和已选课程区分开。 */
+.courses-slot.is-planned {
+    z-index: 3;
+    border: 1px dashed var(--color-accent, #2f6fed);
+    background: color-mix(in srgb, var(--color-accent, #2f6fed) 18%, var(--color-bg-elevated));
+    color: var(--color-text-primary);
+}
+
+.courses-slot.is-planned span {
+    color: var(--color-text-muted);
+}
+
+/* 与已选课程撞时段时盖在上面，避免两层文字叠在一起糊成一片。 */
+.courses-slot.is-conflict {
+    z-index: 4;
+    border: 1px dashed var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 16%, var(--color-bg-elevated));
+}
+
+.courses-plan-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.courses-plan-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.courses-plan-slot {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.courses-plan-slot.is-conflict {
+    color: var(--color-danger);
+    font-weight: var(--font-weight-semibold);
+}
+
+.text-button {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.text-button:hover:not(:disabled) {
+    background: var(--color-bg-subtle);
+    color: var(--color-text-primary);
+}
+
+.courses-plan-editor {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-subtle);
+}
+
+.courses-plan-editor label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+}
+
+.courses-plan-editor select {
+    width: 4.5rem;
+}
+
+.courses-plan-editor input {
+    width: 3.5rem;
+    padding: 3px 6px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-xs);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+}
+
+.courses-plan-editor-actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-left: auto;
 }
 
 @media (max-width: 960px) {

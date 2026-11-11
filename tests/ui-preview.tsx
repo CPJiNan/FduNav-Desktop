@@ -261,8 +261,8 @@ const reviews: CourseReviewsResult = {
 }
 
 const plan: PlanItem[] = [
-    {courseId: 33001, groupId: 1201, groupName: '概率论', name: '概率论', teachers: '应坚刚', term: '2025-2026 学年 秋季', note: '', addedAt: at(-3600_000)},
-    {courseId: 33110, groupId: 1188, groupName: '泛函分析', name: '泛函分析', teachers: '张青青', term: '2025-2026 学年 秋季', note: '', addedAt: at(-3500_000)},
+    {courseId: 33001, groupId: 1201, groupName: '概率论', name: '概率论', teachers: '应坚刚', term: '2025-2026 学年 秋季', note: '', addedAt: at(-3600_000), credit: 4, slot: {weekday: 1, startUnit: 1, endUnit: 2}},
+    {courseId: 33110, groupId: 1188, groupName: '泛函分析', name: '泛函分析', teachers: '张青青', term: '2025-2026 学年 秋季', note: '', addedAt: at(-3500_000), credit: 4, slot: null},
 ]
 
 const timetable: Timetable = {

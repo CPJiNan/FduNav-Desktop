@@ -127,7 +127,14 @@ export interface DantaSummary {
     model: string
 }
 
-/** 预选课备选清单：蛋挞只提供课程与课评，具体排课时间在课程表刷新后才有。 */
+/** 模拟排课时间段：星期几与起止节次，由用户在备选清单里自己摆放。 */
+export interface PlanSlot {
+    weekday: number
+    startUnit: number
+    endUnit: number
+}
+
+/** 预选课备选清单：蛋挞只提供课程与课评，排课时间由用户手动指定。 */
 export interface PlanItem {
     courseId: number
     groupId: number
@@ -137,6 +144,20 @@ export interface PlanItem {
     term: string
     note: string
     addedAt: string
+    /** 学分取自开课记录，缺省表示未知，不计入总学分。 */
+    credit?: number | null
+    /** 用户手动摆放的时段；未排课时为 null 或缺失。 */
+    slot?: PlanSlot | null
+}
+
+/** 两个排课时段是否冲突：同一天且节次区间相交。 */
+export function planSlotsOverlap(left: PlanSlot, right: PlanSlot): boolean {
+    return left.weekday === right.weekday && left.startUnit <= right.endUnit && right.startUnit <= left.endUnit
+}
+
+/** 备选清单已知学分之和，学分未知的课程按 0 计。 */
+export function planCredits(items: PlanItem[]): number {
+    return items.reduce((total, item) => total + (typeof item.credit === 'number' ? item.credit : 0), 0)
 }
 
 export type CommunityFeedKind = 'homepage' | 'tag'

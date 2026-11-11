@@ -5,7 +5,10 @@ import {
     DantaError, maxPostChars, maxReviewChars, nextOffsetFor, parseCampusHoles, parseCampusPosts,
     parseCourseGroups, parseCourseGroup, parseReviews, parseThreadMeta, redactPersonal
 } from '../src/main/danta-parse.ts'
-import {academicTerm, communityFeeds, type CampusPage, type CourseOffering, type CourseReviewsResult, type CourseSearchPage} from '../src/shared/danta.ts'
+import {
+    academicTerm, communityFeeds, planCredits, planSlotsOverlap,
+    type CampusPage, type CourseOffering, type CourseReviewsResult, type CourseSearchPage,
+} from '../src/shared/danta.ts'
 import {
     presentedReviewChars, presentCampusPage, presentCourseReviews, presentCourseSearch, presentTime
 } from '../src/main/danta-present.ts'
@@ -271,4 +274,17 @@ test('course reviews are clipped per entry and drop internal ids', () => {
     assert.equal(presented.reviews[0].time, '2026-11-10 20:00')
     assert.equal(presented.course.term, academicTerm(2024, 1))
     assert.ok(!('codeId' in presented.course) && !('department' in presented.course))
+})
+
+test('plan slots detect overlaps and credits only count known values', () => {
+    const monday = {weekday: 1, startUnit: 1, endUnit: 2}
+    assert.equal(planSlotsOverlap(monday, {weekday: 1, startUnit: 2, endUnit: 3}), true)
+    assert.equal(planSlotsOverlap(monday, {weekday: 1, startUnit: 3, endUnit: 4}), false)
+    assert.equal(planSlotsOverlap(monday, {weekday: 2, startUnit: 1, endUnit: 2}), false)
+    const base = {groupId: 1, groupName: 'g', teachers: '', term: '', note: '', addedAt: '2026-11-11T00:00:00Z'}
+    assert.equal(planCredits([
+        {...base, courseId: 1, name: 'a', credit: 4, slot: null},
+        {...base, courseId: 2, name: 'b', credit: null, slot: null},
+        {...base, courseId: 3, name: 'c'},
+    ]), 4)
 })

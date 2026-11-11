@@ -1,8 +1,8 @@
 import {type FormEvent, useEffect, useMemo, useState} from 'react'
 import type {
-    CourseGroupDetail, CourseGroupSummary, CourseOffering, CourseReviewsResult, DantaStatus, PlanItem
+    CourseGroupDetail, CourseGroupSummary, CourseOffering, CourseReviewsResult, DantaStatus, PlanItem, PlanSlot
 } from '../../shared/danta'
-import {academicTerm, courseGroupLabel} from '../../shared/danta'
+import {academicTerm, courseGroupLabel, planCredits, planSlotsOverlap} from '../../shared/danta'
 import type {CalendarEvent} from '../../shared/calendar'
 import type {Timetable, TimetableCourse} from '../../shared/timetable'
 import {courseStartTimes} from '../../shared/timetable'
@@ -60,6 +60,8 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     const [summary, setSummary] = useState('')
     const [summaryError, setSummaryError] = useState('')
     const [plan, setPlan] = useState<PlanItem[]>([])
+    const [editing, setEditing] = useState<number | null>(null)
+    const [draft, setDraft] = useState<PlanSlot>({weekday: 1, startUnit: 1, endUnit: 2})
     const [timetable, setTimetable] = useState<Timetable | null>(null)
     const [exams, setExams] = useState<CalendarEvent[]>([])
     const [busy, setBusy] = useState('')
@@ -93,6 +95,36 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     const conflicts = useMemo(() => conflictingCourses(timetable?.courses ?? []), [timetable])
     const enrolled = useMemo(() => (timetable?.courses ?? []).map(item => normalize(item.name)), [timetable])
     const inPlan = (courseId: number) => plan.some(item => item.courseId === courseId)
+    const planned = useMemo(() => plan.filter(item => item.slot), [plan])
+    const planCreditTotal = useMemo(() => planCredits(plan), [plan])
+    /** 模拟排课与已选课表、以及彼此之间的时间冲突。 */
+    const slotConflicts = useMemo(() => {
+        const bad = new Set<number>()
+        for (let index = 0; index < planned.length; index++) {
+            for (let next = index + 1; next < planned.length; next++) {
+                if (planSlotsOverlap(planned[index].slot!, planned[next].slot!)) {
+                    bad.add(planned[index].courseId)
+                    bad.add(planned[next].courseId)
+                }
+            }
+            for (const course of timetable?.courses ?? []) {
+                const slot = {weekday: course.weekday, startUnit: course.startUnit, endUnit: course.endUnit}
+                if (planSlotsOverlap(planned[index].slot!, slot)) bad.add(planned[index].courseId)
+            }
+        }
+        return bad
+    }, [planned, timetable])
+    /** 已选课程里被模拟排课撞上的那些，用来在课表上同步标红。 */
+    const enrolledClashes = useMemo(() => {
+        const bad = new Set<string>()
+        for (const item of planned) {
+            for (const course of timetable?.courses ?? []) {
+                const slot = {weekday: course.weekday, startUnit: course.startUnit, endUnit: course.endUnit}
+                if (planSlotsOverlap(item.slot!, slot)) bad.add(course.id)
+            }
+        }
+        return bad
+    }, [planned, timetable])
 
     async function search(event: FormEvent) {
         event.preventDefault()
@@ -207,6 +239,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                 courseId: course.id, groupId: group.id, groupName: group.name, name: course.name,
                 teachers: course.teachers, term: academicTerm(course.year, course.semester),
                 note: '', addedAt: new Date().toISOString(),
+                credit: typeof course.credit === 'number' ? course.credit : null, slot: null,
             }
             const result = await api.savePlan([...plan, item])
             if (!result.ok) setError(result.error)
@@ -227,6 +260,29 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
             else setPlan(result.data)
         } catch {
             setError('更新备选失败，请稍后重试。')
+        } finally {
+            setBusy('')
+        }
+    }
+
+    async function saveSlot(courseId: number, slot: PlanSlot | null) {
+        if (!api || busy) return
+        if (slot && slot.endUnit < slot.startUnit) {
+            setError('结束节次不能早于开始节次。')
+            return
+        }
+        setBusy(slot ? '正在保存排课…' : '正在清除排课…')
+        setError('')
+        try {
+            const next = plan.map(item => item.courseId === courseId ? {...item, slot} : item)
+            const result = await api.savePlan(next)
+            if (!result.ok) setError(result.error)
+            else {
+                setPlan(result.data)
+                setEditing(null)
+            }
+        } catch {
+            setError('保存排课失败，请稍后重试。')
         } finally {
             setBusy('')
         }
@@ -403,6 +459,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                         <p className="courses-group-meta">
                             {timetable ? `已选 ${schedule.length} 门课 · ${timetable.semesterId || '当前学期'}` : '还没有课表缓存'}
                             {conflicts.size > 0 && ` · ${conflicts.size} 门课存在时间冲突`}
+                            {plan.length > 0 && ` · 备选 ${plan.length} 门，已排 ${planned.length} 门，共 ${planCreditTotal} 学分`}
                         </p>
                     </div>
                     <button type="button" className="secondary-button" disabled={!!busy}
@@ -424,7 +481,8 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                             <div className="courses-grid-slots">
                                 {schedule.map(item => {
                                     const color = courseColor(item)
-                                    return <button type="button" key={item.id} className="courses-slot"
+                                    const clash = enrolledClashes.has(item.id)
+                                    return <button type="button" key={item.id} className={`courses-slot${clash ? ' is-conflict' : ''}`}
                                                    style={{
                                                        left: `${((item.weekday - 1) / 7) * 100}%`,
                                                        width: `${(1 / 7) * 100}%`,
@@ -439,10 +497,31 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                                         {conflicts.has(item.id) && <span className="courses-slot-warning">冲突</span>}
                                     </button>
                                 })}
+                                {planned.map(item => {
+                                    const slot = item.slot!
+                                    const conflicted = slotConflicts.has(item.courseId)
+                                    return <button type="button" key={`plan-${item.courseId}`}
+                                                   className={`courses-slot is-planned${conflicted ? ' is-conflict' : ''}`}
+                                                   style={{
+                                                       left: `${((slot.weekday - 1) / 7) * 100}%`,
+                                                       width: `${(1 / 7) * 100}%`,
+                                                       top: ((slot.startUnit - 1) / periodCount) * 100 + '%',
+                                                       height: ((slot.endUnit - slot.startUnit + 1) / periodCount) * 100 + '%',
+                                                   }}
+                                                   title={`${item.name}（备选）· ${item.teachers || '教师未知'} · ${weekdayLabels[slot.weekday - 1]} 第 ${slot.startUnit}–${slot.endUnit} 节`}
+                                                   onClick={() => {
+                                                       setEditing(item.courseId)
+                                                       setDraft(slot)
+                                                   }}>
+                                        <strong>{item.name}</strong>
+                                        <span>备选</span>
+                                        {conflicted && <span className="courses-slot-warning">冲突</span>}
+                                    </button>
+                                })}
                             </div>
                         </div>
                     </div>}
-                <p className="courses-empty-note">点课程块打开教学大纲。备选课程来自蛋挞，没有教务排课时间，冲突检查只对已选课程生效。</p>
+                <p className="courses-empty-note">点课程块打开教学大纲。备选课程来自蛋挞，没有教务排课时间，需要自己指定时段做模拟排课；冲突检查同时覆盖已选课程与模拟排课。</p>
             </section>
             <aside className="courses-side">
                 <div className="courses-block-head">
@@ -451,17 +530,59 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                 </div>
                 {plan.length === 0 && <p className="courses-empty-note">在“课程与课评”里把想选的课加入备选。</p>}
                 <ul className="courses-plan-list">
-                    {plan.map(item => <li key={item.courseId}>
-                        <div>
-                            <strong>{item.name}</strong>
-                            <span className="courses-group-meta">{item.teachers || '教师未知'} · {item.term}</span>
-                            {enrolled.includes(normalize(item.name)) &&
-                                <span className="courses-badge is-enrolled">已在课表</span>}
+                    {plan.map(item => <li key={item.courseId} className={editing === item.courseId ? 'is-editing' : ''}>
+                        <div className="courses-plan-main">
+                            <div>
+                                <strong>{item.name}</strong>
+                                <span className="courses-group-meta">
+                                    {item.teachers || '教师未知'}
+                                    {typeof item.credit === 'number' ? ` · ${item.credit} 学分` : ''}
+                                </span>
+                                {enrolled.includes(normalize(item.name)) &&
+                                    <span className="courses-badge is-enrolled">已在课表</span>}
+                                <span className={`courses-plan-slot${item.slot && slotConflicts.has(item.courseId) ? ' is-conflict' : ''}`}>
+                                    {item.slot
+                                        ? `${weekdayLabels[item.slot.weekday - 1]} 第 ${item.slot.startUnit}–${item.slot.endUnit} 节`
+                                        : '未排课'}
+                                    <button type="button" className="text-button" disabled={!!busy}
+                                            onClick={() => {
+                                                setEditing(item.courseId)
+                                                setDraft(item.slot ?? {weekday: 1, startUnit: 1, endUnit: 2})
+                                            }}>
+                                        {item.slot ? '改' : '排课'}
+                                    </button>
+                                </span>
+                            </div>
+                            <button type="button" className="icon-button" aria-label={`移除 ${item.name}`}
+                                    disabled={!!busy} onClick={() => void removeFromPlan(item.courseId)}>
+                                <Icon name="close"/>
+                            </button>
                         </div>
-                        <button type="button" className="icon-button" aria-label={`移除 ${item.name}`}
-                                disabled={!!busy} onClick={() => void removeFromPlan(item.courseId)}>
-                            <Icon name="close"/>
-                        </button>
+                        {editing === item.courseId && <div className="courses-plan-editor">
+                            <label>星期
+                                <select value={draft.weekday}
+                                        onChange={event => setDraft({...draft, weekday: Number(event.target.value)})}>
+                                    {weekdayLabels.map((label, index) =>
+                                        <option key={label} value={index + 1}>{label}</option>)}
+                                </select>
+                            </label>
+                            <label>开始
+                                <input type="number" min={1} max={periodCount} value={draft.startUnit}
+                                       onChange={event => setDraft({...draft, startUnit: Number(event.target.value) || 1})}/>
+                            </label>
+                            <label>结束
+                                <input type="number" min={1} max={periodCount} value={draft.endUnit}
+                                       onChange={event => setDraft({...draft, endUnit: Number(event.target.value) || 1})}/>
+                            </label>
+                            <div className="courses-plan-editor-actions">
+                                <button type="button" className="primary-button" disabled={!!busy}
+                                        onClick={() => void saveSlot(item.courseId, draft)}>保存</button>
+                                {item.slot && <button type="button" className="secondary-button" disabled={!!busy}
+                                                      onClick={() => void saveSlot(item.courseId, null)}>清除</button>}
+                                <button type="button" className="secondary-button" disabled={!!busy}
+                                        onClick={() => setEditing(null)}>取消</button>
+                            </div>
+                        </div>}
                     </li>)}
                 </ul>
                 <div className="courses-block-head">
