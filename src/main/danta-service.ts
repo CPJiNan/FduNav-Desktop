@@ -2,6 +2,7 @@ import {BrowserWindow, session} from 'electron'
 import type {AppDatabase} from './database'
 import {secureStorage} from './secure-storage'
 import {webvpnLoginUrl, webvpnRoute, isWebvpnHost} from './webvpn'
+import {normalizePlanItems} from './danta-plan'
 import {
     DantaError,
     nextOffsetFor,
@@ -25,6 +26,8 @@ import {
     type CommunityTransportIssue,
     type DantaLoginInput,
     type DantaStatus,
+    type PlanItem,
+    type PlanSlot,
     type SchoolNetworkState,
 } from '../shared/danta'
 
@@ -561,34 +564,12 @@ export class DantaService implements DantaSession {
         if (this.offerings.size > 500) this.offerings.delete(this.offerings.keys().next().value!)
     }
 
-    getPlan(username: string): import('../shared/danta').PlanItem[] {
+    getPlan(username: string): PlanItem[] {
         return this.db.getCommunityPlan(username)
     }
 
-    savePlan(username: string, value: unknown): import('../shared/danta').PlanItem[] {
-        if (!Array.isArray(value) || value.length > 60) throw new DantaError('invalid_input', '备选清单格式无效。')
-        const items: import('../shared/danta').PlanItem[] = []
-        const seen = new Set<number>()
-        for (const entry of value) {
-            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new DantaError('invalid_input', '备选清单格式无效。')
-            const item = entry as Record<string, unknown>
-            const courseId = Number(item.courseId), groupId = Number(item.groupId)
-            if (!Number.isSafeInteger(courseId) || courseId < 1 || !Number.isSafeInteger(groupId) || groupId < 1 || seen.has(courseId)) {
-                throw new DantaError('invalid_input', '备选清单中的课程编号无效。')
-            }
-            const str = (key: string, max: number) => {
-                const raw = item[key]
-                if (typeof raw !== 'string' || raw.length > max) throw new DantaError('invalid_input', '备选清单中的课程信息无效。')
-                return raw
-            }
-            seen.add(courseId)
-            items.push({
-                courseId, groupId,
-                groupName: str('groupName', 200), name: str('name', 200), teachers: str('teachers', 200),
-                term: str('term', 100), note: str('note', 500),
-                addedAt: typeof item.addedAt === 'string' && !Number.isNaN(Date.parse(item.addedAt)) ? item.addedAt : new Date().toISOString(),
-            })
-        }
+    savePlan(username: string, value: unknown): PlanItem[] {
+        const items = normalizePlanItems(value)
         this.db.saveCommunityPlan(username, items)
         return items
     }

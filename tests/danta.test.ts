@@ -11,6 +11,7 @@ import {
     type CampusPage, type CourseOffering, type CourseReviewsResult, type CourseSearchPage,
 } from '../src/shared/danta.ts'
 import {parseToolArgs} from '../src/main/danta-search.ts'
+import {normalizePlanItems} from '../src/main/danta-plan.ts'
 import {
     presentedReviewChars, presentCampusPage, presentCourseReviews, presentCourseSearch, presentTime
 } from '../src/main/danta-present.ts'
@@ -325,4 +326,33 @@ test('ai search rejects malformed tool arguments before they reach the network',
     assert.throws(() => parseToolArgs(schema, JSON.stringify({query: 'a'.repeat(201)})), /长度/)
     assert.throws(() => parseToolArgs(schema, JSON.stringify({query: 5})), /类型/)
     assert.throws(() => parseToolArgs(schema, JSON.stringify(['x'])), /对象/)
+})
+
+test('saving a plan keeps credit and the user placed slot', () => {
+    const saved = normalizePlanItems([{
+        courseId: 28112, groupId: 249, groupName: '概率论 H', name: '概率论 H',
+        teachers: '张三', term: '2025-2026 秋季', note: '想上', addedAt: '2026-11-11T00:00:00.000Z',
+        credit: 5, slot: {weekday: 1, startUnit: 3, endUnit: 4},
+    }])
+    assert.equal(saved[0].credit, 5)
+    assert.deepEqual(saved[0].slot, {weekday: 1, startUnit: 3, endUnit: 4})
+    assert.equal(planCredits(saved), 5)
+})
+
+test('plan validation rejects unknown credit and impossible slots without dropping data', () => {
+    const base = {
+        courseId: 1, groupId: 1, groupName: 'g', name: 'n', teachers: 't', term: 'x', note: '',
+        addedAt: '2026-11-11T00:00:00.000Z',
+    }
+    for (const credit of [-1, 61, 'A', Number.NaN, Number.POSITIVE_INFINITY]) {
+        assert.throws(() => normalizePlanItems([{...base, credit}]), /学分无效/)
+    }
+    for (const slot of [{weekday: 0, startUnit: 1, endUnit: 2}, {weekday: 8, startUnit: 1, endUnit: 2},
+        {weekday: 1, startUnit: 3, endUnit: 2}, {weekday: 1, startUnit: 0, endUnit: 2},
+        {weekday: 1, startUnit: 1, endUnit: 21}, {weekday: 1.5, startUnit: 1, endUnit: 2}]) {
+        assert.throws(() => normalizePlanItems([{...base, slot}]), /时段无效/)
+    }
+    const kept = normalizePlanItems([{...base, credit: null, slot: null}])
+    assert.equal(kept[0].credit, null)
+    assert.equal(kept[0].slot, null)
 })

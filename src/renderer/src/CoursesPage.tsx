@@ -51,6 +51,8 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     const [status, setStatus] = useState<DantaStatus | null>(null)
     const [tab, setTab] = useState<'reviews' | 'plan'>('reviews')
     const [query, setQuery] = useState('')
+    /** 已提交的查询词：翻页必须沿用它，不能用输入框里刚改过的值（评审 B05）。 */
+    const [committedQuery, setCommittedQuery] = useState('')
     const [groups, setGroups] = useState<CourseGroupSummary[]>([])
     const [page, setPage] = useState(1)
     const [searched, setSearched] = useState(false)
@@ -140,6 +142,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
             const result = await api.searchCourses({query: text, page: 1, pageSize})
             if (!result.ok) setError(result.error)
             else {
+                setCommittedQuery(text)
                 setGroups(result.data.items)
                 setPage(1)
                 setSearched(true)
@@ -156,10 +159,10 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     }
 
     async function moreGroups() {
-        if (!api || busy) return
+        if (!api || busy || !committedQuery) return
         setBusy('正在加载更多课程…')
         try {
-            const result = await api.searchCourses({query: query.trim(), page: page + 1, pageSize})
+            const result = await api.searchCourses({query: committedQuery, page: page + 1, pageSize})
             if (!result.ok) setError(result.error)
             else {
                 setGroups([...groups, ...result.data.items])
@@ -293,7 +296,8 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
         setBusy('正在获取课表…')
         setError('')
         try {
-            const result = await window.timetable.get({});
+            // 必须显式要求刷新：主进程对不带 refresh 的请求直接返回缓存（评审 B08）。
+            const result = await window.timetable.get({refresh: true});
             if (!result.ok) setError(result.error)
             else setTimetable(result.data)
         } catch {
