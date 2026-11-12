@@ -1,7 +1,7 @@
 import {
     academicTerm,
     type CampusPage, type CampusPost, type CourseGroupSummary, type CourseOffering,
-    type CourseSearchPage, type CourseReviewsResult
+    type CourseSearchPage, type CourseReviewsResult, type CourseGroupDetail
 } from '../shared/danta'
 
 /**
@@ -42,7 +42,11 @@ function clip(text: string, max: number): {text: string; clipped: boolean} {
 }
 
 export interface PresentedCampusPost {
+    /** 本次工具调用内的稳定短引用（T1、T2…），回答引用它，不要另编编号。 */
+    ref: string
     holeId: number
+    /** 命中楼层的原始 ID：回答里被引用的片段要能靠它定位到确切楼层。 */
+    floorId: number
     content: string
     time: string | null
     truncated?: boolean
@@ -62,9 +66,12 @@ export interface PresentedCampusPage {
     note?: string
 }
 
-function presentPost(post: CampusPost): PresentedCampusPost {
+function presentPost(post: CampusPost, index: number): PresentedCampusPost {
     const body = clip(post.content, presentedPostChars)
-    const result: PresentedCampusPost = {holeId: post.holeId, content: body.text, time: presentTime(post.timeCreated)}
+    const result: PresentedCampusPost = {
+        ref: `T${index + 1}`, holeId: post.holeId, floorId: post.floorId,
+        content: body.text, time: presentTime(post.timeCreated)
+    }
     if (body.clipped || post.truncated) result.truncated = true
     return result
 }
@@ -74,8 +81,8 @@ export function presentCampusPage(page: CampusPage): PresentedCampusPage {
     const posts: PresentedCampusPost[] = []
     let used = 0
     let dropped = 0
-    for (const post of page.results) {
-        const item = presentPost(post)
+    for (const [index, post] of page.results.entries()) {
+        const item = presentPost(post, index)
         const size = JSON.stringify(item).length
         if (posts.length && used + size > presentedBudget) {
             dropped = page.results.length - posts.length
@@ -152,7 +159,27 @@ export function presentCourseSearch(page: CourseSearchPage): PresentedCourseSear
     return result
 }
 
+export interface PresentedCourseGroupDetail {
+    group: PresentedCourseGroup
+    offerings: PresentedOffering[]
+    note?: string
+}
+
+/** 课程组详情：把「组 ID」和「开课 ID」放在同一份结果里，避免模型把两者混用。 */
+export function presentCourseGroup(detail: CourseGroupDetail): PresentedCourseGroupDetail {
+    const result: PresentedCourseGroupDetail = {
+        group: presentGroup(detail),
+        offerings: detail.courses.map(presentOffering),
+    }
+    if (!result.offerings.length) result.note = '该课程组没有可用的开课记录，无法读取课评。'
+    return result
+}
+
 export interface PresentedReview {
+    /** 本次工具调用内的稳定短引用（R1、R2…）。 */
+    ref: string
+    /** 课评原始 ID：引用要能反查到具体一条。 */
+    id: number
     title: string
     content: string
     time: string | null
@@ -172,9 +199,10 @@ export function presentCourseReviews(result: CourseReviewsResult): PresentedRevi
     const reviews: PresentedReview[] = []
     let used = 0
     let dropped = 0
-    for (const review of result.reviews) {
+    for (const [index, review] of result.reviews.entries()) {
         const body = clip(review.content, presentedReviewChars)
         const item: PresentedReview = {
+            ref: `R${index + 1}`, id: review.id,
             title: review.title, content: body.text, time: presentTime(review.timeCreated), vote: review.vote
         }
         if (body.clipped || review.truncated) item.truncated = true

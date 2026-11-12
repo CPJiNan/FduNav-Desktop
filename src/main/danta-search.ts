@@ -76,20 +76,44 @@ export function evidenceCount(value: unknown): number {
     return size(record.posts) + size(record.groups) + size(record.reviews)
 }
 
+/**
+ * 收集证据来源。引用编号沿用工具结果里的短引用（帖子 T 系列、课评 R 系列），
+ * 同一条证据在多轮里复用同一编号；帖子按「洞号 + 楼层」去重，课评按「开课 + 课评 ID」去重（评审 B03）。
+ */
 function collectSources(value: unknown, sources: AiSearchSource[]): void {
-    const posts = (value as { posts?: unknown } | null)?.posts
-    if (!Array.isArray(posts)) return
-    for (const item of posts) {
-        const post = item as { holeId?: unknown; content?: unknown; time?: unknown } | null
-        if (!post || typeof post.holeId !== 'number' || typeof post.content !== 'string') continue
-        if (sources.some(source => source.holeId === post.holeId)) continue
-        if (sources.length >= maxSources) return
-        sources.push({
-            index: sources.length + 1,
-            holeId: post.holeId,
-            content: post.content.length > maxSourceChars ? `${post.content.slice(0, maxSourceChars)}…` : post.content,
-            time: typeof post.time === 'string' ? post.time : null,
-        })
+    const record = value as {posts?: unknown; reviews?: unknown; course?: {id?: unknown}} | null
+    if (!record) return
+    const clip = (text: string) => text.length > maxSourceChars ? `${text.slice(0, maxSourceChars)}…` : text
+    if (Array.isArray(record.posts)) {
+        for (const item of record.posts) {
+            const post = item as {ref?: unknown; holeId?: unknown; floorId?: unknown; content?: unknown; time?: unknown} | null
+            if (!post || typeof post.holeId !== 'number' || typeof post.content !== 'string') continue
+            const ref = typeof post.ref === 'string' ? post.ref : ''
+            const floorId = typeof post.floorId === 'number' ? post.floorId : null
+            if (sources.some(source => source.kind === 'thread' && source.holeId === post.holeId && source.floorId === floorId)) continue
+            if (sources.length >= maxSources) return
+            sources.push({
+                index: sources.length + 1, ref, kind: 'thread', holeId: post.holeId,
+                floorId, courseId: null, content: clip(post.content),
+                time: typeof post.time === 'string' ? post.time : null,
+            })
+        }
+    }
+    if (Array.isArray(record.reviews)) {
+        const courseId = typeof record.course?.id === 'number' ? record.course.id : null
+        for (const item of record.reviews) {
+            const review = item as {ref?: unknown; id?: unknown; content?: unknown; time?: unknown} | null
+            if (!review || typeof review.content !== 'string') continue
+            const ref = typeof review.ref === 'string' ? review.ref : ''
+            const id = typeof review.id === 'number' ? review.id : null
+            if (sources.some(source => source.kind === 'review' && source.courseId === courseId && source.holeId === (id ?? 0))) continue
+            if (sources.length >= maxSources) return
+            sources.push({
+                index: sources.length + 1, ref, kind: 'review', holeId: id ?? 0,
+                floorId: null, courseId, content: clip(review.content),
+                time: typeof review.time === 'string' ? review.time : null,
+            })
+        }
     }
 }
 

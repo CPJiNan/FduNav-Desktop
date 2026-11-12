@@ -120,10 +120,13 @@ export const chatTools: ChatTool[] = [
         page: {type: 'integer', minimum: 1, maximum: 200},
         pageSize: {type: 'integer', minimum: 1, maximum: 10},
     }, ['query']),
-    tool('read_course_reviews', {courseId: {type: 'integer', minimum: 1}}, ['courseId']),
+    tool('list_course_offerings', {
+        groupId: {type: 'integer', minimum: 1, description: '课程组 ID，来自 search_courses 的 groups[].id'},
+    }, ['groupId']),
+    tool('read_course_reviews', {courseId: {type: 'integer', minimum: 1, description: '开课 ID，来自 list_course_offerings 的 offerings[].courseId'}}, ['courseId']),
 ]
 
-export const campusToolNames = new Set(['search_campus_posts', 'read_campus_thread', 'search_courses', 'read_course_reviews'])
+export const campusToolNames = new Set(['search_campus_posts', 'read_campus_thread', 'search_courses', 'list_course_offerings', 'read_course_reviews'])
 
 /** 社区只读工具的注入点：可用性与错误码由调用方决定，工具层只做参数校验。 */
 export interface CampusToolAccess {
@@ -135,6 +138,9 @@ export interface CampusToolAccess {
     readThread(holeId: number, offset: number, limit: number): Promise<unknown>
 
     searchCourses(query: string, page: number, pageSize: number): Promise<unknown>
+
+    /** 课程组 → 组内开课：模型的搜索结果是课程组，读课评需要开课 ID，靠这一步补链。 */
+    listCourseOfferings(groupId: number): Promise<unknown>
 
     courseReviews(courseId: number): Promise<unknown>
 }
@@ -163,7 +169,7 @@ export const chatToolLabels: Record<string, string> = {
     update_todo: '请求修改待办', delete_todo: '请求删除待办',
     update_event: '请求修改日程', delete_event: '请求删除日程',
     search_campus_posts: '检索树洞', read_campus_thread: '读取树洞帖子',
-    search_courses: '检索课程', read_course_reviews: '读取课评',
+    search_courses: '检索课程', list_course_offerings: '列出开课', read_course_reviews: '读取课评',
 }
 
 export function presentTodo(todo: Todo) {
@@ -345,6 +351,9 @@ export function createChatToolRunner(db: AppDatabase, username: string,
             if (name === 'search_courses') {
                 return campus!.searchCourses(textArg(input, 'query', true, 200),
                     intArg(input, 'page', 1, 1, 200), intArg(input, 'pageSize', 10, 1, 10))
+            }
+            if (name === 'list_course_offerings') {
+                return campus!.listCourseOfferings(intArg(input, 'groupId', 0, 1, Number.MAX_SAFE_INTEGER))
             }
             return campus!.courseReviews(intArg(input, 'courseId', 0, 1, Number.MAX_SAFE_INTEGER))
         }

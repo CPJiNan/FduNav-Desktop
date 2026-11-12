@@ -199,7 +199,14 @@ export const campusFeedNotice = '常驻分区来自旦挞公开列表，只读�
 /** AI 搜索引用的一条帖子；编号在结果里按出现顺序从 1 开始。 */
 export interface AiSearchSource {
     index: number
+    /** 与工具结果里的短引用一致（T1 / R1），回答里的 [Tn] 能反查到这一条。 */
+    ref: string
+    kind: 'thread' | 'review'
     holeId: number
+    /** 树洞楼层 ID；课评来源为 null。 */
+    floorId: number | null
+    /** 课评所属开课 ID；帖子来源为 null。 */
+    courseId: number | null
     content: string
     time: string | null
 }

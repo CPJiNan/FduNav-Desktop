@@ -14,7 +14,7 @@ import {cancellationError, evidenceCount, parseToolArgs} from '../src/main/danta
 import {toolSuccess} from '../src/shared/agent.ts'
 import {normalizePlanItems} from '../src/main/danta-plan.ts'
 import {
-    presentedReviewChars, presentCampusPage, presentCourseReviews, presentCourseSearch, presentTime
+    presentedReviewChars, presentCampusPage, presentCourseGroup, presentCourseReviews, presentCourseSearch, presentTime
 } from '../src/main/danta-present.ts'
 
 test('webvpn route only rewrites the three community hosts through the official gateway', () => {
@@ -141,7 +141,7 @@ test('agent exposes the four read-only community tools with bounded arguments', 
     const {chatTools, chatToolLabels, campusToolNames} = await import('../src/main/chat-tools.ts')
     const {defaultToolDescriptions} = await import('../src/shared/llm-prompts.ts')
     const byName = new Map(chatTools.map(item => [item.function.name, item.function]))
-    assert.deepEqual([...campusToolNames].sort(), ['read_campus_thread', 'read_course_reviews', 'search_campus_posts', 'search_courses'])
+    assert.deepEqual([...campusToolNames].sort(), ['list_course_offerings', 'read_campus_thread', 'read_course_reviews', 'search_campus_posts', 'search_courses'])
     for (const name of campusToolNames) {
         const tool = byName.get(name)
         assert.ok(tool, `missing tool ${name}`)
@@ -216,7 +216,7 @@ test('tool output drops internal metadata and normalises timestamps to Beijing t
     }
     const presented = presentCampusPage(page)
     // 只留判断相关性需要的三个字段：floorId / redacted / timeUpdated 不进模型上下文
-    assert.deepEqual(Object.keys(presented.posts[0]).sort(), ['content', 'holeId', 'time'])
+    assert.deepEqual(Object.keys(presented.posts[0]).sort(), ['content', 'floorId', 'holeId', 'ref', 'time'])
     assert.equal(presented.posts[0].content, '图书馆 周一 闭馆')
     assert.equal(presented.posts[0].time, '2026-11-11 16:00')
     assert.equal(presented.thread?.time, '2026-11-11 08:00')
@@ -269,19 +269,37 @@ test('course search keeps planning fields and flags a missing total', () => {
     assert.equal(presentCourseSearch({...page, total: 3}).hasTotal, true)
 })
 
-test('course reviews are clipped per entry and drop internal ids', () => {
+test('course reviews keep a locatable ref and are clipped per entry', () => {
     const result: CourseReviewsResult = {
         course: offering, truncated: false,
         reviews: [{id: 77, title: '值得选', content: 'y'.repeat(1200), timeCreated: '2026-11-10T20:00:00+08:00',
             vote: 3, truncated: false, redacted: true}],
     }
     const presented = presentCourseReviews(result)
-    assert.ok(!('id' in presented.reviews[0]))
+    // 评审 B03：课评 ID 是证据定位标识，不能整体删掉；同时给稳定短引用供回答引用。
+    assert.equal(presented.reviews[0].ref, 'R1')
+    assert.equal(presented.reviews[0].id, 77)
     assert.equal(presented.reviews[0].content.length, presentedReviewChars + 1)
     assert.equal(presented.reviews[0].truncated, true)
     assert.equal(presented.reviews[0].time, '2026-11-10 20:00')
     assert.equal(presented.course.term, academicTerm(2024, 1))
     assert.ok(!('codeId' in presented.course) && !('department' in presented.course))
+})
+
+test('course group detail exposes offering ids so reviews are reachable', () => {
+    const detail = {
+        id: 249, name: '概率论', code: 'MATH120001', department: '数学科学学院',
+        weekHour: 4, credits: [5, 4], courseCount: 1, reviewCount: 16,
+        courses: [offering],
+    }
+    const presented = presentCourseGroup(detail)
+    assert.equal(presented.group.id, 249)
+    assert.equal(presented.offerings.length, 1)
+    // search_courses 给组 ID，读课评要开课 ID：这一步必须把开课 ID 明确交出去。
+    assert.equal(presented.offerings[0].id, offering.id)
+    assert.equal(presented.offerings[0].teachers, offering.teachers)
+    assert.ok(!('note' in presented))
+    assert.match(presentCourseGroup({...detail, courses: []}).note ?? '', /没有可用的开课记录/)
 })
 
 test('plan slots detect overlaps and credits only count known values', () => {
