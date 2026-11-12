@@ -160,6 +160,8 @@ export function registerDantaHandlers(db: AppDatabase, accounts: AccountService,
     })
 
     let searching = false
+    // 主动取消：界面点「停止」时中止这一次检索，已获得的结果按未完成状态返回。
+    let searchController: AbortController | null = null
     ipcMain.handle('danta:ai-search', async (event, input: unknown): Promise<Result<AiSearchAnswer>> => {
         if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
         const raw = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}
@@ -168,6 +170,8 @@ export function registerDantaHandlers(db: AppDatabase, accounts: AccountService,
         if (question.length > 300) return {ok: false, error: '问题过长，请控制在 300 字以内。'}
         if (searching) return {ok: false, error: '上一次搜索还在进行，请稍候。'}
         searching = true
+        const controller = new AbortController()
+        searchController = controller
         try {
             await service.initialize()
             const state = service.agentToolState()
@@ -194,14 +198,31 @@ export function registerDantaHandlers(db: AppDatabase, accounts: AccountService,
                 onStep: step => {
                     if (!sender.isDestroyed()) sender.send('danta:ai-search-step', step)
                 },
-                signal: AbortSignal.timeout(aiSearchTimeoutMs),
+                history: Array.isArray(raw.history)
+                    ? (raw.history as unknown[]).flatMap(item => {
+                        if (!item || typeof item !== 'object') return []
+                        const entry = item as Record<string, unknown>
+                        return typeof entry.question === 'string' && typeof entry.answer === 'string'
+                            ? [{question: entry.question, answer: entry.answer}]
+                            : []
+                    }).slice(-3)
+                    : [],
+                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(aiSearchTimeoutMs)]),
             })
             return {ok: true, data}
         } catch (error) {
             return {ok: false, error: communityErrorText(error)}
         } finally {
             searching = false
+            if (searchController === controller) searchController = null
         }
+    })
+
+    ipcMain.handle('danta:ai-search-cancel', (event): Result<null> => {
+        if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
+        if (!searchController) return {ok: false, error: '当前没有进行中的检索。'}
+        searchController.abort('cancelled')
+        return {ok: true, data: null}
     })
 
     return service

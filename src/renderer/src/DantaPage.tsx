@@ -37,6 +37,8 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
     const [mode, setMode] = useState<'feed' | 'search' | 'ai'>('feed')
     const [aiQuestion, setAiQuestion] = useState('')
     const [aiAnswer, setAiAnswer] = useState<AiSearchAnswer | null>(null)
+    /** 同一轮调研的问答记录：追问时作为上下文，停止后仍可继续。 */
+    const [aiHistory, setAiHistory] = useState<{question: string; answer: string}[]>([])
     const [aiSteps, setAiSteps] = useState<AiSearchStep[]>([])
     const [aiBusy, setAiBusy] = useState(false)
     const [aiError, setAiError] = useState('')
@@ -83,9 +85,13 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
         setAiAnswer(null)
         setAiSteps([])
         try {
-            const result = await api.aiSearch({question: text})
+            const result = await api.aiSearch({question: text, history: aiHistory})
             if (!result.ok) setAiError(result.error)
-            else setAiAnswer(result.data)
+            else {
+                setAiAnswer(result.data)
+                // 把这一轮压进历史，下一次提问就能接着问（例如「只看今年的」）。
+                setAiHistory(previous => [...previous, {question: text, answer: result.data.answer}].slice(-6))
+            }
         } catch {
             setAiError('AI 搜索失败，请检查 LLM 设置后重试。')
         } finally {
@@ -328,7 +334,17 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                                aria-label="AI 搜索问题"/>
                         <button type="submit" className="primary-button"
                                 disabled={aiBusy || !aiQuestion.trim()}>{aiBusy ? '检索中…' : '搜索'}</button>
+                            {aiBusy && <button type="button" className="secondary-button"
+                                               onClick={() => void api.cancelAiSearch()}>停止</button>}
                     </form>
+                    {aiHistory.length > 0 && !aiBusy && <p className="danta-empty-note">
+                        已进行 {aiHistory.length} 轮问答；直接再提问会带着前面的上下文追问。
+                        <button type="button" className="text-button" onClick={() => {
+                            setAiHistory([])
+                            setAiAnswer(null)
+                            setAiSteps([])
+                        }}>开始新的调研</button>
+                    </p>}
                     {!aiAnswer && !aiBusy && !aiError &&
                         <p className="danta-empty-note">AI 会先检索树洞帖子与课评，再给出带帖子编号的结论。</p>}
                     {aiError && <p className="danta-error" role="alert">{aiError}</p>}

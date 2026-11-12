@@ -117,16 +117,30 @@ function collectSources(value: unknown, sources: AiSearchSource[]): void {
     }
 }
 
-function describeArgs(raw: string): string {
+/** 把工具参数翻译成人话，界面上不要出现 query=… offset=… 这种实现细节（评审 B11）。 */
+function describeArgs(name: string, raw: string): string {
+    let parsed: Record<string, unknown>
     try {
-        const parsed = JSON.parse(raw || '{}') as Record<string, unknown>
-        const parts = Object.entries(parsed)
-            .filter(([, value]) => typeof value === 'string' || typeof value === 'number')
-            .map(([key, value]) => `${key}=${value}`)
-        return parts.join(' ').slice(0, 80)
+        parsed = JSON.parse(raw || '{}') as Record<string, unknown>
     } catch {
         return ''
     }
+    const text = typeof parsed.query === 'string' ? parsed.query.trim() : ''
+    if (name === 'search_campus_posts' && text) return `关键词：${text}`.slice(0, 60)
+    if (name === 'search_courses' && text) return `课程关键词：${text}`.slice(0, 60)
+    if (name === 'read_campus_thread') {
+        const id = Number(parsed.holeId ?? 0)
+        return Number.isSafeInteger(id) && id > 0 ? `帖子 #${id}` : ''
+    }
+    if (name === 'read_course_reviews') {
+        const id = Number(parsed.courseId ?? 0)
+        return Number.isSafeInteger(id) && id > 0 ? `开课 #${id}` : ''
+    }
+    if (name === 'list_course_offerings') {
+        const id = Number(parsed.groupId ?? 0)
+        return Number.isSafeInteger(id) && id > 0 ? `课程组 #${id}` : ''
+    }
+    return ''
 }
 
 /**
@@ -139,13 +153,19 @@ export async function runCampusSearch(input: {
     tools: ChatTool[]
     runTool: (name: string, args: Record<string, unknown>) => Promise<unknown>
     onStep: (step: AiSearchStep) => void
+    /** 同一轮调研里的前几次问答，用来支持追问（评审 B11）。 */
+    history?: {question: string; answer: string}[]
     signal: AbortSignal
 }): Promise<AiSearchAnswer> {
-    const {question, connection, tools, runTool, onStep, signal} = input
-    const context: ToolChatMessage[] = [
-        {role: 'system', content: systemPrompt},
-        {role: 'user', content: question},
-    ]
+    const {question, connection, tools, runTool, onStep, signal, history = []} = input
+    const context: ToolChatMessage[] = [{role: 'system', content: systemPrompt}]
+    // 追问：把同一轮调研里前面的问答压成上下文，模型才知道「那研究生呢」指的是什么。
+    for (const turn of history.slice(-3)) {
+        if (!turn.question.trim() || !turn.answer.trim()) continue
+        context.push({role: 'user', content: turn.question.slice(0, 300)})
+        context.push({role: 'assistant', content: turn.answer.slice(0, 800)})
+    }
+    context.push({role: 'user', content: question})
     const sources: AiSearchSource[] = []
     const steps: AiSearchStep[] = []
     let calls = 0
@@ -203,7 +223,7 @@ export async function runCampusSearch(input: {
             }
             calls++
             const label = chatToolLabels[call.function.name] ?? call.function.name
-            note({label, detail: describeArgs(call.function.arguments)})
+            note({label, detail: describeArgs(call.function.name, call.function.arguments)})
             let result
             try {
                 const parsed = parseToolArgs(

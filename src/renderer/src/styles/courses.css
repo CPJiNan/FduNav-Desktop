@@ -580,3 +580,43 @@
     background: var(--color-bg-surface);
     color: var(--color-text-primary);
 }
+
+
+/* 窄屏（评审 B10）：操作区独占一行、标题与标签不再被挤成竖排，正文仍可读。 */
+@media (max-width: 640px) {
+    .courses-head,
+    .courses-block-head {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-2);
+    }
+
+    .courses-head-actions {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .courses-head-actions > button,
+    .courses-head-actions > select {
+        flex: 1 1 auto;
+        min-width: 8rem;
+    }
+
+    .courses-tabs {
+        flex-wrap: wrap;
+    }
+
+    .courses-plan-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .courses-plan-main {
+        flex-wrap: wrap;
+        gap: var(--space-1);
+    }
+
+    .courses-slot strong {
+        font-size: var(--font-size-xs);
+        line-height: 1.2;
+    }
+}

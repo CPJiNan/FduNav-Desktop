@@ -234,7 +234,9 @@ export interface AiSearchAnswer {
 export interface DantaAPI {
     status(): Promise<Result<DantaStatus>>
 
-    aiSearch(input: { question: string }): Promise<Result<AiSearchAnswer>>
+    aiSearch(input: {question: string; history?: {question: string; answer: string}[]}): Promise<Result<AiSearchAnswer>>
+
+    cancelAiSearch(): Promise<Result<null>>
 
     onAiSearchStep(listener: (step: AiSearchStep) => void): () => void
 

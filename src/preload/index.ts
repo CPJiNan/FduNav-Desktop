@@ -33,6 +33,7 @@ const danta: DantaAPI = {
         ipcRenderer.invoke('danta:summarize-thread', {holeId, offset, limit}),
     summarizeCourse: courseId => ipcRenderer.invoke('danta:summarize-course', {courseId}),
     aiSearch: input => ipcRenderer.invoke('danta:ai-search', input),
+    cancelAiSearch: () => ipcRenderer.invoke('danta:ai-search-cancel'),
     onAiSearchStep: listener => {
         const handler = (_event: Electron.IpcRendererEvent, step: AiSearchStep) => listener(step)
         ipcRenderer.on('danta:ai-search-step', handler)

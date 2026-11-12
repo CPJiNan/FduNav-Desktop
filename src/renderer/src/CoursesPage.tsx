@@ -95,7 +95,17 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     }, [api])
 
     const conflicts = useMemo(() => conflictingCourses(timetable?.courses ?? []), [timetable])
-    const enrolled = useMemo(() => (timetable?.courses ?? []).map(item => normalize(item.name)), [timetable])
+    /** 已选判定的身份键：课程名 + 教师，避免同名不同课被误判为已选（评审 B12）。 */
+    const enrolledKeys = useMemo(() => {
+        const keys = new Set<string>()
+        for (const item of timetable?.courses ?? []) {
+            keys.add(normalize(item.name))
+            keys.add(`${normalize(item.name)}|${(item.teachers ?? []).map(normalize).join(',')}`)
+        }
+        return keys
+    }, [timetable])
+    /** 同一门课一周可能排多次，门数按课程身份去重，不按课表条目数。 */
+    const enrolledCount = useMemo(() => new Set((timetable?.courses ?? []).map(item => item.lessonId ?? item.id)).size, [timetable])
     const inPlan = (courseId: number) => plan.some(item => item.courseId === courseId)
     /** 方案绑定的目标学期：与当前课表的学期一致，历史开课不计入方案。 */
     const targetTerm = useMemo(() => timetable
@@ -106,7 +116,10 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     const currentPlan = useMemo(() => plan.filter(item => !isHistorical(item)), [plan, targetTerm])
     const historicalPlan = useMemo(() => plan.filter(item => isHistorical(item)), [plan, targetTerm])
     const planned = useMemo(() => currentPlan.filter(item => item.slot), [currentPlan])
-    const planCreditTotal = useMemo(() => planCredits(currentPlan), [currentPlan])
+    /** 学分只统计已知值，未知单独计数，避免“看起来是精确总数”。 */
+    const creditKnown = useMemo(() => currentPlan.filter(item => typeof item.credit === 'number')
+        .reduce((total, item) => total + (item.credit ?? 0), 0), [currentPlan])
+    const creditUnknown = useMemo(() => currentPlan.filter(item => typeof item.credit !== 'number').length, [currentPlan])
     /** 模拟排课与已选课表、以及彼此之间的时间冲突。 */
     const slotConflicts = useMemo(() => {
         const bad = new Set<number>()
@@ -495,9 +508,10 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                     <div>
                         <h2>本周课表</h2>
                         <p className="courses-group-meta">
-                            {timetable ? `已选 ${schedule.length} 门课 · ${timetable.semesters.find(item => item.id === timetable.semesterId)?.name ?? '当前学期'}` : '还没有课表缓存'}
+                            {timetable ? `已选 ${enrolledCount} 门课 · ${timetable.semesters.find(item => item.id === timetable.semesterId)?.name ?? '当前学期'}` : '还没有课表缓存'}
                             {conflicts.size > 0 && ` · ${conflicts.size} 门课存在时间冲突`}
-                            {currentPlan.length > 0 && ` · 方案 ${currentPlan.length} 门，已排 ${planned.length} 门，共 ${planCreditTotal} 学分`}
+                            {currentPlan.length > 0 && ` · 方案 ${currentPlan.length} 门，已排 ${planned.length} 门，已知 ${creditKnown} 学分`}
+                            {creditUnknown > 0 && `（另有 ${creditUnknown} 门学分未知）`}
                             {historicalPlan.length > 0 && ` · 另有 ${historicalPlan.length} 门历史开课收藏`}
                         </p>
                     </div>
@@ -514,9 +528,9 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                         </button>
                     </div>
                 </div>
-                {schedule.length === 0
-                    ? <p className="courses-empty-note">点“刷新课表”从教务获取当前学期课程，之后可以对照备选课程看冲突。</p>
-                    : <div className="courses-grid">
+                {schedule.length === 0 &&
+                    <p className="courses-empty-note">还没有已选课表：可以先在右侧给备选课程指定时段试排，点“刷新课表”后再与已选课程核对冲突。</p>}
+                <div className="courses-grid">
                         <div className="courses-grid-head">
                             <span/>
                             {weekdayLabels.map(label => <span key={label}>{label}</span>)}
@@ -548,11 +562,19 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                                 {planned.map(item => {
                                     const slot = item.slot!
                                     const conflicted = slotConflicts.has(item.courseId)
+                                    // 冲突块并排显示：同一时段有多门备选时横向等分，避免互相覆盖（评审 B09）。
+                                    const peers = conflicted
+                                        ? planned.filter(other => other.courseId !== item.courseId &&
+                                            planSlotsOverlap(other.slot!, slot))
+                                            .map(other => other.courseId).concat(item.courseId).sort((a, b) => a - b)
+                                        : [item.courseId]
+                                    const lane = Math.max(0, peers.indexOf(item.courseId))
+                                    const laneWidth = (1 / 7) * 100 / peers.length
                                     return <button type="button" key={`plan-${item.courseId}`}
                                                    className={`courses-slot is-planned${conflicted ? ' is-conflict' : ''}`}
                                                    style={{
-                                                       left: `${((slot.weekday - 1) / 7) * 100}%`,
-                                                       width: `${(1 / 7) * 100}%`,
+                                                       left: `calc(${((slot.weekday - 1) / 7) * 100}% + ${lane * laneWidth}%)`,
+                                                       width: `${laneWidth}%`,
                                                        top: ((slot.startUnit - 1) / periodCount) * 100 + '%',
                                                        height: ((slot.endUnit - slot.startUnit + 1) / periodCount) * 100 + '%',
                                                    }}
@@ -568,7 +590,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                                 })}
                             </div>
                         </div>
-                    </div>}
+                    </div>
                 <p className="courses-empty-note">点课程块打开教学大纲。备选课程来自蛋挞，没有教务排课时间，需要自己指定时段做模拟排课；冲突检查同时覆盖已选课程与模拟排课。</p>
             </section>
             <aside className="courses-side">
@@ -586,7 +608,7 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                                     {item.teachers || '教师未知'}
                                     {typeof item.credit === 'number' ? ` · ${item.credit} 学分` : ''}
                                 </span>
-                                {enrolled.includes(normalize(item.name)) &&
+                                {enrolledKeys.has(normalize(item.name)) &&
                                     <span className="courses-badge is-enrolled">已在课表</span>}
                                 {isHistorical(item) &&
                                     <span className="courses-badge is-historical" title={`该开课属于 ${item.term}，不参与 ${targetTerm || '当前学期'} 的排课`}>历史开课 · 收藏</span>}

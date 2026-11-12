@@ -427,3 +427,21 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+
+/* 窄屏（评审 B10）：分区标签可换行，AI 搜索结果与步骤不被挤压。 */
+@media (max-width: 640px) {
+    .danta-tabs {
+        flex-wrap: wrap;
+    }
+
+    .danta-head {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--space-2);
+    }
+
+    .danta-search {
+        flex-wrap: wrap;
+    }
+}
