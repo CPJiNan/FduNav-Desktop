@@ -46,6 +46,11 @@ type Page = 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'danta' | 
 export default function App() {
     const [settings, setSettings] = useState(false)
     const [page, setPage] = useState<Page>('dashboard')
+    /**
+     * 曾被打开过的调研页面保持挂载，切到别的页面再回来时查询、选中的帖子/课程、
+     * 已加载的分页与 AI 答案都还在；未打开过的页面不会被提前挂载。
+     */
+    const [keptPages, setKeptPages] = useState<Set<Page>>(() => new Set())
     const [noticeToOpen, setNoticeToOpen] = useState<Notice | null>(null)
     const [calendarInitialView, setCalendarInitialView] = useState<CalendarView>('week')
     const [tab, setTab] = useState<Tab>('general')
@@ -61,6 +66,11 @@ export default function App() {
     const needsPreferences = account?.status === 'signed-in' && !validateRequiredMessagePreferences(preferences).ok
     const needsSetup = needsLogin || needsPreferences
     const showSettings = settings || needsSetup
+    useEffect(() => {
+        if (page !== 'danta' && page !== 'courses') return
+        setKeptPages(previous => previous.has(page) ? previous : new Set(previous).add(page))
+    }, [page])
+    const kept = (target: Page) => keptPages.has(target)
     const showNoticesPage = !showSettings && page === 'notices'
     const showCalendarPage = !showSettings && page === 'calendar'
     const showTodosPage = !showSettings && page === 'todos'
@@ -272,16 +282,20 @@ export default function App() {
                                           initialView={calendarInitialView}/>}
                         {showTodosPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <TodosPage key={account?.username}/>}
-                        {showDantaPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
-                            <DantaPage onSettings={() => {
-                                setTab('community');
-                                setSettings(true)
-                            }}/>}
-                        {showCoursesPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
-                            <CoursesPage onSettings={() => {
-                                setTab('community');
-                                setSettings(true)
-                            }}/>}
+                        {kept('danta') && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                            <div style={{display: showDantaPage ? 'contents' : 'none'}}>
+                                <DantaPage onSettings={() => {
+                                    setTab('community');
+                                    setSettings(true)
+                                }}/>
+                            </div>}
+                        {kept('courses') && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                            <div style={{display: showCoursesPage ? 'contents' : 'none'}}>
+                                <CoursesPage onSettings={() => {
+                                    setTab('community');
+                                    setSettings(true)
+                                }}/>
+                            </div>}
                         {showMailPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <MailboxPage key={account?.username} onSettings={() => {
                                 setTab('mail');
