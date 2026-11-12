@@ -23,7 +23,9 @@ export type DantaErrorCode =
     | 'unavailable'
 
 export class DantaError extends Error {
-    constructor(public code: DantaErrorCode, message: string, public status?: number) {
+    /** retryAfterMs 来自 429 的 Retry-After，供有界重试尊重服务端的冷却时间。 */
+    constructor(public code: DantaErrorCode, message: string, public status?: number,
+                public retryAfterMs?: number | null) {
         super(message)
         this.name = 'DantaError'
     }

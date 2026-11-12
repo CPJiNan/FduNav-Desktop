@@ -39,12 +39,70 @@ const timeoutMs = 15_000
 /** 直连探测要快：慢到 5 秒还不通，就当作不可直连，改走 WebVPN。 */
 const directTimeoutMs = 5_000
 const maxResponseBytes = 3 * 1024 * 1024
+/** 有界重试：最多再试 2 次，带指数退避与抖动，尊重 Retry-After。 */
+const maxRetries = 2
+const retryableCodes = new Set(['timeout', 'network', 'rate_limited', 'unavailable'])
+
+function retryAttemptable(code: string): boolean {
+    return retryableCodes.has(code)
+}
+
+function retryDelayMs(attempt: number, retryAfterMs?: number | null): number {
+    if (typeof retryAfterMs === 'number' && Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+        return Math.min(retryAfterMs, 5_000)
+    }
+    const base = 300 * 2 ** attempt
+    return base + Math.floor(Math.random() * 120)
+}
 
 /**
  * iOA 一类企业网关会用 502/503 加 x-proxy-by 头返回拦截页。
  * 这里不能用 response.url 判断：Electron 的 net.fetch 不填充该字段（45.0.0 实测恒为空字符串），
  * redirected 标志同样不可靠，所以只能看响应本身。
  */
+/**
+ * 边读边累计字节，超过上限立即停止，抛 too_large；
+ * 读取过程被取消或中断时保留原始错误类型，不再替换成空响应（评审 T06）。
+ */
+async function readCappedBody(response: Response, max: number): Promise<Uint8Array> {
+    const body = response.body
+    if (!body) {
+        const buffer = new Uint8Array(await response.arrayBuffer())
+        if (buffer.byteLength > max) throw new DantaError('too_large', '社区服务返回内容过大，已停止读取。')
+        return buffer
+    }
+    const reader = body.getReader()
+    const chunks: Uint8Array[] = []
+    let total = 0
+    try {
+        for (;;) {
+            const {done, value} = await reader.read()
+            if (done) break
+            if (!value) continue
+            total += value.byteLength
+            if (total > max) {
+                await reader.cancel().catch(() => undefined)
+                throw new DantaError('too_large', '社区服务返回内容过大，已停止读取。')
+            }
+            chunks.push(value)
+        }
+    } catch (error) {
+        if (error instanceof DantaError) throw error
+        await reader.cancel().catch(() => undefined)
+        if (error instanceof DOMException && error.name === 'AbortError') {
+            throw new DantaError('timeout', '社区服务响应读取被中断，请重试。')
+        }
+        throw new DantaError('network', '读取社区服务响应失败，请检查网络后重试。')
+    }
+    const buffer = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+        buffer.set(chunk, offset)
+        offset += chunk.byteLength
+    }
+    return buffer
+}
+
 function isGatewayResponse(response: Response): boolean {
     return Boolean(response.headers.get('x-proxy-by')) || response.status === 502 || response.status === 503
 }
@@ -368,14 +426,22 @@ export class DantaService implements DantaSession {
         return this.refreshing
     }
 
-    private async get(url: string, retry = true): Promise<unknown> {
+    /**
+     * 通用 GET：401 换一次 token；超时/网络/限流/5xx 有界退避重试（最多 2 次）。
+     * 重试由程序控制，不交给模型反复调用（评审 §4）。
+     */
+    private async get(url: string, retry = true, attempt = 0): Promise<unknown> {
         const access = await this.accessToken()
         try {
             return await this.send('GET', url, undefined, {Authorization: `Bearer ${access}`})
         } catch (error) {
             if (error instanceof DantaError && error.code === 'auth' && retry) {
                 await this.refresh()
-                return this.get(url, false)
+                return this.get(url, false, attempt)
+            }
+            if (error instanceof DantaError && retryAttemptable(error.code) && attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs(attempt, error.retryAfterMs)))
+                return this.get(url, retry, attempt + 1)
             }
             throw error
         }
@@ -416,8 +482,8 @@ export class DantaService implements DantaSession {
             }
             throw new DantaError('network', '暂时无法连接社区服务，请检查学校网络后重试。')
         }
-        const buffer = new Uint8Array(await response.arrayBuffer().catch(() => new Uint8Array()))
-        if (buffer.byteLength > maxResponseBytes) throw new DantaError('too_large', '社区服务返回内容过大，已停止读取。')
+        // 评审 T06：不要把「读取中断」吞成空响应再报格式错误；超限要在读取过程中就停。
+        const buffer = await readCappedBody(response, maxResponseBytes)
         const payload = Buffer.from(buffer).toString('utf8')
         // Electron 的 net.fetch 不填充 response.url，没法用最终 URL 判断是否被重定向，
         // 于是改成检查内容：该给 JSON 的接口返回 HTML，就是登录页或拦截页。
@@ -433,7 +499,8 @@ export class DantaService implements DantaSession {
             this.schoolMessage = '直连旦挞社区失败，已改用学校 WebVPN 通路。'
             throw new DantaError('network', '直连旦挞社区失败，已切回学校 WebVPN 通路，请重试。')
         }
-        this.checkStatus(response.status)
+        const retryAfter = Number(response.headers.get('retry-after'))
+        this.checkStatus(response.status, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : null)
         if (!buffer.byteLength) return null
         try {
             return JSON.parse(payload)
@@ -460,12 +527,14 @@ export class DantaService implements DantaSession {
         return false
     }
 
-    private checkStatus(status: number) {
+    private checkStatus(status: number, retryAfterMs: number | null = null) {
         if (status >= 200 && status < 300) return
         if (status === 401) throw new DantaError('auth', '社区登录已失效，请重新登录。', status)
         if (status === 403) throw new DantaError('forbidden', '当前社区账号无权访问该内容。', status)
         if (status === 404) throw new DantaError('not_found', '内容不存在或已被删除。', status)
-        if (status === 429) throw new DantaError('rate_limited', '社区服务请求过于频繁，请稍后再试。', status)
+        if (status === 429) {
+            throw new DantaError('rate_limited', '社区服务请求过于频繁，请稍后再试。', status, retryAfterMs)
+        }
         if (status >= 500) throw new DantaError('unavailable', '社区服务暂时不可用，请稍后再试。', status)
         throw new DantaError('unavailable', `社区服务返回异常状态（HTTP ${status}）。`, status)
     }
