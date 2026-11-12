@@ -10,7 +10,8 @@ import {
     academicTerm, communityFeeds, planCredits, planSlotsOverlap,
     type CampusPage, type CourseOffering, type CourseReviewsResult, type CourseSearchPage,
 } from '../src/shared/danta.ts'
-import {parseToolArgs} from '../src/main/danta-search.ts'
+import {cancellationError, evidenceCount, parseToolArgs} from '../src/main/danta-search.ts'
+import {toolSuccess} from '../src/shared/agent.ts'
 import {normalizePlanItems} from '../src/main/danta-plan.ts'
 import {
     presentedReviewChars, presentCampusPage, presentCourseReviews, presentCourseSearch, presentTime
@@ -247,6 +248,10 @@ test('tool output stays inside a character budget and says what it dropped', () 
     assert.match(presented.note ?? '', /省略了 \d+ 条结果/)
     assert.ok(JSON.stringify(presented).length <= 6_400)
     for (const post of presented.posts) assert.equal(post.truncated, true)
+    // T01：续读位置必须按实际交付条数推进，否则模型继续读会跳过被丢弃的条目
+    assert.equal(presented.nextOffset, page.offset + presented.posts.length)
+    assert.notEqual(presented.nextOffset, page.nextOffset)
+    assert.deepEqual(presented.coverage, {raw: 10, returned: presented.posts.length})
 })
 
 test('course search keeps planning fields and flags a missing total', () => {
@@ -355,4 +360,34 @@ test('plan validation rejects unknown credit and impossible slots without droppi
     const kept = normalizePlanItems([{...base, credit: null, slot: null}])
     assert.equal(kept[0].credit, null)
     assert.equal(kept[0].slot, null)
+})
+
+test('server side review truncation is never reported as complete', () => {
+    const result: CourseReviewsResult = {
+        course: offering,
+        reviews: [{id: 1, title: '还行', content: '内容不长', timeCreated: '2026-11-10T12:00:00Z', vote: 2, truncated: false, redacted: false}],
+        truncated: true,
+    }
+    const presented = presentCourseReviews(result)
+    // 条目本身没被裁剪，但服务端已经标记不完整，必须继续传播（T05）
+    assert.equal(presented.reviews[0].truncated, undefined)
+    assert.equal(presented.truncated, true)
+    assert.match(presented.note ?? '', /服务端已标记/)
+    assert.deepEqual(presented.coverage, {raw: 1, returned: 1})
+})
+
+test('tool envelope never contradicts the payload truncation flag', () => {
+    const complete = toolSuccess({truncated: false, posts: []}, {rounds: 1, calls: 1})
+    assert.equal(complete.truncated, false)
+    const truncated = toolSuccess({truncated: true, note: '省略了 3 条'}, {rounds: 1, calls: 1})
+    // 同一个结果里不能出现 payload=true 而信封=false 的矛盾
+    assert.equal(truncated.truncated, true)
+})
+
+test('evidence gate and cancellation stay distinguishable', () => {
+    assert.equal(evidenceCount({posts: [{}, {}], groups: [], reviews: []}), 2)
+    assert.equal(evidenceCount({posts: [], groups: [{}, {}, {}]}), 3)
+    assert.equal(evidenceCount({reviews: []}), 0)
+    assert.equal(evidenceCount(null), 0)
+    assert.equal(cancellationError().name, 'AbortError')
 })

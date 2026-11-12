@@ -332,6 +332,9 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                         </li>)}</ol>
                     </div>}
                     {aiAnswer && <div className="danta-ai-answer">
+                        {!aiAnswer.verified && <p className="danta-ai-warning" role="status">
+                            这次没有检索到可引用的帖子，下面的内容没有经过旦挞资料核实。
+                        </p>}
                         <p className="danta-ai-text">{aiAnswer.answer}</p>
                         {aiAnswer.sources.length > 0 && <div className="danta-ai-sources">
                             <h3>参考帖子</h3>

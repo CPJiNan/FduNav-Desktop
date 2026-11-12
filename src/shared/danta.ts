@@ -216,6 +216,10 @@ export interface AiSearchAnswer {
     steps: AiSearchStep[]
     model: string
     truncated: boolean
+    /** 是否至少有一次检索带回了可引用的材料；false 时答案未经查证。 */
+    verified: boolean
+    /** 成功带回材料的总条数（帖子 / 开课 / 课评），用于界面标注证据强度。 */
+    evidenceCount: number
 }
 
 export interface DantaAPI {

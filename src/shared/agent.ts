@@ -52,7 +52,9 @@ export function resultShape(value: unknown): Record<string, unknown> {
 
 export function toolSuccess(data: unknown, remaining: ToolBudget): Extract<ToolResult, { ok: true }> {
     const serialized = JSON.stringify(data) ?? 'null'
-    if (serialized.length <= maxToolResultChars - 400) return {ok: true, data, truncated: false, remaining}
+    // 投影层已经标记过截断时，外层不能报 false，否则同一个结果里出现两个相反的截断语义（评审 T05）。
+    const innerTruncated = Boolean((data as {truncated?: unknown} | null)?.truncated)
+    if (serialized.length <= maxToolResultChars - 400) return {ok: true, data, truncated: innerTruncated, remaining}
     return {
         ok: true, data: {
             truncated: true,

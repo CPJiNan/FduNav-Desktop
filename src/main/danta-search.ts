@@ -61,6 +61,21 @@ export function parseToolArgs(schema: unknown, raw: string): Record<string, unkn
     return input
 }
 
+/** 取消：抛带 name 的异常，让 IPC 层能区分「用户/超时取消」与「检索失败」。 */
+export function cancellationError(): Error {
+    const error = new Error('检索已取消。')
+    error.name = 'AbortError'
+    return error
+}
+
+/** 一次成功的检索至少要带回一条帖子 / 开课 / 课评，才算有证据。 */
+export function evidenceCount(value: unknown): number {
+    const record = value as {posts?: unknown; groups?: unknown; reviews?: unknown} | null
+    if (!record) return 0
+    const size = (list: unknown) => Array.isArray(list) ? list.length : 0
+    return size(record.posts) + size(record.groups) + size(record.reviews)
+}
+
 function collectSources(value: unknown, sources: AiSearchSource[]): void {
     const posts = (value as { posts?: unknown } | null)?.posts
     if (!Array.isArray(posts)) return
@@ -112,6 +127,7 @@ export async function runCampusSearch(input: {
     let calls = 0
     let answer = ''
     let truncated = false
+    let evidence = 0
 
     const note = (step: AiSearchStep) => {
         steps.push(step)
@@ -119,7 +135,7 @@ export async function runCampusSearch(input: {
     }
 
     for (let round = 0; round <= maxRounds; round++) {
-        if (signal.aborted) break
+        if (signal.aborted) throw cancellationError()
         const final = round === maxRounds || calls >= maxCalls
         if (final) {
             truncated = true
@@ -145,7 +161,22 @@ export async function runCampusSearch(input: {
         }
         if (final) break
         for (const call of response.tool_calls) {
-            if (calls >= maxCalls) break
+            if (signal.aborted) throw cancellationError()
+            if (calls >= maxCalls) {
+                // 预算已满时模型仍可能一次给出多个调用；每个 tool_call_id 都必须有结果，
+                // 否则下一轮上下文里会出现没有回应的调用（评审 T02）。
+                context.push({
+                    role: 'tool',
+                    tool_call_id: call.id,
+                    content: JSON.stringify({
+                        ok: false, code: 'budget_exhausted',
+                        message: '工具调用预算已用尽，本次调用没有执行。',
+                        retryable: false, truncated: false,
+                        remaining: {rounds: Math.max(0, maxRounds - round), calls: 0},
+                    }),
+                })
+                continue
+            }
             calls++
             const label = chatToolLabels[call.function.name] ?? call.function.name
             note({label, detail: describeArgs(call.function.arguments)})
@@ -156,8 +187,10 @@ export async function runCampusSearch(input: {
                     call.function.arguments,
                 )
                 const raw = await runTool(call.function.name, parsed)
+                if (signal.aborted) throw cancellationError()
                 result = toolSuccess(raw, {rounds: maxRounds - round, calls: maxCalls - calls})
                 collectSources(raw, sources)
+                evidence += evidenceCount(raw)
             } catch (error) {
                 result = toolFailure(error, {rounds: maxRounds - round, calls: maxCalls - calls})
             }
@@ -169,12 +202,20 @@ export async function runCampusSearch(input: {
         }
     }
 
+    if (signal.aborted) throw cancellationError()
     if (!answer.trim()) throw new ToolError('internal', '模型没有给出有效回答，请重试。')
+    // 证据门槛：一次工具都没调通、或调通但没有带回任何材料时，不能把模型自述当成「查到了」（评审 T04）。
+    const verified = evidence > 0 && sources.length > 0
+    const text = verified
+        ? answer.trim()
+        : `未检索到可引用的社区资料，以下内容没有经过旦挞帖子核实。\n\n${answer.trim()}`
     return {
-        answer: answer.slice(0, 6000),
+        answer: text.slice(0, 6000),
         sources,
         steps,
         model: connection.model,
         truncated,
+        verified,
+        evidenceCount: evidence,
     }
 }

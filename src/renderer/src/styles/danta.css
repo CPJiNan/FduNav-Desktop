@@ -358,6 +358,17 @@
     border-radius: var(--radius-lg);
 }
 
+.danta-ai-warning {
+    margin: 0 0 var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-left: 3px solid var(--color-warning, #b8860b);
+    border-radius: var(--radius-sm);
+    background: var(--color-warning-subtle, rgba(184, 134, 11, 0.1));
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+}
+
 .danta-ai-text {
     margin: 0;
     max-width: 74ch;

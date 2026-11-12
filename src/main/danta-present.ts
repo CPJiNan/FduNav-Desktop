@@ -50,11 +50,14 @@ export interface PresentedCampusPost {
 
 export interface PresentedCampusPage {
     posts: PresentedCampusPost[]
+    /** 续读位置：按「已交付条数」计算，不按服务端原始条数，避免跳过未展示的条目。 */
     nextOffset: number | null
     complete: boolean
     notice: string
     thread?: {id: number; replies: number | null; time: string | null}
-    /** 因为预算被裁掉尾部时为 true，并附 note 说明。 */
+    /** 本次交付覆盖情况：服务端原始条数与本工具实际交付条数。 */
+    coverage?: {raw: number; returned: number}
+    /** 因为预算被裁掉尾部、或上游已标记截断时为 true。 */
     truncated?: boolean
     note?: string
 }
@@ -81,15 +84,19 @@ export function presentCampusPage(page: CampusPage): PresentedCampusPage {
         posts.push(item)
         used += size
     }
+    // 服务端的 nextOffset 按原始条数推进；一旦本层丢了尾部，就必须按已交付条数回退，
+    // 否则模型照它继续读会跳过被丢弃的那几条（评审 T01）。
+    const nextOffset = dropped > 0 ? page.offset + posts.length : page.nextOffset
     const result: PresentedCampusPage = {
-        posts, nextOffset: page.nextOffset, complete: page.complete && dropped === 0, notice: page.notice
+        posts, nextOffset, complete: page.complete && dropped === 0, notice: page.notice,
+        coverage: {raw: page.rawCount, returned: posts.length}
     }
     if (page.thread) {
         result.thread = {id: page.thread.id, replies: page.thread.reply, time: presentTime(page.thread.timeCreated)}
     }
     if (dropped > 0) {
         result.truncated = true
-        result.note = `为控制长度省略了 ${dropped} 条结果；可调小 limit 或增大 offset 分页查看。`
+        result.note = `为控制长度省略了 ${dropped} 条结果；nextOffset 已按实际交付条数回退，可据此继续读取。`
         result.complete = false
     }
     return result
@@ -156,6 +163,7 @@ export interface PresentedReview {
 export interface PresentedReviews {
     course: PresentedOffering
     reviews: PresentedReview[]
+    coverage?: {raw: number; returned: number}
     truncated?: boolean
     note?: string
 }
@@ -178,10 +186,17 @@ export function presentCourseReviews(result: CourseReviewsResult): PresentedRevi
         reviews.push(item)
         used += size
     }
-    const presented: PresentedReviews = {course: presentOffering(result.course), reviews}
-    if (dropped > 0) {
+    const presented: PresentedReviews = {
+        course: presentOffering(result.course), reviews,
+        coverage: {raw: result.reviews.length, returned: reviews.length}
+    }
+    const notes: string[] = []
+    if (dropped > 0) notes.push(`为控制长度省略了 ${dropped} 条课评`)
+    // 上游（服务端）已截断时必须继续向下传播，不能因为本层没再裁剪就当作完整（评审 T05）。
+    if (result.truncated) notes.push('服务端已标记该开课的课评不完整')
+    if (notes.length) {
         presented.truncated = true
-        presented.note = `为控制长度省略了 ${dropped} 条课评；换一门开课继续查看。`
+        presented.note = `${notes.join('；')}。可用同一 courseId 分段继续读取，或查看该课程的其他开课。`
     }
     return presented
 }
