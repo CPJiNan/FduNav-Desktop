@@ -97,8 +97,16 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
     const conflicts = useMemo(() => conflictingCourses(timetable?.courses ?? []), [timetable])
     const enrolled = useMemo(() => (timetable?.courses ?? []).map(item => normalize(item.name)), [timetable])
     const inPlan = (courseId: number) => plan.some(item => item.courseId === courseId)
-    const planned = useMemo(() => plan.filter(item => item.slot), [plan])
-    const planCreditTotal = useMemo(() => planCredits(plan), [plan])
+    /** 方案绑定的目标学期：与当前课表的学期一致，历史开课不计入方案。 */
+    const targetTerm = useMemo(() => timetable
+        ? timetable.semesters.find(item => item.id === timetable.semesterId)?.name ?? ''
+        : '', [timetable])
+    const isHistorical = (item: PlanItem) => !!targetTerm && item.term !== targetTerm
+    /** 参与排课与学分统计的只有目标学期的课程；历史开课只作为收藏保留。 */
+    const currentPlan = useMemo(() => plan.filter(item => !isHistorical(item)), [plan, targetTerm])
+    const historicalPlan = useMemo(() => plan.filter(item => isHistorical(item)), [plan, targetTerm])
+    const planned = useMemo(() => currentPlan.filter(item => item.slot), [currentPlan])
+    const planCreditTotal = useMemo(() => planCredits(currentPlan), [currentPlan])
     /** 模拟排课与已选课表、以及彼此之间的时间冲突。 */
     const slotConflicts = useMemo(() => {
         const bad = new Set<number>()
@@ -246,7 +254,12 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
             }
             const result = await api.savePlan([...plan, item])
             if (!result.ok) setError(result.error)
-            else setPlan(result.data)
+            else {
+                setPlan(result.data)
+                if (item.term !== targetTerm) {
+                    setError(`${item.name} 是 ${item.term} 的历史开课，已保存为收藏；它不参与 ${targetTerm} 的方案排课。`)
+                }
+            }
         } catch {
             setError('保存备选失败，请稍后重试。')
         } finally {
@@ -484,7 +497,8 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                         <p className="courses-group-meta">
                             {timetable ? `已选 ${schedule.length} 门课 · ${timetable.semesters.find(item => item.id === timetable.semesterId)?.name ?? '当前学期'}` : '还没有课表缓存'}
                             {conflicts.size > 0 && ` · ${conflicts.size} 门课存在时间冲突`}
-                            {plan.length > 0 && ` · 备选 ${plan.length} 门，已排 ${planned.length} 门，共 ${planCreditTotal} 学分`}
+                            {currentPlan.length > 0 && ` · 方案 ${currentPlan.length} 门，已排 ${planned.length} 门，共 ${planCreditTotal} 学分`}
+                            {historicalPlan.length > 0 && ` · 另有 ${historicalPlan.length} 门历史开课收藏`}
                         </p>
                     </div>
                     <div className="courses-head-actions">
@@ -574,6 +588,8 @@ export function CoursesPage({onSettings}: { onSettings: () => void }) {
                                 </span>
                                 {enrolled.includes(normalize(item.name)) &&
                                     <span className="courses-badge is-enrolled">已在课表</span>}
+                                {isHistorical(item) &&
+                                    <span className="courses-badge is-historical" title={`该开课属于 ${item.term}，不参与 ${targetTerm || '当前学期'} 的排课`}>历史开课 · 收藏</span>}
                                 <span className={`courses-plan-slot${item.slot && slotConflicts.has(item.courseId) ? ' is-conflict' : ''}`}>
                                     {item.slot
                                         ? `${weekdayLabels[item.slot.weekday - 1]} 第 ${item.slot.startUnit}–${item.slot.endUnit} 节`

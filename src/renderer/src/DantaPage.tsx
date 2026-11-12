@@ -32,6 +32,7 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
     const [error, setError] = useState('')
     const [thread, setThread] = useState<CampusPage | null>(null)
     const [summary, setSummary] = useState('')
+    const [summaryCoverage, setSummaryCoverage] = useState<{unit: 'floor' | 'review'; read: number; offset: number; complete: boolean} | null>(null)
     const [summaryError, setSummaryError] = useState('')
     const [mode, setMode] = useState<'feed' | 'search' | 'ai'>('feed')
     const [aiQuestion, setAiQuestion] = useState('')
@@ -139,6 +140,7 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
         setError('')
         setThread(null)
         setSummary('')
+        setSummaryCoverage(null)
         setSummaryError('')
         try {
             const result = await api.searchPosts({query: text, offset: 0, limit: pageSize})
@@ -180,6 +182,7 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
         setBusy('正在读取帖子…')
         setError('')
         setSummary('')
+        setSummaryCoverage(null)
         setSummaryError('')
         try {
             const result = await api.readThread({holeId, offset: 0, limit: pageSize})
@@ -214,9 +217,14 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
         setBusy('正在生成摘要…')
         setSummaryError('')
         try {
-            const result = await api.summarizeThread(thread.thread!.id)
+            // 按界面已加载的楼层数请求摘要，避免“界面上加载了 20 层、摘要只用前 10 层”。
+            const limit = Math.min(20, Math.max(1, thread.results.length))
+            const result = await api.summarizeThread(thread.thread!.id, 0, limit)
             if (!result.ok) setSummaryError(result.error)
-            else setSummary(result.data.summary)
+            else {
+                setSummary(result.data.summary)
+                setSummaryCoverage(result.data.coverage)
+            }
         } catch {
             setSummaryError('摘要生成失败，请检查 LLM 设置后重试。')
         } finally {
@@ -387,8 +395,17 @@ export function DantaPage({onSettings}: { onSettings: () => void }) {
                             </button>
                         </div>
                         {summaryError && <p className="danta-error" role="alert">{summaryError}</p>}
-                        {summary ? <p className="danta-summary-text">{summary}</p>
-                            : <p className="danta-empty-note">摘要只使用当前已加载的楼层，可能不完整。</p>}
+                        {summary ? <>
+                                <p className="danta-summary-text">{summary}</p>
+                                {summaryCoverage && <p className="danta-empty-note">
+                                    本次摘要读取了 {summaryCoverage.unit === 'floor'
+                                        ? `第 ${summaryCoverage.offset + 1}–${summaryCoverage.offset + summaryCoverage.read} 层`
+                                        : `${summaryCoverage.read} 条课评`}
+                                    {summaryCoverage.complete ? '（已读完）' : '，其余内容未纳入'}
+                                </p>}
+                            </> : <p className="danta-empty-note">
+                                摘要会读取当前已加载的前 {Math.min(20, Math.max(1, thread.results.length))} 层楼层。
+                            </p>}
                     </div>
                 </>}
             </aside>

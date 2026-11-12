@@ -136,6 +136,14 @@
 }
 
 .courses-groups,
+.courses-badge.is-historical {
+    color: var(--color-text-muted);
+    border: 1px dashed var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--space-1);
+    font-size: var(--font-size-xs);
+}
+
 .courses-plan-list,
 .courses-offerings,
 .courses-review-list,

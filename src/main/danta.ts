@@ -118,7 +118,8 @@ export function registerDantaHandlers(db: AppDatabase, accounts: AccountService,
     query('danta:course-group', input => service.courseGroup(integer(input.id, 0)))
     query('danta:course-reviews', input => service.courseReviews(integer(input.courseId, 0)))
 
-    async function summarize(prompt: string, payload: unknown): Promise<DantaSummary> {
+    /** 只产出摘要正文与模型名；读取范围由各调用方按自己的数据源补上。 */
+    async function summarize(prompt: string, payload: unknown): Promise<Omit<DantaSummary, 'coverage'>> {
         const connection = await llm.getConnection()
         const text = await completeLlm(connection, [
             {role: 'system', content: prompt},
@@ -137,13 +138,25 @@ export function registerDantaHandlers(db: AppDatabase, accounts: AccountService,
 
     query('danta:summarize-thread', async input => {
         const holeId = integer(input.holeId, 0)
-        const page = await service.readThread(holeId, 0, 10)
-        return summarize(threadSummaryPrompt, page)
+        // 楼层上限 20 与 readThread 的上限一致；offset 只用于对齐界面已加载的范围。
+        const offset = typeof input.offset === 'number' ? Math.max(0, Math.trunc(input.offset)) : 0
+        const limit = typeof input.limit === 'number' ? Math.min(20, Math.max(1, Math.trunc(input.limit))) : 10
+        const page = await service.readThread(holeId, offset, limit)
+        const summary = await summarize(threadSummaryPrompt, page)
+        return {
+            ...summary,
+            coverage: {unit: 'floor' as const, read: page.results.length, offset, complete: page.complete}
+        }
     })
     query('danta:summarize-course', async input => {
         const courseId = integer(input.courseId, 0)
         const result = await service.courseReviews(courseId)
-        return summarize(reviewSummaryPrompt, result)
+        const summary = await summarize(reviewSummaryPrompt, result)
+        return {
+            ...summary,
+            // 课评是整门开课一次取回，因此这里报告条数与是否被服务端标记为不完整。
+            coverage: {unit: 'review' as const, read: result.reviews.length, offset: 0, complete: !result.truncated}
+        }
     })
 
     let searching = false

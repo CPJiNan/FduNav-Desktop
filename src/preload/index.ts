@@ -29,7 +29,8 @@ const danta: DantaAPI = {
     searchCourses: input => ipcRenderer.invoke('danta:search-courses', input),
     getCourseGroup: id => ipcRenderer.invoke('danta:course-group', {id}),
     getCourseReviews: courseId => ipcRenderer.invoke('danta:course-reviews', {courseId}),
-    summarizeThread: holeId => ipcRenderer.invoke('danta:summarize-thread', {holeId}),
+    summarizeThread: (holeId, offset = 0, limit = 10) =>
+        ipcRenderer.invoke('danta:summarize-thread', {holeId, offset, limit}),
     summarizeCourse: courseId => ipcRenderer.invoke('danta:summarize-course', {courseId}),
     aiSearch: input => ipcRenderer.invoke('danta:ai-search', input),
     onAiSearchStep: listener => {

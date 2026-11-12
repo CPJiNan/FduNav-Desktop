@@ -125,6 +125,8 @@ export interface CourseReviewsResult {
 export interface DantaSummary {
     summary: string
     model: string
+    /** 摘要实际读取的范围，用来避免“界面加载了更多、摘要只用了一部分”的误导。 */
+    coverage: {unit: 'floor' | 'review'; read: number; offset: number; complete: boolean}
 }
 
 /** 模拟排课时间段：星期几与起止节次，由用户在备选清单里自己摆放。 */
@@ -258,7 +260,7 @@ export interface DantaAPI {
 
     getCourseReviews(courseId: number): Promise<Result<CourseReviewsResult>>
 
-    summarizeThread(holeId: number): Promise<Result<DantaSummary>>
+    summarizeThread(holeId: number, offset?: number, limit?: number): Promise<Result<DantaSummary>>
 
     summarizeCourse(courseId: number): Promise<Result<DantaSummary>>
 
