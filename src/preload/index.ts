@@ -15,6 +15,7 @@ import type {ChatAPI, ChatPushState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
 import type {MailAPI} from '../shared/mail'
+import type {ResearchAPI} from '../shared/research'
 
 const mail: MailAPI = {
     accounts: () => ipcRenderer.invoke('mail:accounts'),
@@ -68,7 +69,8 @@ const chat: ChatAPI = {
     sessionTrace: () => ipcRenderer.invoke('chat:session-trace'),
     usage: () => ipcRenderer.invoke('chat:usage'),
     undo: (turnId, requestId) => ipcRenderer.invoke('chat:undo', {turnId, requestId}),
-    send: text => ipcRenderer.invoke('chat:send', text),
+    openSource: url => ipcRenderer.invoke('chat:open-source', url),
+    send: (text, options) => ipcRenderer.invoke('chat:send', {text, sourceMode: options.sourceMode}),
     retry: (turnId, text) => ipcRenderer.invoke('chat:retry', {turnId, text}),
     cancel: () => ipcRenderer.invoke('chat:cancel'),
     clear: () => ipcRenderer.invoke('chat:clear'),
@@ -139,6 +141,14 @@ const llm: LlmAPI = {
     models: input => ipcRenderer.invoke('llm:models', input),
 }
 contextBridge.exposeInMainWorld('llm', llm)
+
+const research: ResearchAPI = {
+    get: () => ipcRenderer.invoke('research:get'),
+    save: input => ipcRenderer.invoke('research:save', input),
+    login: input => ipcRenderer.invoke('research:campus-login', input),
+    logout: () => ipcRenderer.invoke('research:campus-logout'),
+}
+contextBridge.exposeInMainWorld('research', research)
 
 const sources: SourcesAPI = {
     list: () => ipcRenderer.invoke('sources:list'),

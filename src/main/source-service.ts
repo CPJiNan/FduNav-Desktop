@@ -6,8 +6,9 @@ import {sourceReadingRules} from './source-reading-rules.ts'
 import {requestSourcePage, type SourcePage} from './source-fetch.ts'
 
 type RequestPage = (url: string) => Promise<SourcePage>
+const defaultRequestPage: RequestPage = url => requestSourcePage(url, 25_000)
 
-export async function collectSource(source: MessageSource, requestPage: RequestPage = requestSourcePage) {
+export async function collectSource(source: MessageSource, requestPage: RequestPage = defaultRequestPage) {
     const rule = sourceReadingRules[source.id]
     const page = await requestPage(source.url)
     let error = ''
@@ -55,7 +56,7 @@ export class SourceRefreshService {
     private db: AppDatabase
     private requestPage: RequestPage
 
-    constructor(db: AppDatabase, requestPage: RequestPage = requestSourcePage) {
+    constructor(db: AppDatabase, requestPage: RequestPage = defaultRequestPage) {
         this.db = db
         this.requestPage = requestPage
     }

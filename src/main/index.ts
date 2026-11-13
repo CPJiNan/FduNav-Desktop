@@ -26,6 +26,7 @@ import {registerCampusCardHandlers} from './campus-card'
 import {registerLibraryHandlers} from './library'
 import {registerGeneralSettingsHandlers} from './general-settings'
 import {registerAppInfoHandlers} from './app-info'
+import {registerResearchHandlers} from './research'
 
 let database: AppDatabase | undefined
 let mainWindow: BrowserWindow | null = null
@@ -178,9 +179,10 @@ app.whenReady().then(async () => {
         const calendar = registerCalendarHandlers(database, accounts, trusted, showMainWindow)
         const todos = registerTodoHandlers(database, accounts, trusted, showMainWindow)
         const llm = registerLlmHandlers(database, trusted)
+        const research = registerResearchHandlers(database, accounts, trusted)
         const notices = registerNoticeHandlers(database, accounts, llm, trusted, showMainWindow)
         const mail = registerMailHandlers(database, accounts, trusted)
-        registerChatHandlers(database, accounts, llm, notices, calendar, todos, mail, trusted)
+        registerChatHandlers(database, accounts, llm, notices, calendar, todos, mail, research, trusted)
         registerMessagePreferenceHandlers(database, trusted)
     } catch (error) {
         console.error('FduNav 启动失败', error)

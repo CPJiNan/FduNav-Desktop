@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto'
-import {app, ipcMain, type IpcMainInvokeEvent, type WebContents} from 'electron'
+import {app, ipcMain, type IpcMainInvokeEvent, shell, type WebContents} from 'electron'
 import type {Result} from '../shared/accounts'
 import type {ChatAction, ChatActionRequest, ChatCard, ChatPushState, ChatSummaryRequest, ChatTurn} from '../shared/chat'
 import {chatActionStatusLabels, chatActionTitles, chatSummaryStatusLabels} from '../shared/chat'
@@ -40,6 +40,26 @@ import {
     presentActionResult,
     presentNotice
 } from './chat-tools'
+import type {ResearchServices} from './research'
+import {
+    citedSourceIds,
+    isResearchSourceMode,
+    isResearchToolName,
+    type ResearchSource,
+    type ResearchSourceMode,
+} from '../shared/research'
+import {CampusBudget, CampusResearchService} from './campus-research'
+import {createResearchToolRunner, researchToolAllowed} from './research-tools'
+import {reviewDraft} from './chat-review'
+import {
+    answerIssues,
+    characterLimit,
+    fallbackAnswer,
+    requestedActions,
+    retrievalForbidden,
+    shortFailure,
+} from '../shared/research-review'
+import {researchRuntimeBlock} from '../shared/research-prompts'
 
 function confirmText(action: ChatAction, result?: CalendarEventOrTodoOrMemory): string {
     switch (action.kind) {
@@ -64,6 +84,8 @@ function confirmText(action: ChatAction, result?: CalendarEventOrTodoOrMemory): 
 
 const compactionAttempts = 3
 const fallbackTurns = 4
+const campusMaxPages = 8
+const campusMaxContentChars = 4000
 const contextTokenBudget = 100_000
 const contextCharFallback = 400_000
 const turnToolResultBudget = 60_000
@@ -95,6 +117,7 @@ interface StoredTurn extends ChatTurn {
 
 interface RunningChat {
     turns: StoredTurn[];
+    sources: ResearchSource[];
     status: string;
     controller: AbortController
     savedTrace: Map<string, { status: string; details?: unknown }>
@@ -103,6 +126,7 @@ interface RunningChat {
 export function registerChatHandlers(db: AppDatabase, accounts: AccountService, llm: LlmSettingsService,
                                      notices: ReturnType<typeof registerNoticeHandlers>, calendar: ReturnType<typeof registerCalendarHandlers>,
                                      todos: ReturnType<typeof registerTodoHandlers>, mail: MailService,
+                                     research: ResearchServices,
                                      trusted: (event: IpcMainInvokeEvent) => boolean) {
     const running = new Map<string, RunningChat>()
     const memoryCarry = new Map<string, string[]>()
@@ -181,7 +205,9 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         return {
             username: user, turns: presentTurns(user, active?.turns ?? load(user)),
             busy: !!active, status: active?.status ?? '',
-            stats: chatStats(user, active), full: true
+            stats: chatStats(user, active), full: true,
+            sources: active?.sources ?? db.getResearchSources(user),
+            research: {webReady: research.settings.hasSearchKey(), campus: research.campus.hint(user)},
         }
     }
 
@@ -197,7 +223,9 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         return {
             username: user, turns: presentTurns(user, turns, events),
             busy: !!active, status: active?.status ?? '',
-            stats: chatStats(user, active), full: false
+            stats: chatStats(user, active), full: false,
+            sources: active?.sources ?? db.getResearchSources(user),
+            research: {webReady: research.settings.hasSearchKey(), campus: research.campus.hint(user)},
         }
     }
 
@@ -379,7 +407,40 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 persist(user, active);
                 publish(user, false)
             }
-            const previous = active.turns.slice(0, -1)
+            const campusState = await research.campus.state(user)
+            const researchSettings = research.settings.get(campusState)
+            const requestedMode = turn.sourceMode
+            const campusReady = campusState.loggedIn
+            const sourceMode: ResearchSourceMode = requestedMode === 'auto' ? (campusReady ? 'all' : 'web') : requestedMode
+            const campusAllowed = sourceMode === 'all' && campusReady
+            const warnings: string[] = []
+            if (requestedMode === 'all' && !campusReady) warnings.push('树洞未登录或凭据失效，本轮仅使用公开网页。')
+            const searchApiKey = researchSettings.hasSearchApiKey
+                ? await research.settings.searchApiKey().catch(() => '') : ''
+            const webReady = !!searchApiKey
+            if (researchSettings.hasSearchApiKey && !webReady) warnings.push('Tavily API Key 无法读取，本轮仅使用其他可用来源。')
+            const noRetrieval = retrievalForbidden(turn.user)
+            const researchActive = !noRetrieval && (webReady || campusAllowed)
+            const requiredActions = researchActive ? [...requestedActions(turn.user)] : []
+            const deadline = Date.now() + researchSettings.requestBudgetSeconds * 1000
+            const campusBudget = new CampusBudget(campusMaxPages)
+            const campusService = new CampusResearchService(research.campus, () => ({
+                maxContentChars: campusMaxContentChars,
+                timeoutMs: researchSettings.httpTimeoutSeconds * 1000,
+            }))
+            const researchRunner = researchActive ? createResearchToolRunner({
+                db, username: user, sources: active.sources, settings: researchSettings, searchApiKey,
+                auth: research.campus, campus: campusService, campusBudget, deadline, assertCurrent,
+            }) : null
+            const permittedSources = () => active.sources.filter(source => campusAllowed || source.source === 'web')
+            const knownSourceIds = () => new Set(permittedSources().map(source => source.id))
+            const answerLimit = characterLimit(turn.user)
+            turn.sourceMode = sourceMode
+            turn.warnings = warnings
+            const allPrevious = active.turns.slice(0, -1)
+            const previous = sourceMode === 'web'
+                ? allPrevious.filter(item => item.sourceMode !== 'all')
+                : allPrevious
             let compacted = db.getCompaction(user)
             const pendingUpdates = db.getChatContextUpdates(user, compacted?.updatesThrough)
             const history = compactTurns(uncompactedTurns(previous, compacted))
@@ -509,10 +570,14 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             memoryCarry.set(user, selectMemories(currentMemories, recentUserText).map(item => item.id))
             const contextUpdates = db.getChatContextUpdates(user, compacted?.updatesThrough).map(item => item.data)
             const today = new Date().toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'})
+            const researchBlock = webReady || campusAllowed
+                ? researchRuntimeBlock(campusAllowed, researchSettings.reviewEnabled) : ''
             const context: ToolChatMessage[] = [{
                 role: 'system', content: llm.get().chatPrompt + '\n' + JSON.stringify({
-                    today, timeZone: 'Asia/Shanghai', messagePreferences: db.getMessagePreferences(),
-                }) + dataTrustNotice
+                        today, timeZone: 'Asia/Shanghai', messagePreferences: db.getMessagePreferences(),
+                    }) + dataTrustNotice + researchBlock
+                    + (noRetrieval ? '\n本轮用户要求不检索：只能使用已有证据，不要调用检索工具。' : '')
+                    + (warnings.length ? `\n运行提示：${warnings.join(' ')}` : '')
             }]
             context.push(...history.recent.flatMap(item => item.context))
             if (compacted?.summary || memories.length || contextUpdates.length) {
@@ -571,18 +636,123 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 }
             }, mail, signal)
             let calls = 0, turnToolChars = 0
+            let currentToolNames: string[] = []
+            let exhausted = false
+
+            async function finalize(draftValue: string) {
+                let answer = draftValue
+                let reviewed = false
+                let issues = answerIssues(answer, knownSourceIds(), answerLimit, permittedSources())
+                const sources = permittedSources()
+                const known = knownSourceIds()
+                const canReview = researchSettings.reviewEnabled && sources.length > 0 &&
+                    Date.now() < deadline && !signal.aborted
+                if (canReview) {
+                    try {
+                        const outcome = await reviewDraft({
+                            question: turn.user,
+                            userTurns: [...previous.slice(-2).map(item => item.user), turn.user],
+                            previousAnswer: previous.at(-1)?.reply?.slice(0, 4000) || null,
+                            draft: answer,
+                            limit: answerLimit,
+                            context: turn.context,
+                            sources,
+                            known,
+                            availableTools: currentToolNames,
+                            budget: researchRunner ? {
+                                remainingToolCalls: researchRunner.remaining().calls,
+                                remainingCampusPages: researchRunner.remaining().campusPages,
+                                remainingSeconds: researchRunner.remaining().seconds,
+                            } : {remainingToolCalls: 0, remainingCampusPages: 0, remainingSeconds: 0},
+                            requiredActions,
+                            retrievalForbidden: noRetrieval,
+                            runtimeNotices: [...warnings, ...(researchRunner?.warnings() ?? [])],
+                        }, async (system, payload, label) => {
+                            assertCurrent()
+                            const reviewEvent = record('model', label, {phase: 'review'}, 'running')
+                            const started = performance.now()
+                            try {
+                                const result = await streamLlmWithTools(connection!, [
+                                    {role: 'system', content: system},
+                                    {role: 'user', content: JSON.stringify(payload)},
+                                ], [], signal, {
+                                    thinking: 'disabled', onUsage, onRetry, ...observeRequest(reviewEvent),
+                                })
+                                reviewEvent.status = 'completed'
+                                reviewEvent.elapsedMs = Math.round(performance.now() - started)
+                                return result.content ?? ''
+                            } catch (error) {
+                                reviewEvent.status = signal.aborted ? 'cancelled' : 'failed'
+                                reviewEvent.elapsedMs = Math.round(performance.now() - started)
+                                throw error
+                            }
+                        })
+                        answer = outcome.answer
+                        reviewed = outcome.reviewed
+                        issues = outcome.issues
+                        if (outcome.warnings.length) warnings.push(...outcome.warnings)
+                        if (answer !== draftValue) {
+                            record('model', '按核对结果修订回答', {before: draftValue.length, after: answer.length})
+                        }
+                        if (issues.length) turn.endReason = 'error'
+                    } catch (error) {
+                        if (signal.aborted) throw error
+                        warnings.push(`答案核对未完成：${error instanceof Error ? error.message : '未知原因'}。已保留未核对回答。`)
+                    }
+                }
+                if (!answer.trim()) {
+                    answer = fallbackAnswer('模型未返回有效回答。', sources.length > 0)
+                    warnings.push('模型未返回有效回答。')
+                    turn.endReason = 'error'
+                }
+                if (!reviewed) {
+                    issues = answerIssues(answer, known, answerLimit, sources)
+                    if (issues.length) {
+                        const reason = issues.some(item => item.code === 'unknown_citations') ? '回答引用了不存在的来源。'
+                            : issues.some(item => item.code === 'whole_post_copy') ? '回答复制了完整帖子。' : '回答超出字数上限。'
+                        answer = answerLimit !== null && answerLimit < 80 ? shortFailure(answerLimit) : fallbackAnswer(reason, true)
+                        warnings.push(reason)
+                        turn.endReason = 'error'
+                    }
+                }
+                turn.reply = answer
+                turn.reviewed = reviewed
+                turn.sourceIds = [...citedSourceIds(answer)].filter(id => known.has(id))
+                turn.warnings = [...new Set([...warnings, ...(researchRunner?.warnings() ?? [])])]
+                const lastMessage = turn.context.at(-1)
+                if (lastMessage?.role === 'assistant' && !lastMessage.tool_calls?.length) lastMessage.content = answer
+                if (turn.endReason !== 'error') turn.endReason = exhausted ? 'budget' : 'answered'
+                persist(user, active)
+                publish(user, false)
+            }
+
             for (let round = 0; round <= 8; round++) {
                 assertCurrent()
                 const overBudget = lastPromptTokens > 0
                     ? lastPromptTokens > contextTokenBudget
                     : JSON.stringify(context).length > contextCharFallback
                 const final = round === 8 || calls >= 24 || overBudget
+                exhausted = final
                 active.status = final ? '整理已有结果' : '思考中'
                 if (final) context.push({
                     role: 'user',
                     content: '本轮工具或上下文预算已耗尽。不要调用工具。请基于已有结果明确总结完成、待批准与未完成的部分，并说明下一步。'
                 })
-                const availableTools = final ? [] : configuredChatTools(llm.get().toolDescriptions)
+                const allowedResearch = new Set<string>()
+                if (researchRunner && !noRetrieval && !final) {
+                    if (webReady) {
+                        allowedResearch.add('search_web');
+                        allowedResearch.add('read_web')
+                    }
+                    if (campusAllowed) {
+                        allowedResearch.add('search_campus_posts');
+                        allowedResearch.add('read_campus_thread')
+                    }
+                    if (allowedResearch.size) allowedResearch.add('plan_research')
+                }
+                const availableTools = final ? [] : configuredChatTools(llm.get().toolDescriptions,
+                    name => !isResearchToolName(name) || allowedResearch.has(name))
+                currentToolNames = availableTools.map(item => item.function.name)
                 const requestDetails = {
                     model: connection.model, ...summarizeContext(context),
                     tools: availableTools.map(item => item.function.name), round: round + 1,
@@ -628,13 +798,18 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 }
                 context.push(response);
                 turn.context.push(response)
-                if (!response.tool_calls?.length) return
+                if (!response.tool_calls?.length) {
+                    await finalize(response.content ?? '')
+                    return
+                }
                 if (final) {
                     turn.truncated = true
+                    turn.endReason = 'budget'
                     record('error', '收尾轮仍返回工具调用，已忽略、未执行', {
                         truncated: true,
                         ignoredCalls: response.tool_calls.map(call => ({id: call.id, name: call.function.name}))
                     }, 'failed')
+                    await finalize(response.content ?? '')
                     return
                 }
                 for (const call of response.tool_calls) {
@@ -650,7 +825,12 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     try {
                         if (final || calls >= 24) throw new ToolError('budget_exhausted', '工具预算已耗尽，请总结已有结果。')
                         calls++
-                        raw = await awaitWithAbort(execute(call.function.name, call.function.arguments), signal)
+                        const invoke = async () => researchToolAllowed(call.function.name)
+                            ? researchRunner
+                                ? researchRunner.run(call.function.name, call.function.arguments)
+                                : Promise.reject(new ToolError('forbidden', '本轮没有可用的旦挞工具。'))
+                            : execute(call.function.name, call.function.arguments)
+                        raw = await awaitWithAbort(invoke(), signal)
                         assertCurrent()
                         result = toolSuccess(raw, remaining)
                     } catch (error) {
@@ -991,6 +1171,20 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         return db.hydrateChatTrace(user, event as ChatTraceEvent)
     })
     handle('chat:usage', user => db.getUsage(user))
+    handle('chat:open-source', (_user, input) => {
+        if (typeof input !== 'string' || input.length > 2048) throw new Error('来源链接无效。')
+        let url: URL
+        try {
+            url = new URL(input)
+        } catch {
+            throw new Error('来源链接无效。')
+        }
+        if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) {
+            throw new Error('来源链接无效。')
+        }
+        void shell.openExternal(url.href)
+        return null
+    })
     handle('chat:undo', (user, input) => {
         if (running.has(user)) throw new Error('请等待回复结束后撤销。')
         if (!input || typeof input !== 'object') throw new Error('撤销参数无效。')
@@ -1097,7 +1291,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     })
     handle('chat:get', user => snapshot(user))
 
-    function startTurn(user: string, text: string) {
+    function startTurn(user: string, text: string, sourceMode: ResearchSourceMode) {
         llm.getRequestSignal()
         const settings = llm.get()
         if (!settings.baseUrl || !settings.model) throw new Error('请先在 LLM 设置中配置接口和模型。')
@@ -1107,10 +1301,12 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             user: text,
             reply: '',
             cards: [],
-            context: [{role: 'user', content: text}]
+            context: [{role: 'user', content: text}],
+            sourceMode,
         }
         const active: RunningChat = {
             turns: [...load(user), turn],
+            sources: db.getResearchSources(user),
             status: '思考中',
             controller: new AbortController(),
             savedTrace: new Map()
@@ -1125,8 +1321,13 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
 
     handle('chat:send', (user, input) => {
         if (running.has(user)) throw new Error('请等待当前回复完成，或先停止回复。')
-        if (typeof input !== 'string' || !input.trim() || input.length > 8000) throw new Error('请输入 1–8000 个字符。')
-        return startTurn(user, input.trim())
+        if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('请输入 1–8000 个字符。')
+        const value = input as { text?: unknown; sourceMode?: unknown }
+        if (typeof value.text !== 'string' || !value.text.trim() || value.text.length > 8000) {
+            throw new Error('请输入 1–8000 个字符。')
+        }
+        if (!isResearchSourceMode(value.sourceMode)) throw new Error('数据源模式无效。')
+        return startTurn(user, value.text.trim(), value.sourceMode)
     })
     handle('chat:retry', (user, input) => {
         if (running.has(user)) throw new Error('请等待当前回复完成，或先停止回复。')
@@ -1140,6 +1341,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         if (index < 0) throw new Error('这条消息不存在或已被清除。')
         if (index !== turns.length - 1) throw new Error('只能编辑最近一条消息。')
         if (!turns[index].error) throw new Error('只有失败的回复可以编辑重发。')
+        const mode = turns[index].sourceMode
         const remaining = turns.filter(turn => turn.id !== turnId)
         db.transaction(() => {
             db.saveChatConversation(user, JSON.stringify(remaining.map(turn => serializeTurn(turn, false))))
@@ -1148,7 +1350,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             if (db.getCompaction(user)?.coversUpTo === turnId) db.saveCompaction(user, null)
         })
         publish(user)
-        return startTurn(user, text.trim())
+        return startTurn(user, text.trim(), mode)
     })
     handle('chat:cancel', user => {
         running.get(user)?.controller.abort('user');
@@ -1162,6 +1364,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             db.clearChatTrace(user);
             db.clearRunningTurn(user);
             db.clearChatContextUpdates(user);
+            db.clearResearchSources(user);
             memoryCarry.delete(user);
             db.clearLlmUsage(user)
         });

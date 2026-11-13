@@ -4,6 +4,7 @@ import {type ChatToolName, defaultToolDescriptions} from '../../shared/llm-promp
 import {Icon} from './Icon'
 import {MemoryPanel} from './MemoryPanel'
 import {UsagePanel} from './UsagePanel'
+import {WebSearchPanel} from './WebSearchPanel'
 import './styles/llm.css'
 
 const promptFields = [
@@ -322,5 +323,6 @@ export function LlmPanel({active}: { active: boolean }) {
                                            onClick={() => setRetry(value => value + 1)}>重试</button>}
             </div>}
         </form>
+        <WebSearchPanel active={active}/>
         <UsagePanel active={active}/><MemoryPanel active={active}/></div>
 }

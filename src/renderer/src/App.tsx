@@ -8,6 +8,7 @@ import {TodosPage} from './TodosPage'
 import {MessagePreferencesPanel} from './MessagePreferencesPanel'
 import {SourcesPanel} from './SourcesPanel'
 import {LlmPanel} from './LlmPanel'
+import {ResearchPanel} from './ResearchPanel'
 import {GeneralPanel} from './GeneralPanel'
 import {MailPanel} from './MailPanel'
 import {MailboxPage} from './MailboxPage'
@@ -29,6 +30,7 @@ const tabs = [
     {id: 'messages', label: '消息偏好', icon: 'tag'},
     {id: 'sources', label: '消息来源', icon: 'folder'},
     {id: 'llm', label: 'LLM', icon: 'processor'},
+    {id: 'research', label: '旦挞', icon: 'cup'},
     {id: 'mail', label: '邮箱', icon: 'mail'},
     {id: 'about', label: '关于', icon: 'info'},
 ] as const
@@ -202,7 +204,8 @@ export default function App() {
                                                                        onKeyDown={event => tabKey(event, index)}
                                                                        onClick={() => setTab(item.id)}
                                                                        className={`settings-tab ${tab === item.id ? 'is-active' : ''}`}>
-                                        <Icon name={item.icon}/><span>{item.label}</span></button>)}
+                                        <Icon name={item.icon}/>
+                                        <span>{item.label}</span></button>)}
                                 </div>
                                 <section className="settings-panel" role="tabpanel" id={`settings-panel-${tab}`}
                                          aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
@@ -222,6 +225,9 @@ export default function App() {
                                         active={showSettings && tab === 'sources'}/></div>
                                     <div hidden={tab !== 'llm'}><LlmPanel key={account?.username}
                                                                           active={settings && tab === 'llm'}/></div>
+                                    <div hidden={tab !== 'research'}><ResearchPanel
+                                        key={account?.username ?? 'signed-out'}
+                                        active={showSettings && tab === 'research'}/></div>
                                 </section>
                             </div>
                         </div>

@@ -23,7 +23,6 @@ function seconds(elapsedMs?: number) {
 export function TurnActivity({trace, stage, busy}: TurnActivityProps) {
     const steps = (trace ?? []).filter(item => activityKinds.has(item.kind))
     const rows = steps.slice(-6)
-    const hidden = steps.length - rows.length
     const hasRunning = steps.some(item => item.status === 'running')
     const stageLabel = busy && !hasRunning ? (stage || '正在处理') : ''
     const [expanded, setExpanded] = useState(busy)
@@ -46,7 +45,6 @@ export function TurnActivity({trace, stage, busy}: TurnActivityProps) {
                 <span className="turn-step-name">{item.label}</span>
                 <span className="turn-step-time">{seconds(item.elapsedMs)}</span>
             </li>)}
-            {hidden > 0 && <li className="turn-step-more">还有 {hidden} 步，见执行记录</li>}
             {stageLabel && <li className="turn-step" data-state="running" role="status" aria-live="polite">
                 <span className="turn-spin" aria-hidden="true"/>
                 <span className="turn-step-name">{stageLabel}</span>

@@ -14,6 +14,7 @@ import type {ChatAPI} from '../../shared/chat'
 import type {CampusCardAPI} from '../../shared/campus-card'
 import type {LibraryAPI} from '../../shared/library'
 import type {MailAPI} from '../../shared/mail'
+import type {ResearchAPI} from '../../shared/research'
 
 declare global {
     interface Window {
@@ -30,6 +31,7 @@ declare global {
         messagePreferences?: MessagePreferencesAPI
         sources?: SourcesAPI
         llm?: LlmAPI
+        research?: ResearchAPI
         timetable?: TimetableAPI
         calendar?: CalendarAPI
         todos?: TodosAPI

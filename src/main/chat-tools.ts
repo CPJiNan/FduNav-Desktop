@@ -16,6 +16,8 @@ import type {AppDatabase} from './database'
 import type {registerNoticeHandlers} from './notices'
 import type {ChatTool} from './llm-connection'
 import {MailError, type MailService} from './mail-service'
+import {researchTools} from './research-tools'
+import {parseToolArguments} from './tool-args'
 
 type Fields = Record<string, unknown>
 const str = (description: string) => ({type: 'string', description})
@@ -106,10 +108,12 @@ export const chatTools: ChatTool[] = [
         notes: str('新备注，可省略'),
     }, ['id']),
     tool('delete_event', {id: str('日程 ID，来自 list_events')}, ['id']),
+    ...researchTools,
 ]
 
-export function configuredChatTools(descriptions: Record<ChatToolName, string>): ChatTool[] {
-    return chatTools.map(item => ({
+export function configuredChatTools(descriptions: Record<ChatToolName, string>,
+                                    allowed?: (name: string) => boolean): ChatTool[] {
+    return chatTools.filter(item => !allowed || allowed(item.function.name)).map(item => ({
         ...item, function: {
             ...item.function,
             description: descriptions[item.function.name as ChatToolName] ?? item.function.description,
@@ -126,6 +130,9 @@ export const chatToolLabels: Record<string, string> = {
     list_todos: '查询待办', create_todo: '请求新增待办',
     update_todo: '请求修改待办', delete_todo: '请求删除待办',
     update_event: '请求修改日程', delete_event: '请求删除日程',
+    search_web: '搜索公开网页', read_web: '读取网页正文',
+    search_campus_posts: '搜索树洞', read_campus_thread: '读取帖子上下文',
+    plan_research: '规划资料检索',
 }
 
 export function presentTodo(todo: Todo) {
@@ -256,31 +263,7 @@ export function createChatToolRunner(db: AppDatabase, username: string,
     return async (name: string, raw: string): Promise<unknown> => {
         assertCurrent()
         const schema = chatTools.find(item => item.function.name === name)?.function.parameters
-        if (!schema) throw new ToolError('forbidden', '不支持的工具。')
-        let args: unknown
-        try {
-            args = JSON.parse(raw)
-        } catch {
-            throw new ToolError('invalid_args', '工具参数不是有效 JSON。')
-        }
-        if (!args || typeof args !== 'object' || Array.isArray(args)) throw new ToolError('invalid_args', '工具参数必须是对象。')
-        const input = args as Fields
-        const properties = schema.properties as Fields
-        if (Object.keys(input).some(key => !Object.hasOwn(properties, key)) || (schema.required as string[]).some(key => !Object.hasOwn(input, key))) throw new ToolError('invalid_args', '工具参数缺失或包含未知字段。')
-        for (const [key, value] of Object.entries(input)) {
-            const rule = properties[key] as {
-                type?: string | string[];
-                enum?: unknown[];
-                minimum?: number;
-                maximum?: number
-            }
-            const types = Array.isArray(rule.type) ? rule.type : [rule.type]
-            const valid = types.some(type => type === 'null' ? value === null : type === 'integer' ? Number.isSafeInteger(value) : typeof value === type)
-            if (!valid || (rule.enum && !rule.enum.includes(value)) ||
-                (typeof value === 'number' && (!Number.isFinite(value) || (rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)))) {
-                throw new ToolError('invalid_args', `${key} 参数类型或范围无效。`)
-            }
-        }
+        const input = parseToolArguments(schema, raw)
         if (name === 'list_emails' || name === 'get_email') {
             try {
                 const result = name === 'list_emails' ? await mail.list(username, input, signal)

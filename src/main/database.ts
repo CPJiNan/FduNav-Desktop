@@ -20,6 +20,7 @@ import type {CalendarEvent} from '../shared/calendar'
 import {type CalendarReminderMinutes, isCalendarReminderMinutes} from '../shared/calendar-reminders'
 import type {Todo} from '../shared/todos'
 import {defaultSources, type MessageSource, type SourceId} from '../shared/sources.ts'
+import {isResearchSource, readResearchSources, type ResearchSource} from '../shared/research'
 import {
     emptyMessagePreferences,
     type MessagePreferences,
@@ -40,6 +41,20 @@ export interface SavedLlmSettings extends AdditionalLlmPrompts {
     model: string;
     encryptedApiKey: Uint8Array | null
     summaryPrompt: string
+}
+
+export interface SavedResearchSettings {
+    searchDepth: 'basic' | 'advanced'
+    searchMaxResults: number
+    searchMaxSnippetChars: number
+    searchTimeoutSeconds: number
+    httpTimeoutSeconds: number
+    campusMaxContentChars: number
+    researchMaxToolCalls: number
+    maxCampusPages: number
+    requestBudgetSeconds: number
+    reviewEnabled: boolean
+    encryptedSearchApiKey: Uint8Array | null
 }
 
 export class AppDatabase {
@@ -171,6 +186,28 @@ export class AppDatabase {
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (source_id, url, cache_key),
                 FOREIGN KEY (source_id, url) REFERENCES notices (source_id, url) ON DELETE CASCADE
+            );
+            CREATE TABLE IF NOT EXISTS research_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                search_depth TEXT NOT NULL,
+                search_max_results INTEGER NOT NULL,
+                search_max_snippet_chars INTEGER NOT NULL,
+                search_timeout_seconds REAL NOT NULL,
+                http_timeout_seconds REAL NOT NULL,
+                campus_max_content_chars INTEGER NOT NULL,
+                research_max_tool_calls INTEGER NOT NULL,
+                max_campus_pages INTEGER NOT NULL,
+                request_budget_seconds REAL NOT NULL,
+                review_enabled INTEGER NOT NULL,
+                search_api_key BLOB
+            );
+            CREATE TABLE IF NOT EXISTS research_sources (
+                username TEXT NOT NULL, source_id TEXT NOT NULL,
+                data TEXT NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY (username, source_id)
+            );
+            CREATE TABLE IF NOT EXISTS campus_tokens (
+                username TEXT PRIMARY KEY, encrypted_tokens BLOB NOT NULL, updated_at TEXT NOT NULL
             );
         `)
         this.db.exec('PRAGMA foreign_keys = ON;')
@@ -533,6 +570,109 @@ export class AppDatabase {
 
     getAccount(): SavedAccount | null {
         return (this.db.prepare('SELECT username, cookies, target, last_login FROM account WHERE id = 1').get() as unknown as SavedAccount) ?? null
+    }
+
+    getResearchSettings(): SavedResearchSettings | null {
+        const row = this.db.prepare(`SELECT search_depth AS searchDepth, search_max_results AS searchMaxResults,
+                                            search_max_snippet_chars AS searchMaxSnippetChars,
+                                            search_timeout_seconds AS searchTimeoutSeconds,
+                                            http_timeout_seconds AS httpTimeoutSeconds,
+                                            campus_max_content_chars AS campusMaxContentChars,
+                                            research_max_tool_calls AS researchMaxToolCalls,
+                                            max_campus_pages AS maxCampusPages,
+                                            request_budget_seconds AS requestBudgetSeconds,
+                                            review_enabled AS reviewEnabled,
+                                            search_api_key AS encryptedSearchApiKey
+                                     FROM research_settings
+                                     WHERE id = 1`).get() as unknown as (Omit<SavedResearchSettings, 'reviewEnabled'> & {
+            reviewEnabled: number
+        }) | undefined
+        if (!row) return null
+        return {...row, reviewEnabled: row.reviewEnabled === 1}
+    }
+
+    saveResearchSettings(value: SavedResearchSettings) {
+        this.db.prepare(`INSERT INTO research_settings (id, search_depth, search_max_results, search_max_snippet_chars,
+                                                       search_timeout_seconds, http_timeout_seconds,
+                                                       campus_max_content_chars, research_max_tool_calls,
+                                                       max_campus_pages, request_budget_seconds, review_enabled,
+                                                       search_api_key)
+                         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         ON CONFLICT(id) DO UPDATE SET search_depth = excluded.search_depth,
+                                                       search_max_results = excluded.search_max_results,
+                                                       search_max_snippet_chars = excluded.search_max_snippet_chars,
+                                                       search_timeout_seconds = excluded.search_timeout_seconds,
+                                                       http_timeout_seconds = excluded.http_timeout_seconds,
+                                                       campus_max_content_chars = excluded.campus_max_content_chars,
+                                                       research_max_tool_calls = excluded.research_max_tool_calls,
+                                                       max_campus_pages = excluded.max_campus_pages,
+                                                       request_budget_seconds = excluded.request_budget_seconds,
+                                                       review_enabled = excluded.review_enabled,
+                                                       search_api_key = excluded.search_api_key`)
+            .run(value.searchDepth, value.searchMaxResults, value.searchMaxSnippetChars, value.searchTimeoutSeconds,
+                value.httpTimeoutSeconds, value.campusMaxContentChars, value.researchMaxToolCalls, value.maxCampusPages,
+                value.requestBudgetSeconds, Number(value.reviewEnabled), value.encryptedSearchApiKey)
+    }
+
+    getResearchSources(username: string): ResearchSource[] {
+        const rows = this.db.prepare('SELECT data FROM research_sources WHERE username = ? ORDER BY rowid').all(username) as {
+            data: string
+        }[]
+        const parsed = rows.map(row => {
+            try {
+                return JSON.parse(row.data)
+            } catch {
+                return null
+            }
+        })
+        return readResearchSources(parsed)
+    }
+
+    getResearchSource(username: string, id: string): ResearchSource | null {
+        const row = this.db.prepare('SELECT data FROM research_sources WHERE username = ? AND source_id = ?').get(username, id)
+        if (!row) return null
+        try {
+            const parsed = JSON.parse(String(row.data))
+            return isResearchSource(parsed) ? parsed : null
+        } catch {
+            return null
+        }
+    }
+
+    saveResearchSource(username: string, source: ResearchSource) {
+        this.db.prepare(`INSERT INTO research_sources (username, source_id, data, updated_at)
+                         VALUES (?, ?, ?, ?)
+                         ON CONFLICT(username, source_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`)
+            .run(username, source.id, JSON.stringify(source), new Date().toISOString())
+        const count = this.db.prepare('SELECT COUNT(*) AS count FROM research_sources WHERE username = ?').get(username) as {
+            count: number
+        }
+        if (count.count > 1000) {
+            this.db.prepare(`DELETE FROM research_sources
+                             WHERE username = ? AND rowid NOT IN (SELECT rowid FROM research_sources
+                                                                  WHERE username = ? ORDER BY rowid DESC LIMIT 1000)`)
+                .run(username, username)
+        }
+    }
+
+    clearResearchSources(username: string) {
+        this.db.prepare('DELETE FROM research_sources WHERE username = ?').run(username)
+    }
+
+    getCampusTokens(username: string): Uint8Array | null {
+        const row = this.db.prepare('SELECT encrypted_tokens AS encryptedTokens FROM campus_tokens WHERE username = ?').get(username)
+        return row ? row.encryptedTokens as Uint8Array : null
+    }
+
+    saveCampusTokens(username: string, encrypted: Uint8Array) {
+        this.db.prepare(`INSERT INTO campus_tokens (username, encrypted_tokens, updated_at) VALUES (?, ?, ?)
+                         ON CONFLICT(username) DO UPDATE SET encrypted_tokens = excluded.encrypted_tokens,
+                                                              updated_at = excluded.updated_at`)
+            .run(username, encrypted, new Date().toISOString())
+    }
+
+    clearCampusTokens(username: string) {
+        this.db.prepare('DELETE FROM campus_tokens WHERE username = ?').run(username)
     }
 
     getMailConfiguration(username: string): Uint8Array | null {

@@ -4,6 +4,7 @@ import type {Result} from './accounts'
 import type {Notice, NoticeSummary} from './notices'
 import type {CalendarEvent, CalendarEventInput, CalendarOccurrence} from './calendar'
 import type {Todo, TodoInput} from './todos'
+import type {CampusState, ResearchSource, ResearchSourceMode} from './research'
 
 export type ChatCard = { kind: 'notice'; notice: Notice } |
     { kind: 'event'; event: CalendarEvent; deleted?: boolean } |
@@ -72,6 +73,11 @@ export interface ChatTurn {
     trace?: ChatTraceEvent[]
     startedAt?: string
     finishedAt?: string
+    sourceIds?: string[]
+    warnings?: string[]
+    reviewed?: boolean
+    endReason?: 'answered' | 'budget' | 'error'
+    sourceMode: ResearchSourceMode
 }
 
 export interface UsageTotals {
@@ -118,6 +124,8 @@ export interface ChatState {
     busy: boolean
     status: string
     stats?: ChatStats
+    sources: ResearchSource[]
+    research: { webReady: boolean; campus: CampusState }
 }
 
 export interface ChatPushState extends ChatState {
@@ -127,7 +135,7 @@ export interface ChatPushState extends ChatState {
 export interface ChatAPI {
     get(): Promise<Result<ChatState>>
 
-    send(text: string): Promise<Result<ChatState>>
+    send(text: string, options: { sourceMode: ResearchSourceMode }): Promise<Result<ChatState>>
 
     retry(turnId: string, text: string): Promise<Result<ChatState>>
 
@@ -148,6 +156,8 @@ export interface ChatAPI {
     usage(): Promise<Result<UsageSummary>>
 
     undo(turnId: string, requestId: string): Promise<Result<ChatState>>
+
+    openSource(url: string): Promise<Result<null>>
 
     onChanged(callback: (state: ChatPushState) => void): () => void
 }

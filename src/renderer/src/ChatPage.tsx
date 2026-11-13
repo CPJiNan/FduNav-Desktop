@@ -5,6 +5,7 @@ import remarkBreaks from 'remark-breaks'
 import type {ChatCard, ChatPushState, ChatState} from '../../shared/chat'
 import type {Notice} from '../../shared/notices'
 import {type CalendarOccurrence, calendarOccurrences, timeLabel} from '../../shared/calendar'
+import {isResearchSourceMode, type ResearchSource, type ResearchSourceMode} from '../../shared/research'
 import {CalendarEventDialog} from './CalendarEventDialog'
 import {Icon} from './Icon'
 import {ChatSummaryRequestCard} from './ChatSummaryRequestCard'
@@ -15,10 +16,33 @@ import {ChatStatusBar} from './ChatStatusBar'
 import {CopyButton} from './MessageActions'
 import {ConfirmDialog} from './ConfirmDialog'
 import {TurnActivity} from './TurnActivity'
+import {SourceModePicker} from './SourceModePicker'
 import './styles/chat.css'
 import './styles/calendar.css'
 
 const suggestions = ['本周通知摘要', '查询今天日程', '新增待办事项']
+const sourceModeStorageKey = 'fdunav-chat-source-mode'
+
+function readSourceMode(): ResearchSourceMode {
+    try {
+        const saved = localStorage.getItem(sourceModeStorageKey)
+        return isResearchSourceMode(saved) ? saved : 'auto'
+    } catch {
+        return 'auto'
+    }
+}
+
+function sourceDisplayId(id: string): string {
+    const kind = id.charAt(0).toUpperCase()
+    return kind === 'W' ? `网页${id.slice(1)}` : kind === 'C' ? `树洞${id.slice(1)}` : id
+}
+
+function linkCitations(text: string): string {
+    return text.split(/(```[\s\S]*?```|`[^`\n]*`)/g).map((segment, index) => {
+        if (index % 2 === 1) return segment
+        return segment.replace(/\[([WwCc][1-9][0-9]{0,5})\]/g, (_match, id: string) => `[#${sourceDisplayId(id)}](#citation-${id.toUpperCase()})`)
+    }).join('')
+}
 
 function mergeState(previous: ChatState, value: ChatPushState): ChatState {
     if (value.full) return value
@@ -34,7 +58,10 @@ function mergeState(previous: ChatState, value: ChatPushState): ChatState {
 export function ChatPage({username, onOpenNotice, onSettings}: {
     username: string; onOpenNotice: (notice: Notice) => void; onSettings: () => void
 }) {
-    const [state, setState] = useState<ChatState>({username, turns: [], busy: false, status: ''})
+    const [state, setState] = useState<ChatState>({
+        username, turns: [], busy: false, status: '', sources: [],
+        research: {webReady: false, campus: {status: 'missing', loggedIn: false, email: null}}
+    })
     const [loading, setLoading] = useState(true)
     const [syncing, setSyncing] = useState(true)
     const [syncError, setSyncError] = useState('')
@@ -47,6 +74,9 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const [traceTurnId, setTraceTurnId] = useState<string | null>(null)
     const [editingTurnId, setEditingTurnId] = useState<string | null>(null)
     const [sessionTrace, setSessionTrace] = useState(false)
+    const [sourceMode, setSourceMode] = useState<ResearchSourceMode>(readSourceMode)
+    const [sourceTurnId, setSourceTurnId] = useState<string | null>(null)
+    const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
     const traceTrigger = useRef<HTMLElement | null>(null)
     const [editor, setEditor] = useState<CalendarOccurrence | null>(null)
     const scroll = useRef<HTMLDivElement>(null)
@@ -55,6 +85,29 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const stickToBottom = useRef(true)
     const previousFocus = useRef<HTMLElement | null>(null)
     const stateRevision = useRef(0)
+    const campusReady = state.research.campus.loggedIn
+    const effectiveSourceMode: ResearchSourceMode = sourceMode === 'all' && !campusReady ? 'auto' : sourceMode
+
+    function changeSourceMode(next: ResearchSourceMode) {
+        setSourceMode(next)
+        try {
+            localStorage.setItem(sourceModeStorageKey, next)
+        } catch {
+        }
+    }
+
+    const sourceIndex = new Map(state.sources.map(source => [source.id, source]))
+
+    function sourcesFor(turn: ChatState['turns'][number]): ResearchSource[] {
+        return (turn.sourceIds ?? [])
+            .map(id => sourceIndex.get(id))
+            .filter((source): source is ResearchSource => !!source)
+    }
+
+    function toggleSources(turnId: string) {
+        setSelectedSourceId(null)
+        setSourceTurnId(current => current === turnId ? null : turnId)
+    }
 
     useEffect(() => {
         mounted.current = true
@@ -128,7 +181,8 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         setConfirmClear(false);
         stickToBottom.current = true
         try {
-            const result = editingTurnId ? await window.chat.retry(editingTurnId, text) : await window.chat.send(text)
+            const result = editingTurnId ? await window.chat.retry(editingTurnId, text)
+                : await window.chat.send(text, {sourceMode: effectiveSourceMode})
             if (!mounted.current) return
             if (!result.ok) setError(result.error)
             else {
@@ -344,9 +398,25 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                             {turn.reply &&
                                 <div className="chat-markdown"><Markdown remarkPlugins={[remarkGfm, remarkBreaks]}
                                                                          components={{
-                                                                             a: ({children}) => <span>{children}</span>,
+                                                                             a: ({href, children}) => {
+                                                                                 const id = href?.match(/^#citation-([WC]\d+)$/)?.[1]
+                                                                                 if (id) {
+                                                                                     const exists = sourcesFor(turn).some(source => source.id === id)
+                                                                                     return exists
+                                                                                         ? <button type="button"
+                                                                                                   className="chat-citation"
+                                                                                                   aria-label={`查看来源 #${sourceDisplayId(id)}`}
+                                                                                                   onClick={() => {
+                                                                                                       setSourceTurnId(turn.id)
+                                                                                                       setSelectedSourceId(id)
+                                                                                                   }}>{children}</button>
+                                                                                         : <span>{children}</span>
+                                                                                 }
+                                                                                 return <span>{children}</span>
+                                                                             },
                                                                              img: ({alt}) => <span>{alt}</span>
-                                                                         }}>{turn.reply}</Markdown></div>}
+                                                                         }}>{linkCitations(turn.reply)}</Markdown>
+                                </div>}
                             {!!turn.cards.length && <div className="chat-cards">{turn.cards.map(card => {
                                 const notice = card.kind === 'notice' ? card.notice : null
                                 const event = card.kind === 'event' ? card.event : null
@@ -385,6 +455,17 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                                                                            onDecide={allow => void decideRequest('action', turn.id, request.id, allow)}
                                                                                            onUndo={() => void undo(turn.id, request.id)}/>)}
                             </div>}
+                            {sourceTurnId === turn.id &&
+                                <SourcesPanel sources={sourcesFor(turn)} selected={selectedSourceId}
+                                              onClearSelection={() => setSelectedSourceId(null)}
+                                              onClose={() => {
+                                                  setSourceTurnId(null)
+                                                  setSelectedSourceId(null)
+                                              }}/>}
+                            {!!turn.warnings?.length &&
+                                <p className="chat-notice">{[...new Set(turn.warnings)].join(' ')}</p>}
+                            {turn.endReason === 'budget' &&
+                                <p className="chat-notice">本轮已达到处理时限，仍有未核实的信息。</p>}
                             {(turn.startedAt || turn.reply) && <div className="turn-meta">
                                 {turn.startedAt && <time
                                     dateTime={turn.startedAt}>{new Date(turn.startedAt).toLocaleTimeString('zh-CN', {
@@ -394,6 +475,14 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                                                            aria-hidden="true"/>
                                     <span>{((Date.parse(turn.finishedAt) - Date.parse(turn.startedAt)) / 1000).toFixed(1)}s</span></>}
                                 {turn.reply && <CopyButton text={turn.reply} label="复制回复"/>}
+                                {!!sourcesFor(turn).length && <button type="button"
+                                                                      className="chat-message-action chat-message-icon"
+                                                                      aria-label={`查看来源（${sourcesFor(turn).length}）`}
+                                                                      title={`查看来源（${sourcesFor(turn).length}）`}
+                                                                      aria-expanded={sourceTurnId === turn.id}
+                                                                      onClick={() => toggleSources(turn.id)}>
+                                    <Icon name="search"/>
+                                </button>}
                                 {turn.startedAt && <button type="button" className="icon-button turn-meta-button"
                                                            aria-label="查看执行记录"
                                                            title="查看执行记录" aria-controls="chat-trace-panel"
@@ -425,6 +514,9 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                         if (!busy) event.currentTarget.form?.requestSubmit()
                     }
                 }}/>
+                    <SourceModePicker value={effectiveSourceMode} campusReady={campusReady}
+                                      disabled={state.busy || sending}
+                                      onChange={changeSourceMode}/>
                     <div className="chat-composer-actions">
                         {state.busy ?
                             <button type="button" className="icon-button" title="停止回复" aria-label="停止回复"
@@ -441,4 +533,61 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         </div>
         {traced && <ChatTracePanel key={traced.id} turn={traced} onClose={closeTrace}/>}
         {sessionTrace && <ChatSessionTracePanel onClose={() => setSessionTrace(false)}/>}</section>
+}
+
+function SourcesPanel({sources, selected, onClose, onClearSelection}: {
+    sources: ResearchSource[]
+    selected: string | null
+    onClose: () => void
+    onClearSelection: () => void
+}) {
+    const cards = useRef(new Map<string, HTMLElement>())
+    useEffect(() => {
+        if (!selected) return
+        const card = cards.current.get(selected)
+        if (!card) return
+        card.scrollIntoView({block: 'nearest'})
+        card.focus({preventScroll: true})
+    }, [selected])
+    useEffect(() => {
+        if (!selected) return
+        const clear = (event: PointerEvent) => {
+            if (event.target instanceof Element && event.target.closest('.chat-source')) return
+            onClearSelection()
+        }
+        document.addEventListener('pointerdown', clear)
+        return () => document.removeEventListener('pointerdown', clear)
+    }, [selected, onClearSelection])
+    return <section className="chat-sources" aria-label="回答来源">
+        <div className="chat-sources-heading">
+            <strong><Icon name="search"/>来源</strong>
+            <button type="button" className="icon-button" title="关闭来源" aria-label="关闭来源" onClick={onClose}>
+                <Icon name="close"/>
+            </button>
+        </div>
+        <div className="chat-source-list">
+            {sources.map(source => <article key={source.id} tabIndex={-1}
+                                            ref={node => {
+                                                if (node) cards.current.set(source.id, node)
+                                                else cards.current.delete(source.id)
+                                            }}
+                                            className={`chat-source${selected === source.id ? ' is-selected' : ''}`}>
+                <div className="chat-source-meta">
+                    <span>#{sourceDisplayId(source.id)}{source.source === 'web' ? ' · 公开网页' : ''}</span>
+                    <span className="chat-source-origin">{source.source === 'campus'
+                        ? `洞号 #${source.holeId} 楼层号 #${source.floorId}`
+                        : source.publishedAt ?? '日期未知'}</span>
+                </div>
+                {source.source === 'web' && source.url && <button type="button" className="chat-source-title"
+                                                                  onClick={() => void window.chat?.openSource(source.url!)}>
+                    {source.title}<Icon name="external"/>
+                </button>}
+                <p>{source.snippet}</p>
+                {source.source === 'web'
+                    ?
+                    <small>{source.pageRead ? '已读取正文' : '搜索摘要'}{source.truncated ? ' · 内容已截断' : ''}</small>
+                    : source.truncated && <small>内容已截断</small>}
+            </article>)}
+        </div>
+    </section>
 }

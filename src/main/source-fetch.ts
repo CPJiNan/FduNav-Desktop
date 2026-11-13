@@ -20,8 +20,8 @@ export function isPublicAddress(address: string): boolean {
     return isIP(address) === 6 && /^[23]/i.test(address) && !/^2001:db8:/i.test(address)
 }
 
-export async function requestSourcePage(value: string): Promise<SourcePage> {
-    const {bytes, type, url} = await requestSource(value, 'page')
+export async function requestSourcePage(value: string, timeoutMs: number): Promise<SourcePage> {
+    const {bytes, type, url} = await requestSource(value, 'page', undefined, timeoutMs)
     const charset = /charset\s*=\s*["']?([\w-]+)/i.exec(type)?.[1] ??
         /charset\s*=\s*["']?([\w-]+)/i.exec(bytes.subarray(0, 2048).toString('ascii'))?.[1] ?? 'utf-8'
     try {
@@ -32,19 +32,19 @@ export async function requestSourcePage(value: string): Promise<SourcePage> {
 }
 
 export async function requestSourcePdf(value: string): Promise<Uint8Array> {
-    const {bytes} = await requestSource(value, 'pdf')
+    const {bytes} = await requestSource(value, 'pdf', undefined, 25_000)
     if (!bytes.subarray(0, 1024).includes(Buffer.from('%PDF-'))) throw new Error('附件不是有效的 PDF。')
     return new Uint8Array(bytes)
 }
 
 export async function requestSourceImage(value: string, referer: string): Promise<Uint8Array> {
-    const {bytes} = await requestSource(value, 'image', referer)
+    const {bytes} = await requestSource(value, 'image', referer, 25_000)
     return bytes
 }
 
-async function requestSource(value: string, kind: 'page' | 'pdf' | 'image', referer?: string) {
+async function requestSource(value: string, kind: 'page' | 'pdf' | 'image', referer: string | undefined, timeoutMs: number) {
     let url = sourceUrl(value)
-    const signal = AbortSignal.timeout(25_000)
+    const signal = AbortSignal.timeout(timeoutMs)
     for (let redirects = 0; redirects < 6; redirects++) {
         const parsed = new URL(url)
         const addresses = await lookup(parsed.hostname, {all: true})

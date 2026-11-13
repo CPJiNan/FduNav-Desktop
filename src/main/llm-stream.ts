@@ -12,6 +12,7 @@ export interface StreamOptions {
     request?: typeof fetch
     idleMs?: number
     delays?: number[]
+    thinking?: 'enabled' | 'disabled'
     onPartialResponse?: (response: unknown) => void
     onDelta?: (content: string) => void
     onRetry?: (attempt: number, delayMs: number, reason: string) => void
@@ -90,6 +91,7 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
     let response: Response | undefined
     let includeUsage = true
     let streaming = true
+    let thinking = options.thinking
     let attempts = 0
     try {
         for (; ;) {
@@ -101,6 +103,7 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
                 const body = {
                     model: connection.model, messages, stream: streaming,
                     ...(streaming && includeUsage ? {stream_options: {include_usage: true}} : {}),
+                    ...(thinking ? {thinking: {type: thinking}} : {}),
                     ...(tools.length ? {tools, tool_choice: 'auto'} : {})
                 }
                 options.onRequest?.(body)
@@ -115,6 +118,11 @@ export async function streamLlmWithTools(connection: Connection, messages: ToolC
                 if (!response.ok) {
                     await response.body?.cancel().catch(() => {
                     })
+                    if ([400, 415, 422].includes(response.status) && thinking) {
+                        thinking = undefined
+                        options.onRetry?.(attempts + 1, 0, '端点不接受 thinking 参数，移除后重试。')
+                        continue
+                    }
                     if ([400, 415, 422].includes(response.status) && streaming && includeUsage) {
                         includeUsage = false
                         options.onRetry?.(attempts + 1, 0, '端点不接受 stream_options，移除后重试。')
