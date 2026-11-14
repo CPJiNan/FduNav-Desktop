@@ -38,7 +38,9 @@ export function ChatMenu({label, disabled, items, ownerId}: {
             if (!trigger.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) close()
         }
         const reposition = () => close()
-        const scroll = (event: Event) => {if (!menu.current?.contains(event.target as Node)) close()}
+        const scroll = (event: Event) => {
+            if (!menu.current?.contains(event.target as Node)) close()
+        }
         document.addEventListener('pointerdown', dismiss)
         window.addEventListener('resize', reposition)
         document.addEventListener('scroll', scroll, true)
@@ -51,26 +53,43 @@ export function ChatMenu({label, disabled, items, ownerId}: {
 
     return <>
         <button ref={trigger} type="button" className="icon-button chat-menu-trigger" aria-label={label} title={label}
-            aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
-            onClick={() => setOpen(value => !value)} onKeyDown={event => {
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {event.preventDefault(); setOpen(true)}
-            }}><Icon name="more"/></button>
-        {open && createPortal(<div ref={menu} id={id} className="chat-menu" style={position} role="menu" aria-label={label}
-            data-chat-menu-owner={ownerId}
-            onBlur={event => {if (!event.currentTarget.contains(event.relatedTarget)) close()}}
-            onKeyDown={event => {
-                if (event.key === 'Escape') {event.preventDefault(); event.stopPropagation(); close(true); return}
-                const buttons = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
-                if (!buttons.length) return
-                const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-                const next = event.key === 'ArrowDown' ? (index + 1) % buttons.length
-                    : event.key === 'ArrowUp' ? (index - 1 + buttons.length) % buttons.length
-                        : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1
-                if (next >= 0) {event.preventDefault(); buttons[next].focus()}
-            }}>
+                aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} disabled={disabled}
+                onClick={() => setOpen(value => !value)} onKeyDown={event => {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                setOpen(true)
+            }
+        }}><Icon name="more"/></button>
+        {open && createPortal(<div ref={menu} id={id} className="chat-menu" style={position} role="menu"
+                                   aria-label={label}
+                                   data-chat-menu-owner={ownerId}
+                                   onBlur={event => {
+                                       if (!event.currentTarget.contains(event.relatedTarget)) close()
+                                   }}
+                                   onKeyDown={event => {
+                                       if (event.key === 'Escape') {
+                                           event.preventDefault();
+                                           event.stopPropagation();
+                                           close(true);
+                                           return
+                                       }
+                                       const buttons = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])
+                                       if (!buttons.length) return
+                                       const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+                                       const next = event.key === 'ArrowDown' ? (index + 1) % buttons.length
+                                           : event.key === 'ArrowUp' ? (index - 1 + buttons.length) % buttons.length
+                                               : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1
+                                       if (next >= 0) {
+                                           event.preventDefault();
+                                           buttons[next].focus()
+                                       }
+                                   }}>
             {items.map(item => <button key={item.label} type="button" role="menuitem" tabIndex={-1}
-                disabled={item.disabled} className={item.danger ? 'is-danger' : undefined}
-                onClick={() => {close(true); item.onSelect()}}><Icon name={item.icon}/>{item.label}</button>)}
+                                       disabled={item.disabled} className={item.danger ? 'is-danger' : undefined}
+                                       onClick={() => {
+                                           close(true);
+                                           item.onSelect()
+                                       }}><Icon name={item.icon}/>{item.label}</button>)}
         </div>, document.body)}
     </>
 }

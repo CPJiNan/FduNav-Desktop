@@ -223,18 +223,18 @@ export class AppDatabase {
 
     // Existing chat tables use `username` as their storage partition. Each session now
     // owns a unique partition; the first session retains the legacy account partition.
-    getChatSessions(username: string): Array<Omit<ChatSession, 'busy'> & {storageKey: string}> {
+    getChatSessions(username: string): Array<Omit<ChatSession, 'busy'> & { storageKey: string }> {
         return this.db.prepare(`SELECT id, title, created_at AS createdAt, updated_at AS updatedAt,
             source_mode AS sourceMode, storage_key AS storageKey FROM chat_sessions
             WHERE username = ? ORDER BY updated_at DESC, rowid DESC`).all(username) as
-            Array<Omit<ChatSession, 'busy'> & {storageKey: string}>
+            Array<Omit<ChatSession, 'busy'> & { storageKey: string }>
     }
 
     getSelectedChatSession(username: string) {
         let sessions = this.getChatSessions(username)
         if (!sessions.length) {
             this.transaction(() => {
-                const turns = JSON.parse(this.getChatConversation(username) ?? '[]') as Array<{user: string}>
+                const turns = JSON.parse(this.getChatConversation(username) ?? '[]') as Array<{ user: string }>
                 const session = this.createChatSession(username, username)
                 if (turns[0]?.user) this.renameChatSession(username, session.id, turns[0].user.trim().slice(0, 80))
             })

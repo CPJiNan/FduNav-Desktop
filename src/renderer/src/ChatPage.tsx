@@ -66,7 +66,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const [editingTurnId, setEditingTurnId] = useState<string | null>(null)
     const [sessionTrace, setSessionTrace] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(() => window.matchMedia('(min-width: 1001px)').matches)
-    const drafts = useRef(new Map<string, {text: string; editingTurnId: string | null}>())
+    const drafts = useRef(new Map<string, { text: string; editingTurnId: string | null }>())
     const previousSession = useRef('')
     const [focusSessionId, setFocusSessionId] = useState<string | null>(null)
     const sessionActionLock = useRef(false)
@@ -190,10 +190,13 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         try {
             const result = await (action.kind === 'create' ? window.chat.createSession()
                 : action.kind === 'select' ? window.chat.selectSession(action.id)
-                : action.kind === 'rename' ? window.chat.renameSession(action.id, action.title)
-                : window.chat.deleteSession(action.id))
+                    : action.kind === 'rename' ? window.chat.renameSession(action.id, action.title)
+                        : window.chat.deleteSession(action.id))
             if (!mounted.current) return false
-            if (!result.ok) {setError(result.error); return false}
+            if (!result.ok) {
+                setError(result.error);
+                return false
+            }
             if (stateRevision.current === revision) setState(result.data)
             if (action.kind === 'create') setFocusSessionId(result.data.sessionId)
             if (action.kind === 'delete') drafts.current.delete(action.id)
@@ -388,22 +391,33 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const traced = state.turns.find(turn => turn.id === traceTurnId)
     return <section className="chat-workspace" aria-label="聊天">
         {historyOpen && <ChatHistory sessions={state.sessions} selectedId={state.sessionId}
-            disabled={loading || sending || decidingRequest} onAction={manageSession} onClose={() => setHistoryOpen(false)}/>}
+                                     disabled={loading || sending || decidingRequest} onAction={manageSession}
+                                     onClose={() => setHistoryOpen(false)}/>}
         <div className="chat-page">
             <header className="chat-header">
                 <button type="button" className="icon-button" aria-label="历史对话" title="历史对话"
-                    aria-controls="chat-history" aria-expanded={historyOpen}
-                    onClick={() => setHistoryOpen(value => !value)}><Icon name="menu"/></button>
-                <strong className="chat-current-title" title={state.sessions.find(item => item.id === state.sessionId)?.title}>
+                        aria-controls="chat-history" aria-expanded={historyOpen}
+                        onClick={() => setHistoryOpen(value => !value)}><Icon name="menu"/></button>
+                <strong className="chat-current-title"
+                        title={state.sessions.find(item => item.id === state.sessionId)?.title}>
                     {state.sessions.find(item => item.id === state.sessionId)?.title ?? '新对话'}</strong>
                 {!historyOpen && <button type="button" className="icon-button" aria-label="新对话" title="新对话"
-                    disabled={loading || sending || decidingRequest} onClick={() => void manageSession({kind: 'create'})}><Icon name="chat-plus"/></button>}
+                                         disabled={loading || sending || decidingRequest}
+                                         onClick={() => void manageSession({kind: 'create'})}><Icon name="chat-plus"/>
+                </button>}
                 <ChatMenu label="当前对话选项" items={[
-                    {label: sessionTrace ? '收起会话轨迹' : '会话轨迹', icon: 'panel', disabled: !state.turns.length,
-                        onSelect: () => {setTraceTurnId(null); setSessionTrace(value => !value)}},
-                    {label: '清空聊天', icon: 'clean', danger: true,
+                    {
+                        label: sessionTrace ? '收起会话轨迹' : '会话轨迹', icon: 'panel', disabled: !state.turns.length,
+                        onSelect: () => {
+                            setTraceTurnId(null);
+                            setSessionTrace(value => !value)
+                        }
+                    },
+                    {
+                        label: '清空聊天', icon: 'clean', danger: true,
                         disabled: busy || decidingRequest || state.sessions.find(item => item.id === state.sessionId)?.busy || !state.turns.length,
-                        onSelect: () => setConfirmClear(true)},
+                        onSelect: () => setConfirmClear(true)
+                    },
                     {label: 'LLM 设置', icon: 'settings', onSelect: onSettings}
                 ]}/>
             </header>

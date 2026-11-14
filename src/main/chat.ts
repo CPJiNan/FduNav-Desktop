@@ -134,18 +134,22 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     const summaryJobs = new Set<string>()
     // Capture the session at the IPC boundary. Streaming, summaries and queued
     // approvals keep this context even after the user selects another session.
-    const sessionContext = new AsyncLocalStorage<{user: string; id: string; storageKey: string}>()
+    const sessionContext = new AsyncLocalStorage<{ user: string; id: string; storageKey: string }>()
+
     function session(user: string) {
         const context = sessionContext.getStore()
         return context?.user === user ? context : {user, ...db.getSelectedChatSession(user)}
     }
+
     const scope = (user: string) => session(user).storageKey
     const summaryJobKey = (user: string, turnId: string, requestId: string) => JSON.stringify([scope(user), turnId, requestId])
+
     function sessionList(user: string) {
         return db.getChatSessions(user).map(({storageKey, ...item}) => ({
             ...item, busy: running.has(storageKey) || [...summaryJobs].some(key => JSON.parse(key)[0] === storageKey)
         }))
     }
+
     const subscribers = new Map<WebContents, string>()
 
     function username() {
@@ -283,8 +287,10 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             try {
                 const user = username()
                 subscribe(event.sender, user)
-                return {ok: true, data: sessionContext.run({user, ...db.getSelectedChatSession(user)},
-                    () => action(user, input, event))}
+                return {
+                    ok: true, data: sessionContext.run({user, ...db.getSelectedChatSession(user)},
+                        () => action(user, input, event))
+                }
             } catch (error) {
                 return {ok: false, error: error instanceof Error ? error.message : '聊天操作失败。'}
             }
@@ -451,8 +457,17 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 timeoutMs: researchSettings.httpTimeoutSeconds * 1000,
             }))
             const researchRunner = researchActive ? createResearchToolRunner({
-                db, username: user, sourceStorageKey: scope(user), sources: active.sources, settings: researchSettings, searchApiKey,
-                auth: research.campus, campus: campusService, campusBudget, deadline, assertCurrent,
+                db,
+                username: user,
+                sourceStorageKey: scope(user),
+                sources: active.sources,
+                settings: researchSettings,
+                searchApiKey,
+                auth: research.campus,
+                campus: campusService,
+                campusBudget,
+                deadline,
+                assertCurrent,
             }) : null
             const permittedSources = () => active.sources.filter(source => campusAllowed || source.source === 'web')
             const knownSourceIds = () => new Set(permittedSources().map(source => source.id))
@@ -1324,6 +1339,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             return snapshot(user)
         })
     }
+
     handle('chat:create-session', user => {
         db.createChatSession(user)
         return selectedSnapshot(user)
