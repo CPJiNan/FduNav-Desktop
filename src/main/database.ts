@@ -1,9 +1,9 @@
 import type {ChatTraceEvent} from '../shared/agent'
 import type {Memory} from '../shared/memory'
 import {validateMemory} from '../shared/memory'
-import type {UsageSummary, UsageTotals} from '../shared/chat'
+import type {ChatSession, UsageSummary, UsageTotals} from '../shared/chat'
 import {DatabaseSync} from 'node:sqlite'
-import {createHash} from 'node:crypto'
+import {createHash, randomUUID} from 'node:crypto'
 import type {Compaction} from './chat-context'
 import {type AdditionalLlmPrompts, readAdditionalLlmPrompts} from '../shared/llm-prompts'
 import type {Theme} from '../shared/accounts'
@@ -20,7 +20,7 @@ import type {CalendarEvent} from '../shared/calendar'
 import {type CalendarReminderMinutes, isCalendarReminderMinutes} from '../shared/calendar-reminders'
 import type {Todo} from '../shared/todos'
 import {defaultSources, type MessageSource, type SourceId} from '../shared/sources.ts'
-import {isResearchSource, readResearchSources, type ResearchSource} from '../shared/research'
+import {isResearchSource, readResearchSources, type ResearchSource, type ResearchSourceMode} from '../shared/research'
 import {
     emptyMessagePreferences,
     type MessagePreferences,
@@ -99,6 +99,13 @@ export class AppDatabase {
             CREATE TABLE IF NOT EXISTS chat_compactions (username TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS chat_conversations (username TEXT PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY, username TEXT NOT NULL, storage_key TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                source_mode TEXT NOT NULL DEFAULT 'auto', renamed INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS chat_sessions_owner ON chat_sessions (username, updated_at DESC);
+            CREATE TABLE IF NOT EXISTS chat_selection (username TEXT PRIMARY KEY, session_id TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS timetable_cache (
                 username TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL,
                 PRIMARY KEY (username, kind)
@@ -212,6 +219,92 @@ export class AppDatabase {
         `)
         this.db.exec('PRAGMA foreign_keys = ON;')
         this.initializeSources()
+    }
+
+    // Existing chat tables use `username` as their storage partition. Each session now
+    // owns a unique partition; the first session retains the legacy account partition.
+    getChatSessions(username: string): Array<Omit<ChatSession, 'busy'> & {storageKey: string}> {
+        return this.db.prepare(`SELECT id, title, created_at AS createdAt, updated_at AS updatedAt,
+            source_mode AS sourceMode, storage_key AS storageKey FROM chat_sessions
+            WHERE username = ? ORDER BY updated_at DESC, rowid DESC`).all(username) as
+            Array<Omit<ChatSession, 'busy'> & {storageKey: string}>
+    }
+
+    getSelectedChatSession(username: string) {
+        let sessions = this.getChatSessions(username)
+        if (!sessions.length) {
+            this.transaction(() => {
+                const turns = JSON.parse(this.getChatConversation(username) ?? '[]') as Array<{user: string}>
+                const session = this.createChatSession(username, username)
+                if (turns[0]?.user) this.renameChatSession(username, session.id, turns[0].user.trim().slice(0, 80))
+            })
+            sessions = this.getChatSessions(username)
+        }
+        const selected = this.db.prepare('SELECT session_id FROM chat_selection WHERE username = ?').get(username)
+        return sessions.find(item => item.id === selected?.session_id) ?? sessions[0]
+    }
+
+    getChatSession(username: string, id: string) {
+        const session = this.getChatSessions(username).find(item => item.id === id)
+        if (!session) throw new Error('对话不存在或已被删除。')
+        return session
+    }
+
+    createChatSession(username: string, legacyStorageKey?: string) {
+        const id = randomUUID(), now = new Date().toISOString()
+        return this.transaction(() => {
+            // A never-sent session has neither saved history nor a running turn.
+            // Cleared conversations keep their saved [] and are not new drafts.
+            const emptySessions = this.getChatSessions(username).filter(item =>
+                this.getChatConversation(item.storageKey) === null && !this.getRunningTurn(item.storageKey))
+            const selected = this.db.prepare('SELECT session_id FROM chat_selection WHERE username = ?').get(username)
+            const empty = emptySessions.find(item => item.id === selected?.session_id) ?? emptySessions[0]
+            if (empty) {
+                this.selectChatSession(username, empty.id)
+                for (const duplicate of emptySessions) {
+                    if (duplicate.id !== empty.id) this.deleteChatSession(username, duplicate.id)
+                }
+                return empty
+            }
+            this.db.prepare(`INSERT INTO chat_sessions (id, username, storage_key, title, created_at, updated_at)
+                VALUES (?, ?, ?, '新对话', ?, ?)`).run(id, username, legacyStorageKey ?? `chat-session:${id}`, now, now)
+            this.selectChatSession(username, id)
+            return this.getChatSession(username, id)
+        })
+    }
+
+    selectChatSession(username: string, id: string) {
+        this.getChatSession(username, id)
+        this.db.prepare(`INSERT INTO chat_selection VALUES (?, ?)
+            ON CONFLICT(username) DO UPDATE SET session_id = excluded.session_id`).run(username, id)
+    }
+
+    renameChatSession(username: string, id: string, title: string) {
+        this.getChatSession(username, id)
+        this.db.prepare('UPDATE chat_sessions SET title = ?, renamed = 1 WHERE username = ? AND id = ?')
+            .run(title, username, id)
+    }
+
+    touchChatSession(username: string, id: string, text: string, sourceMode: ResearchSourceMode) {
+        const session = this.getChatSession(username, id)
+        const conversation = this.getChatConversation(session.storageKey)
+        const first = !conversation || conversation === '[]'
+        this.db.prepare(`UPDATE chat_sessions SET updated_at = ?, source_mode = ?,
+            title = CASE WHEN renamed = 0 AND ? THEN ? ELSE title END WHERE username = ? AND id = ?`)
+            .run(new Date().toISOString(), sourceMode, Number(first), text.replace(/\s+/g, ' ').slice(0, 80), username, id)
+    }
+
+    deleteChatSession(username: string, id: string) {
+        const session = this.getChatSession(username, id)
+        this.transaction(() => {
+            for (const table of ['chat_conversations', 'chat_compactions', 'chat_traces', 'chat_trace_stats',
+                'chat_payloads', 'chat_running_turns', 'chat_context_updates', 'research_sources', 'llm_usage']) {
+                this.db.prepare(`DELETE FROM ${table} WHERE username = ?`).run(session.storageKey)
+            }
+            this.db.prepare('DELETE FROM chat_sessions WHERE username = ? AND id = ?').run(username, id)
+            if (!this.getChatSessions(username).length) this.createChatSession(username)
+            this.selectChatSession(username, this.getSelectedChatSession(username).id)
+        })
     }
 
     saveChatTraceEvent(username: string, turnId: string, event: ChatTraceEvent, position: number) {
@@ -467,8 +560,9 @@ export class AppDatabase {
 
     getUsage(username: string, now = new Date()): UsageSummary {
         const date = now.toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'})
-        const rows = this.db.prepare('SELECT prompt_tokens, completion_tokens, elapsed_ms, created_at FROM llm_usage WHERE username = ? AND created_at >= ?')
-            .all(username, new Date(`${date.slice(0, 7)}-01T00:00:00+08:00`).toISOString())
+        const rows = this.db.prepare(`SELECT prompt_tokens, completion_tokens, elapsed_ms, created_at FROM llm_usage
+            WHERE (username = ? OR username IN (SELECT storage_key FROM chat_sessions WHERE username = ?)) AND created_at >= ?`)
+            .all(username, username, new Date(`${date.slice(0, 7)}-01T00:00:00+08:00`).toISOString())
         const sum = (today: boolean): UsageTotals => rows.reduce<UsageTotals>((total, row) => {
             if (today && new Date(String(row.created_at)).toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'}) !== date) return total
             total.requests++;

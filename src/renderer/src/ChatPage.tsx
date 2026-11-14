@@ -5,7 +5,7 @@ import remarkBreaks from 'remark-breaks'
 import type {ChatCard, ChatPushState, ChatState} from '../../shared/chat'
 import type {Notice} from '../../shared/notices'
 import {type CalendarOccurrence, calendarOccurrences, timeLabel} from '../../shared/calendar'
-import {isResearchSourceMode, type ResearchSource, type ResearchSourceMode} from '../../shared/research'
+import type {ResearchSource} from '../../shared/research'
 import {CalendarEventDialog} from './CalendarEventDialog'
 import {Icon} from './Icon'
 import {ChatSummaryRequestCard} from './ChatSummaryRequestCard'
@@ -16,21 +16,12 @@ import {ChatStatusBar} from './ChatStatusBar'
 import {CopyButton} from './MessageActions'
 import {ConfirmDialog} from './ConfirmDialog'
 import {TurnActivity} from './TurnActivity'
-import {SourceModePicker} from './SourceModePicker'
+import {ChatHistory, type SessionAction} from './ChatHistory'
+import {ChatMenu} from './ChatMenu'
 import './styles/chat.css'
 import './styles/calendar.css'
 
 const suggestions = ['本周通知摘要', '查询今天日程', '新增待办事项']
-const sourceModeStorageKey = 'fdunav-chat-source-mode'
-
-function readSourceMode(): ResearchSourceMode {
-    try {
-        const saved = localStorage.getItem(sourceModeStorageKey)
-        return isResearchSourceMode(saved) ? saved : 'auto'
-    } catch {
-        return 'auto'
-    }
-}
 
 function sourceDisplayId(id: string): string {
     const kind = id.charAt(0).toUpperCase()
@@ -46,7 +37,7 @@ function linkCitations(text: string): string {
 
 function mergeState(previous: ChatState, value: ChatPushState): ChatState {
     if (value.full) return value
-    const turns = previous.username === value.username ? [...previous.turns] : []
+    const turns = previous.username === value.username && previous.sessionId === value.sessionId ? [...previous.turns] : []
     for (const turn of value.turns) {
         const index = turns.findIndex(item => item.id === turn.id)
         if (index < 0) turns.push(turn)
@@ -59,7 +50,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     username: string; onOpenNotice: (notice: Notice) => void; onSettings: () => void
 }) {
     const [state, setState] = useState<ChatState>({
-        username, turns: [], busy: false, status: '', sources: [],
+        username, sessionId: '', sessions: [], turns: [], busy: false, status: '', sources: [],
         research: {webReady: false, campus: {status: 'missing', loggedIn: false, email: null}}
     })
     const [loading, setLoading] = useState(true)
@@ -74,7 +65,11 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const [traceTurnId, setTraceTurnId] = useState<string | null>(null)
     const [editingTurnId, setEditingTurnId] = useState<string | null>(null)
     const [sessionTrace, setSessionTrace] = useState(false)
-    const [sourceMode, setSourceMode] = useState<ResearchSourceMode>(readSourceMode)
+    const [historyOpen, setHistoryOpen] = useState(() => window.matchMedia('(min-width: 1001px)').matches)
+    const drafts = useRef(new Map<string, {text: string; editingTurnId: string | null}>())
+    const previousSession = useRef('')
+    const [focusSessionId, setFocusSessionId] = useState<string | null>(null)
+    const sessionActionLock = useRef(false)
     const [sourceTurnId, setSourceTurnId] = useState<string | null>(null)
     const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
     const traceTrigger = useRef<HTMLElement | null>(null)
@@ -85,16 +80,6 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const stickToBottom = useRef(true)
     const previousFocus = useRef<HTMLElement | null>(null)
     const stateRevision = useRef(0)
-    const campusReady = state.research.campus.loggedIn
-    const effectiveSourceMode: ResearchSourceMode = sourceMode === 'all' && !campusReady ? 'auto' : sourceMode
-
-    function changeSourceMode(next: ResearchSourceMode) {
-        setSourceMode(next)
-        try {
-            localStorage.setItem(sourceModeStorageKey, next)
-        } catch {
-        }
-    }
 
     const sourceIndex = new Map(state.sources.map(source => [source.id, source]))
 
@@ -172,6 +157,59 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         if (stickToBottom.current) scroll.current?.scrollTo({top: scroll.current.scrollHeight})
     }, [state, loading])
 
+    useEffect(() => {
+        if (!state.sessionId || previousSession.current === state.sessionId) return
+        if (previousSession.current) drafts.current.set(previousSession.current, {text: draft, editingTurnId})
+        const saved = drafts.current.get(state.sessionId)
+        previousSession.current = state.sessionId
+        setDraft(saved?.text ?? '')
+        setEditingTurnId(saved?.editingTurnId ?? null)
+        setTraceTurnId(null)
+        setSessionTrace(false)
+        setSourceTurnId(null)
+        setSelectedSourceId(null)
+        setConfirmClear(false)
+        setError('')
+        stickToBottom.current = true
+        scroll.current?.scrollTo({top: scroll.current.scrollHeight})
+    }, [state.sessionId])
+
+    useEffect(() => {
+        if (!focusSessionId || sending || state.sessionId !== focusSessionId) return
+        input.current?.focus()
+        setFocusSessionId(null)
+    }, [focusSessionId, sending, state.sessionId])
+
+    async function manageSession(action: SessionAction): Promise<boolean> {
+        if (!window.chat || loading || sending || decidingRequest || sessionActionLock.current) return false
+        if (action.kind === 'select' && action.id === state.sessionId) return true
+        sessionActionLock.current = true
+        setSending(true)
+        setError('')
+        const revision = stateRevision.current
+        try {
+            const result = await (action.kind === 'create' ? window.chat.createSession()
+                : action.kind === 'select' ? window.chat.selectSession(action.id)
+                : action.kind === 'rename' ? window.chat.renameSession(action.id, action.title)
+                : window.chat.deleteSession(action.id))
+            if (!mounted.current) return false
+            if (!result.ok) {setError(result.error); return false}
+            if (stateRevision.current === revision) setState(result.data)
+            if (action.kind === 'create') setFocusSessionId(result.data.sessionId)
+            if (action.kind === 'delete') drafts.current.delete(action.id)
+            if ((action.kind === 'create' || action.kind === 'select') && window.matchMedia('(max-width: 1000px)').matches) {
+                setHistoryOpen(false)
+            }
+            return true
+        } catch {
+            if (mounted.current) setError('对话操作失败，请重试。')
+            return false
+        } finally {
+            sessionActionLock.current = false
+            if (mounted.current) setSending(false)
+        }
+    }
+
     async function send(event: FormEvent) {
         event.preventDefault()
         const text = draft.trim()
@@ -182,7 +220,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
         stickToBottom.current = true
         try {
             const result = editingTurnId ? await window.chat.retry(editingTurnId, text)
-                : await window.chat.send(text, {sourceMode: effectiveSourceMode})
+                : await window.chat.send(text, {sourceMode: 'auto'})
             if (!mounted.current) return
             if (!result.ok) setError(result.error)
             else {
@@ -349,22 +387,28 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
     const streaming = (id: string) => busy && id === lastTurnId
     const traced = state.turns.find(turn => turn.id === traceTurnId)
     return <section className="chat-workspace" aria-label="聊天">
+        {historyOpen && <ChatHistory sessions={state.sessions} selectedId={state.sessionId}
+            disabled={loading || sending || decidingRequest} onAction={manageSession} onClose={() => setHistoryOpen(false)}/>}
         <div className="chat-page">
             <header className="chat-header">
-                <button type="button" className="icon-button" aria-label="会话轨迹" title="会话轨迹"
-                        aria-controls="chat-session-trace" aria-expanded={sessionTrace} disabled={!state.turns.length}
-                        onClick={() => {
-                            setTraceTurnId(null);
-                            setSessionTrace(value => !value)
-                        }}><Icon name="panel"/></button>
-                <button type="button" className="icon-button" aria-label="清空聊天" title="清空聊天"
-                        disabled={busy || !state.turns.length}
-                        onClick={() => setConfirmClear(true)}><Icon name="clean"/></button>
-                <button type="button" className="icon-button" aria-label="LLM 设置" title="LLM 设置"
-                        onClick={onSettings}><Icon name="settings"/></button>
+                <button type="button" className="icon-button" aria-label="历史对话" title="历史对话"
+                    aria-controls="chat-history" aria-expanded={historyOpen}
+                    onClick={() => setHistoryOpen(value => !value)}><Icon name="menu"/></button>
+                <strong className="chat-current-title" title={state.sessions.find(item => item.id === state.sessionId)?.title}>
+                    {state.sessions.find(item => item.id === state.sessionId)?.title ?? '新对话'}</strong>
+                {!historyOpen && <button type="button" className="icon-button" aria-label="新对话" title="新对话"
+                    disabled={loading || sending || decidingRequest} onClick={() => void manageSession({kind: 'create'})}><Icon name="chat-plus"/></button>}
+                <ChatMenu label="当前对话选项" items={[
+                    {label: sessionTrace ? '收起会话轨迹' : '会话轨迹', icon: 'panel', disabled: !state.turns.length,
+                        onSelect: () => {setTraceTurnId(null); setSessionTrace(value => !value)}},
+                    {label: '清空聊天', icon: 'clean', danger: true,
+                        disabled: busy || decidingRequest || state.sessions.find(item => item.id === state.sessionId)?.busy || !state.turns.length,
+                        onSelect: () => setConfirmClear(true)},
+                    {label: 'LLM 设置', icon: 'settings', onSelect: onSettings}
+                ]}/>
             </header>
             {confirmClear && <ConfirmDialog title="清空聊天记录"
-                                            message="是否清空聊天记录？"
+                                            message="是否清空当前对话的聊天记录？其他对话不受影响。"
                                             confirmLabel="清空" danger busy={sending}
                                             onConfirm={() => void clear()}
                                             onCancel={() => setConfirmClear(false)}/>}
@@ -514,9 +558,6 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                         if (!busy) event.currentTarget.form?.requestSubmit()
                     }
                 }}/>
-                    <SourceModePicker value={effectiveSourceMode} campusReady={campusReady}
-                                      disabled={state.busy || sending}
-                                      onChange={changeSourceMode}/>
                     <div className="chat-composer-actions">
                         {state.busy ?
                             <button type="button" className="icon-button" title="停止回复" aria-label="停止回复"
