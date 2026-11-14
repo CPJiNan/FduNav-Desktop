@@ -24,6 +24,7 @@ import {registerTodoHandlers} from './todos'
 import {registerMailHandlers} from './mail'
 import {registerCampusCardHandlers} from './campus-card'
 import {registerLibraryHandlers} from './library'
+import {registerWeatherHandlers} from './weather'
 import {registerGeneralSettingsHandlers} from './general-settings'
 import {registerAppInfoHandlers} from './app-info'
 import {registerResearchHandlers} from './research'
@@ -176,6 +177,7 @@ app.whenReady().then(async () => {
         registerTimetableHandlers(database, accounts, trusted)
         registerCampusCardHandlers(accounts, trusted)
         registerLibraryHandlers(trusted)
+        registerWeatherHandlers(trusted)
         const calendar = registerCalendarHandlers(database, accounts, trusted, showMainWindow)
         const todos = registerTodoHandlers(database, accounts, trusted, showMainWindow)
         const llm = registerLlmHandlers(database, trusted)

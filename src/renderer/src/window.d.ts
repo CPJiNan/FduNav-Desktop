@@ -13,6 +13,7 @@ import type {MemoryAPI} from '../../shared/memory'
 import type {ChatAPI} from '../../shared/chat'
 import type {CampusCardAPI} from '../../shared/campus-card'
 import type {LibraryAPI} from '../../shared/library'
+import type {WeatherAPI} from '../../shared/weather'
 import type {MailAPI} from '../../shared/mail'
 import type {ResearchAPI} from '../../shared/research'
 
@@ -20,6 +21,7 @@ declare global {
     interface Window {
         mail?: MailAPI
         library?: LibraryAPI
+        weather?: WeatherAPI
         campusCard?: CampusCardAPI
         memory?: MemoryAPI
         chat?: ChatAPI

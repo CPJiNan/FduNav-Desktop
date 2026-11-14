@@ -14,6 +14,7 @@ import type {MemoryAPI} from '../shared/memory'
 import type {ChatAPI, ChatPushState} from '../shared/chat'
 import type {CampusCardAPI} from '../shared/campus-card'
 import type {LibraryAPI} from '../shared/library'
+import type {WeatherAPI} from '../shared/weather'
 import type {MailAPI} from '../shared/mail'
 import type {ResearchAPI} from '../shared/research'
 
@@ -51,6 +52,11 @@ const campusCard: CampusCardAPI = {
     openRecords: () => ipcRenderer.invoke('campus-card:open-records'),
 }
 contextBridge.exposeInMainWorld('campusCard', campusCard)
+
+const weather: WeatherAPI = {
+    forecast: refresh => ipcRenderer.invoke('weather:forecast', refresh),
+}
+contextBridge.exposeInMainWorld('weather', weather)
 
 const memory: MemoryAPI = {
     get: () => ipcRenderer.invoke('memory:get'),

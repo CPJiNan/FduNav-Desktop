@@ -7,6 +7,7 @@ import {type CalendarEvent, calendarOccurrences, type CalendarView, localToday, 
 import {Icon} from './Icon'
 import {CampusCardWidget} from './CampusCardWidget'
 import {LibraryWidget} from './LibraryWidget'
+import {WeatherWidget} from './WeatherWidget'
 import './styles/dashboard.css'
 
 const widgetNames = {
@@ -14,19 +15,59 @@ const widgetNames = {
     todos: '待办事项',
     card: '校园卡余额',
     library: '图书馆人数',
+    weather: '天气',
     news: '通知速览'
 } as const
 type WidgetId = keyof typeof widgetNames
-const defaultLayout: WidgetId[] = ['agenda', 'todos', 'news', 'card', 'library']
+const defaultLayout: WidgetId[] = ['agenda', 'todos', 'news', 'card', 'library', 'weather']
 const layoutStorageKey = 'fdunav.dashboard.layout'
+const layoutRevisionKey = 'fdunav.dashboard.layout-revision'
+const layoutRevision = 2
+const layoutUpgrades: { revision: number; widgets: WidgetId[] }[] = [{revision: 2, widgets: ['weather']}]
 
-function readLayout(): WidgetId[] {
+function readRevision() {
     try {
-        const saved: unknown = JSON.parse(localStorage.getItem(layoutStorageKey) ?? 'null')
-        if (Array.isArray(saved) && saved.every(id => defaultLayout.includes(id)) && new Set(saved).size === saved.length) return saved
+        return Number(localStorage.getItem(layoutRevisionKey)) || 1
+    } catch {
+        return layoutRevision
+    }
+}
+
+function markRevision() {
+    try {
+        localStorage.setItem(layoutRevisionKey, String(layoutRevision))
     } catch {
     }
-    return [...defaultLayout]
+}
+
+function readLayout(): WidgetId[] {
+    let saved: unknown
+    try {
+        saved = JSON.parse(localStorage.getItem(layoutStorageKey) ?? 'null')
+    } catch {
+        saved = null
+    }
+    if (!Array.isArray(saved) || !saved.every(id => defaultLayout.includes(id)) || new Set(saved).size !== saved.length) {
+        markRevision()
+        return [...defaultLayout]
+    }
+    const layout: WidgetId[] = saved
+    const revision = readRevision()
+    if (revision >= layoutRevision) return layout
+    const added = layoutUpgrades.filter(upgrade => upgrade.revision > revision)
+        .flatMap(upgrade => upgrade.widgets)
+        .filter(id => !layout.includes(id))
+    if (!added.length) {
+        markRevision()
+        return layout
+    }
+    const next = [...layout, ...added]
+    try {
+        localStorage.setItem(layoutStorageKey, JSON.stringify(next))
+    } catch {
+    }
+    markRevision()
+    return next
 }
 
 type Resource<T> = { data: T; error: string }
@@ -66,6 +107,7 @@ export function DashboardPage({onNavigate, onOpenNotice}: {
         setLayout(next)
         try {
             localStorage.setItem(layoutStorageKey, JSON.stringify(next))
+            localStorage.setItem(layoutRevisionKey, String(layoutRevision))
             setLayoutError('')
         } catch {
             setLayoutError('布局保存失败，重新打开页面后可能恢复原布局。')
@@ -138,6 +180,7 @@ export function DashboardPage({onNavigate, onOpenNotice}: {
     const content: Record<WidgetId, ReactNode> = {
         library: <LibraryWidget refreshVersion={widgetRefresh}/>,
         card: <CampusCardWidget refreshVersion={widgetRefresh}/>,
+        weather: <WeatherWidget refreshVersion={widgetRefresh}/>,
         agenda: <>
             <div className="dashboard-widget-heading"><h2><Icon name="calendar"/>今日安排</h2>
                 <button type="button" onClick={() => onNavigate('calendar', 'agenda')}>全部<Icon name="chevron"/>
