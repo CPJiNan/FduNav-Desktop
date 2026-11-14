@@ -221,6 +221,13 @@ export interface MailPage {
     errors: { accountId: string; address: string; message: string }[]
 }
 
+export interface MailOverview {
+    configured: boolean;
+    items: MailItem[];
+    errors: MailPage['errors'];
+    updatedAt: string
+}
+
 export interface MailAttachment {
     part: string;
     name: string;
@@ -295,6 +302,8 @@ export interface MailboxAPI {
     folders(accountIds?: string[]): Promise<Result<{ folders: MailFolder[]; errors: MailPage['errors'] }>>
 
     messages(input: MailQuery): Promise<Result<MailPage>>
+
+    overview(refresh?: boolean): Promise<Result<MailOverview>>
 
     message(input: { id: string; markRead?: boolean }): Promise<Result<MailMessage>>
 

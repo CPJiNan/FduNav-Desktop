@@ -43,15 +43,6 @@ function WeatherGlyph({condition}: { condition: string }) {
     </svg>
 }
 
-function formatUpdatedAt(value: string) {
-    return new Date(value).toLocaleString('zh-CN', {
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    })
-}
-
 function campusNotes(campuses: WeatherCampus[]) {
     const notes = new Set<string>()
     for (const campus of campuses) for (const day of campus.days) if (day.description) notes.add(day.description)
@@ -173,9 +164,5 @@ export function WeatherWidget({refreshVersion}: { refreshVersion: number }) {
         {notes.length > 0 && <div className="dashboard-weather-notes">
             {notes.map(note => <p key={note}>{note}</p>)}
         </div>}
-        {data && <p className="dashboard-widget-caption">
-            数据来源：复旦大学大气与海洋科学系 · 更新于{' '}
-            <time dateTime={data.updatedAt}>{formatUpdatedAt(data.updatedAt)}</time>
-        </p>}
     </div>
 }

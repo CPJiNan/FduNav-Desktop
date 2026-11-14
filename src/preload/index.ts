@@ -27,6 +27,7 @@ const mail: MailAPI = {
     removeAccount: id => ipcRenderer.invoke('mail:remove-account', id),
     folders: ids => ipcRenderer.invoke('mail:folders', ids),
     messages: input => ipcRenderer.invoke('mail:messages', input),
+    overview: refresh => ipcRenderer.invoke('mail:overview', refresh),
     message: input => ipcRenderer.invoke('mail:message', input),
     setFlags: input => ipcRenderer.invoke('mail:set-flags', input),
     moveToTrash: id => ipcRenderer.invoke('mail:trash', id),

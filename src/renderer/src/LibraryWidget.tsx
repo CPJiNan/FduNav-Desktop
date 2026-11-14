@@ -65,16 +65,6 @@ export function LibraryWidget({refreshVersion}: { refreshVersion: number }) {
                 </dd>
             </div>)}</dl>
             {!data.items.length && <p className="dashboard-empty">暂无图书馆人数数据</p>}
-            <p className="dashboard-widget-caption">上次查询：
-                <time dateTime={data.updatedAt}>
-                    {new Date(data.updatedAt).toLocaleString('zh-CN', {
-                        month: 'numeric',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    })}
-                </time>
-            </p>
         </>}
         {error && <p className="dashboard-error" role="alert">{error}</p>}
     </div>

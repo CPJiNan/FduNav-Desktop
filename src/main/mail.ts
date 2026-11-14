@@ -3,7 +3,7 @@ import {writeFile} from 'node:fs/promises'
 import type {Result} from '../shared/accounts'
 import type {AppDatabase} from './database'
 import type {AccountService} from './accounts'
-import type {MailDraft, MailQuery} from '../shared/mail'
+import type {MailDraft, MailOverview, MailQuery} from '../shared/mail'
 import {secureStorage} from './secure-storage'
 import {createMailTransport} from './mail-imap'
 import {MailService} from './mail-service'
@@ -34,6 +34,14 @@ export function registerMailHandlers(db: AppDatabase, campus: AccountService, tr
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new MailError('invalid_args', '请求格式无效。')
         return input as Record<string, unknown>
     }
+    const overviewCache = new Map<string, { revision: number; data: MailOverview }>()
+    const overviewPending = new Map<string, Promise<MailOverview>>()
+    const forgetOverview = () => {
+        try {
+            overviewCache.delete(accounts.owner())
+        } catch {
+        }
+    }
 
     function handle<T>(channel: string, action: (input: unknown, event: IpcMainInvokeEvent) => Promise<T> | T) {
         ipcMain.handle(channel, async (event, input): Promise<Result<T>> => {
@@ -63,12 +71,45 @@ export function registerMailHandlers(db: AppDatabase, campus: AccountService, tr
     handle('mail:remove-account', input => accounts.remove(input as string))
     handle('mail:folders', input => client.folders(input as string[] | undefined))
     handle('mail:messages', input => client.messages(input as MailQuery))
-    handle('mail:message', input => {
-        const value = object(input);
-        return client.message(value.id as string, value.markRead as boolean | undefined)
+    handle('mail:overview', async (input: unknown) => {
+        if (input !== undefined && typeof input !== 'boolean') throw new MailError('invalid_args', '邮件速览参数无效。')
+        const owner = accounts.owner(), revision = accounts.revision(owner), cached = overviewCache.get(owner)
+        if (input !== true && cached && cached.revision === revision &&
+            Date.now() - Date.parse(cached.data.updatedAt) < 5 * 60_000) return cached.data
+        const running = overviewPending.get(owner)
+        if (running) return running
+        const pending = (async (): Promise<MailOverview> => {
+            if (!(await accounts.list()).length) {
+                return {configured: false, items: [], errors: [], updatedAt: new Date().toISOString()}
+            }
+            const page = await client.messages({scope: 'inbox', limit: 3})
+            return {configured: true, items: page.items, errors: page.errors, updatedAt: new Date().toISOString()}
+        })()
+        overviewPending.set(owner, pending)
+        try {
+            const data = await pending
+            overviewCache.set(owner, {revision, data})
+            return data
+        } finally {
+            overviewPending.delete(owner)
+        }
     })
-    handle('mail:set-flags', input => client.flags(object(input) as { id: string; read?: boolean; starred?: boolean }))
-    handle('mail:trash', input => client.trash(input as string))
+    handle('mail:message', async input => {
+        const value = object(input),
+            message = await client.message(value.id as string, value.markRead as boolean | undefined)
+        forgetOverview()
+        return message
+    })
+    handle('mail:set-flags', async input => {
+        await client.flags(object(input) as { id: string; read?: boolean; starred?: boolean })
+        forgetOverview()
+        return null
+    })
+    handle('mail:trash', async input => {
+        await client.trash(input as string)
+        forgetOverview()
+        return null
+    })
     handle('mail:download-attachment', async (input, event) => {
         const value = object(input), username = accounts.owner(),
             attachment = await client.attachment(value.id as string, value.part as string)

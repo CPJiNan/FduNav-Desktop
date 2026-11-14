@@ -20,6 +20,7 @@ import {ChatPage} from './ChatPage'
 import type {Notice} from '../../shared/notices'
 import type {CalendarView} from '../../shared/calendar'
 import type {AccountState} from '../../shared/accounts'
+import type {MailItem} from '../../shared/mail'
 import {type MessagePreferences, validateRequiredMessagePreferences} from '../../shared/message-preferences'
 import './styles/app.css'
 
@@ -42,6 +43,7 @@ export default function App() {
     const [settings, setSettings] = useState(false)
     const [page, setPage] = useState<'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'mail'>('dashboard')
     const [noticeToOpen, setNoticeToOpen] = useState<Notice | null>(null)
+    const [mailToOpen, setMailToOpen] = useState<MailItem | null>(null)
     const [calendarInitialView, setCalendarInitialView] = useState<CalendarView>('week')
     const [tab, setTab] = useState<Tab>('general')
     const [account, setAccount] = useState<AccountState | null>(null)
@@ -237,6 +239,10 @@ export default function App() {
                                            onOpenNotice={notice => {
                                                setNoticeToOpen(notice);
                                                openPage('notices')
+                                           }}
+                                           onOpenMail={item => {
+                                               setMailToOpen(item);
+                                               openPage('mail')
                                            }}/>}
                         {showNoticesPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <NoticesPage key={account?.username} noticeToOpen={noticeToOpen}
@@ -261,10 +267,12 @@ export default function App() {
                         {showTodosPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
                             <TodosPage key={account?.username}/>}
                         {showMailPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
-                            <MailboxPage key={account?.username} onSettings={() => {
-                                setTab('mail');
-                                setSettings(true)
-                            }}/>}
+                            <MailboxPage key={account?.username} initialMail={mailToOpen}
+                                         onInitialMailOpened={() => setMailToOpen(null)}
+                                         onSettings={() => {
+                                             setTab('mail');
+                                             setSettings(true)
+                                         }}/>}
                     </main>
                 </div>
             </div>

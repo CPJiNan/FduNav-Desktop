@@ -3,11 +3,13 @@ import type {Result} from '../../shared/accounts'
 import type {Notice, NoticeList} from '../../shared/notices'
 import type {Todo} from '../../shared/todos'
 import type {Timetable} from '../../shared/timetable'
+import type {MailItem} from '../../shared/mail'
 import {type CalendarEvent, calendarOccurrences, type CalendarView, localToday, timeLabel} from '../../shared/calendar'
 import {Icon} from './Icon'
 import {CampusCardWidget} from './CampusCardWidget'
 import {LibraryWidget} from './LibraryWidget'
 import {WeatherWidget} from './WeatherWidget'
+import {MailWidget} from './MailWidget'
 import './styles/dashboard.css'
 
 const widgetNames = {
@@ -16,14 +18,18 @@ const widgetNames = {
     card: '校园卡余额',
     library: '图书馆人数',
     weather: '天气',
+    mail: '邮件速览',
     news: '通知速览'
 } as const
 type WidgetId = keyof typeof widgetNames
-const defaultLayout: WidgetId[] = ['agenda', 'todos', 'news', 'card', 'library', 'weather']
+const defaultLayout: WidgetId[] = ['agenda', 'todos', 'news', 'mail', 'card', 'library', 'weather']
 const layoutStorageKey = 'fdunav.dashboard.layout'
 const layoutRevisionKey = 'fdunav.dashboard.layout-revision'
-const layoutRevision = 2
-const layoutUpgrades: { revision: number; widgets: WidgetId[] }[] = [{revision: 2, widgets: ['weather']}]
+const layoutRevision = 3
+const layoutUpgrades: { revision: number; widgets: WidgetId[] }[] = [
+    {revision: 2, widgets: ['weather']},
+    {revision: 3, widgets: ['mail']},
+]
 
 function readRevision() {
     try {
@@ -81,9 +87,10 @@ const read = async <T, >(request: Promise<Result<T>> | undefined, empty: T): Pro
     }
 }
 
-export function DashboardPage({onNavigate, onOpenNotice}: {
-    onNavigate: (page: 'notices' | 'calendar' | 'todos', calendarView?: CalendarView) => void;
-    onOpenNotice: (notice: Notice) => void
+export function DashboardPage({onNavigate, onOpenNotice, onOpenMail}: {
+    onNavigate: (page: 'notices' | 'calendar' | 'todos' | 'mail', calendarView?: CalendarView) => void;
+    onOpenNotice: (notice: Notice) => void;
+    onOpenMail: (item: MailItem) => void
 }) {
     const [now, setNow] = useState(() => new Date())
     const [refresh, setRefresh] = useState(0)
@@ -181,6 +188,8 @@ export function DashboardPage({onNavigate, onOpenNotice}: {
         library: <LibraryWidget refreshVersion={widgetRefresh}/>,
         card: <CampusCardWidget refreshVersion={widgetRefresh}/>,
         weather: <WeatherWidget refreshVersion={widgetRefresh}/>,
+        mail: <MailWidget refreshVersion={widgetRefresh} onOpenMail={onOpenMail}
+                          onOpenMailbox={() => onNavigate('mail')}/>,
         agenda: <>
             <div className="dashboard-widget-heading"><h2><Icon name="calendar"/>今日安排</h2>
                 <button type="button" onClick={() => onNavigate('calendar', 'agenda')}>全部<Icon name="chevron"/>

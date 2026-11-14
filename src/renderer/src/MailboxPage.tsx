@@ -63,7 +63,11 @@ function emptyDraft(accountId: string): MailDraft {
     }
 }
 
-export function MailboxPage({onSettings}: { onSettings: () => void }) {
+export function MailboxPage({initialMail = null, onInitialMailOpened, onSettings}: {
+    initialMail?: MailItem | null;
+    onInitialMailOpened?: () => void;
+    onSettings: () => void
+}) {
     const [accounts, setAccounts] = useState<MailAccount[]>([]), [accountId, setAccountId] = useState('')
     const [initialLoading, setInitialLoading] = useState(true), [initialError, setInitialError] = useState(''), [reloadAccounts, setReloadAccounts] = useState(0)
     const [view, setView] = useState<View>('inbox'), [folder, setFolder] = useState(''), [folders, setFolders] = useState<MailFolder[]>([])
@@ -86,6 +90,7 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
     const [canScrollToTop, setCanScrollToTop] = useState(false)
     const sidebar = useRef<HTMLElement>(null)
     const request = useRef(0), searchInput = useRef<HTMLInputElement>(null), list = useRef<HTMLDivElement>(null)
+    const pendingMail = useRef<string | null>(initialMail?.id ?? null)
     const selection = useRef(selected);
     selection.current = selected
     const reportError = useCallback((error: string) => setActionError(error), [])
@@ -125,6 +130,16 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
             current = false
         }
     }, [reloadAccounts])
+    useEffect(() => {
+        if (!initialMail) return
+        pendingMail.current = initialMail.id
+        setAccountId(initialMail.accountId)
+        setView('inbox')
+        setFolder('')
+        setSearch('')
+        setQuery('')
+        setUnreadOnly(false)
+    }, [initialMail])
     useEffect(() => {
         if (composing) return
         if (!search) {
@@ -236,6 +251,13 @@ export function MailboxPage({onSettings}: { onSettings: () => void }) {
             current = false
         }
     }, [selected, bodyRetry])
+    useEffect(() => {
+        if (!pendingMail.current || initialLoading || loading) return
+        const id = pendingMail.current
+        pendingMail.current = null
+        onInitialMailOpened?.()
+        setSelected(id)
+    }, [initialLoading, loading, initialMail, onInitialMailOpened])
 
     async function loadMore() {
         if (!window.mail || !cursor || loading || moreLoading) return

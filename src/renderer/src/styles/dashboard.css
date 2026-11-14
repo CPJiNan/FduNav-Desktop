@@ -371,8 +371,9 @@
     flex-direction: column;
     min-width: 0;
     padding: 14px 16px;
+    border: 1px solid var(--color-border-subtle);
     border-radius: 18px;
-    background: var(--color-bg-subtle);
+    background: var(--color-bg-surface);
 }
 
 .dashboard-weather-campus-heading {
@@ -395,7 +396,7 @@
     min-width: 0;
     overflow: hidden;
     color: var(--color-text-muted);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -459,7 +460,7 @@
 
 .dashboard-widget .dashboard-weather-temperature span:not(.sr-only) {
     color: var(--color-text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
 }
 
 .dashboard-widget .dashboard-weather-condition {
@@ -473,7 +474,7 @@
     flex-wrap: wrap;
     gap: 4px 10px;
     margin-top: 8px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
 }
 
 .dashboard-widget .dashboard-weather-next {
@@ -484,7 +485,7 @@
     padding-top: 8px;
     overflow: hidden;
     border-top: 1px solid var(--color-border-subtle);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     white-space: nowrap;
 }
 
@@ -524,8 +525,76 @@
 }
 
 .dashboard-widget .dashboard-weather-notes p {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     line-height: 1.6;
+}
+
+.dashboard-mail {
+    grid-column: 1 / -1;
+}
+
+.dashboard-mail-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.dashboard-mail-list li + li {
+    border-top: 0;
+    border-left: 1px solid var(--color-border-subtle);
+    padding-left: 20px;
+}
+
+.dashboard-mail-list li button {
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dashboard-mail-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+}
+
+.dashboard-mail-from {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dashboard-mail-meta time {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+}
+
+.dashboard-mail-list strong {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.dashboard-mail-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 8px;
+    vertical-align: middle;
+    border-radius: 50%;
+    background: var(--color-dot);
+}
+
+.dashboard-mail-setup {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-link);
+    font: inherit;
+    text-decoration: underline;
 }
 
 .dashboard-todos progress {
@@ -609,12 +678,12 @@
 }
 
 @media (max-width: 1000px) {
-    .dashboard-news ul {
+    .dashboard-news ul, .dashboard-mail-list {
         grid-template-columns: 1fr;
         gap: 0;
     }
 
-    .dashboard-news li + li {
+    .dashboard-news li + li, .dashboard-mail-list li + li {
         border-left: 0;
         padding-left: 0;
         border-top: 1px solid var(--color-border-subtle);
