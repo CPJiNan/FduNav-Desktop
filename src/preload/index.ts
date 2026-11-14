@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('memory', memory)
 
 const chat: ChatAPI = {
     get: () => ipcRenderer.invoke('chat:get'),
+    createSession: () => ipcRenderer.invoke('chat:create-session'),
+    selectSession: id => ipcRenderer.invoke('chat:select-session', id),
+    renameSession: (id, title) => ipcRenderer.invoke('chat:rename-session', {id, title}),
+    deleteSession: id => ipcRenderer.invoke('chat:delete-session', id),
     trace: turnId => ipcRenderer.invoke('chat:trace', turnId),
     traceEvent: (turnId, eventId) => ipcRenderer.invoke('chat:trace-event', {turnId, eventId}),
     sessionTrace: () => ipcRenderer.invoke('chat:session-trace'),

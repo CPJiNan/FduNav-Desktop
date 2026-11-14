@@ -118,8 +118,19 @@ export interface SessionTraceTurn {
     events: SessionTraceEvent[]
 }
 
+export interface ChatSession {
+    id: string
+    title: string
+    createdAt: string
+    updatedAt: string
+    sourceMode: ResearchSourceMode
+    busy: boolean
+}
+
 export interface ChatState {
     username: string
+    sessionId: string
+    sessions: ChatSession[]
     turns: ChatTurn[]
     busy: boolean
     status: string
@@ -134,6 +145,14 @@ export interface ChatPushState extends ChatState {
 
 export interface ChatAPI {
     get(): Promise<Result<ChatState>>
+
+    createSession(): Promise<Result<ChatState>>
+
+    selectSession(id: string): Promise<Result<ChatState>>
+
+    renameSession(id: string, title: string): Promise<Result<ChatState>>
+
+    deleteSession(id: string): Promise<Result<ChatState>>
 
     send(text: string, options: { sourceMode: ResearchSourceMode }): Promise<Result<ChatState>>
 

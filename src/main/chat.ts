@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto'
+import {AsyncLocalStorage} from 'node:async_hooks'
 import {app, ipcMain, type IpcMainInvokeEvent, shell, type WebContents} from 'electron'
 import type {Result} from '../shared/accounts'
 import type {ChatAction, ChatActionRequest, ChatCard, ChatPushState, ChatSummaryRequest, ChatTurn} from '../shared/chat'
@@ -131,7 +132,20 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     const running = new Map<string, RunningChat>()
     const memoryCarry = new Map<string, string[]>()
     const summaryJobs = new Set<string>()
-    const summaryJobKey = (user: string, turnId: string, requestId: string) => JSON.stringify([user, turnId, requestId])
+    // Capture the session at the IPC boundary. Streaming, summaries and queued
+    // approvals keep this context even after the user selects another session.
+    const sessionContext = new AsyncLocalStorage<{user: string; id: string; storageKey: string}>()
+    function session(user: string) {
+        const context = sessionContext.getStore()
+        return context?.user === user ? context : {user, ...db.getSelectedChatSession(user)}
+    }
+    const scope = (user: string) => session(user).storageKey
+    const summaryJobKey = (user: string, turnId: string, requestId: string) => JSON.stringify([scope(user), turnId, requestId])
+    function sessionList(user: string) {
+        return db.getChatSessions(user).map(({storageKey, ...item}) => ({
+            ...item, busy: running.has(storageKey) || [...summaryJobs].some(key => JSON.parse(key)[0] === storageKey)
+        }))
+    }
     const subscribers = new Map<WebContents, string>()
 
     function username() {
@@ -141,10 +155,10 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     }
 
     function load(user: string): StoredTurn[] {
-        const saved = db.getChatConversation(user)
+        const saved = db.getChatConversation(scope(user))
         const turns = saved ? JSON.parse(saved) as StoredTurn[] : []
         let repaired = false
-        const pending = db.getRunningTurn(user)
+        const pending = db.getRunningTurn(scope(user))
         if (pending && !turns.some(turn => turn.id === pending.turnId)) {
             const turn = JSON.parse(pending.data) as StoredTurn
             turn.error ??= '上次回复中断；已完成的操作仍然有效，请查询后再继续。'
@@ -173,7 +187,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             item.label += '（上次执行中断）'
             repaired = true
         }
-        if (repaired) db.saveChatConversation(user, JSON.stringify(turns))
+        if (repaired) db.saveChatConversation(scope(user), JSON.stringify(turns))
         return turns
     }
 
@@ -201,18 +215,19 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     }
 
     function snapshot(user: string): ChatPushState {
-        const active = running.get(user)
+        const active = running.get(scope(user))
         return {
+            sessionId: session(user).id, sessions: sessionList(user),
             username: user, turns: presentTurns(user, active?.turns ?? load(user)),
             busy: !!active, status: active?.status ?? '',
             stats: chatStats(user, active), full: true,
-            sources: active?.sources ?? db.getResearchSources(user),
+            sources: active?.sources ?? db.getResearchSources(scope(user)),
             research: {webReady: research.settings.hasSearchKey(), campus: research.campus.hint(user)},
         }
     }
 
     function liveSnapshot(user: string): ChatPushState {
-        const active = running.get(user)
+        const active = running.get(scope(user))
         const turns = (active?.turns ?? load(user)).slice(-1)
         const events = new Map<string, CalendarEvent>()
         for (const turn of turns) for (const card of turn.cards) {
@@ -221,16 +236,17 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             if (event) events.set(event.id, event)
         }
         return {
+            sessionId: session(user).id, sessions: sessionList(user),
             username: user, turns: presentTurns(user, turns, events),
             busy: !!active, status: active?.status ?? '',
             stats: chatStats(user, active), full: false,
-            sources: active?.sources ?? db.getResearchSources(user),
+            sources: active?.sources ?? db.getResearchSources(scope(user)),
             research: {webReady: research.settings.hasSearchKey(), campus: research.campus.hint(user)},
         }
     }
 
     function chatStats(user: string, active: RunningChat | undefined) {
-        const raw = db.getChatStats(user)
+        const raw = db.getChatStats(scope(user))
         const total = raw.promptTokens + raw.completionTokens
         const turn = active?.turns.at(-1)
         return {
@@ -244,6 +260,11 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     }
 
     function publish(user: string, full = true) {
+        const selected = db.getSelectedChatSession(user)
+        if (selected.id !== session(user).id) {
+            sessionContext.run({user, ...selected}, () => publish(user, true))
+            return
+        }
         const state = full ? snapshot(user) : liveSnapshot(user)
         for (const [sender, owner] of subscribers) {
             if (sender.isDestroyed()) subscribers.delete(sender)
@@ -262,7 +283,8 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             try {
                 const user = username()
                 subscribe(event.sender, user)
-                return {ok: true, data: action(user, input, event)}
+                return {ok: true, data: sessionContext.run({user, ...db.getSelectedChatSession(user)},
+                    () => action(user, input, event))}
             } catch (error) {
                 return {ok: false, error: error instanceof Error ? error.message : '聊天操作失败。'}
             }
@@ -298,7 +320,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     function saveTrace(user: string, active: RunningChat, turn: StoredTurn, completed: boolean) {
         const events = turn.trace ?? []
         if (completed) {
-            db.saveChatTrace(user, turn.id, events)
+            db.saveChatTrace(scope(user), turn.id, events)
             active.savedTrace.clear()
             for (const event of events) active.savedTrace.set(event.id, {status: event.status, details: event.details})
             return
@@ -306,7 +328,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         events.forEach((event, position) => {
             const previous = active.savedTrace.get(event.id)
             if (previous && previous.status === event.status && previous.details === event.details) return
-            db.saveChatTraceEvent(user, turn.id, event, position)
+            db.saveChatTraceEvent(scope(user), turn.id, event, position)
             active.savedTrace.set(event.id, {status: event.status, details: event.details})
         })
     }
@@ -317,10 +339,10 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         db.transaction(() => {
             saveTrace(user, active, current, completed)
             if (completed) {
-                db.saveChatConversation(user, JSON.stringify(active.turns.map(turn => serializeTurn(turn, false))))
-                db.clearRunningTurn(user)
+                db.saveChatConversation(scope(user), JSON.stringify(active.turns.map(turn => serializeTurn(turn, false))))
+                db.clearRunningTurn(scope(user))
             } else {
-                db.saveRunningTurn(user, current.id, active.turns.length - 1, JSON.stringify(serializeTurn(current, true)))
+                db.saveRunningTurn(scope(user), current.id, active.turns.length - 1, JSON.stringify(serializeTurn(current, true)))
             }
         })
     }
@@ -373,13 +395,13 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     const current = event.details as { requestRefs?: string[] }
                     patchDetails(event, {
                         requestRefs: [...current.requestRefs ?? [],
-                            db.saveChatModelRequest(user, redactTrace(body, secrets) as Record<string, unknown>)]
+                            db.saveChatModelRequest(scope(user), redactTrace(body, secrets) as Record<string, unknown>)]
                     })
                     persist(user, active)
                 },
                 onRawResponse: (response: unknown) => {
                     const current = event.details as { rawResponseRefs?: string[] }
-                    patchDetails(event, {rawResponseRefs: [...current.rawResponseRefs ?? [], db.saveChatPayload(user, redactTrace(response, secrets))]})
+                    patchDetails(event, {rawResponseRefs: [...current.rawResponseRefs ?? [], db.saveChatPayload(scope(user), redactTrace(response, secrets))]})
                 },
             })
             const onUsage = (usage: import('./llm-stream').LlmUsage, elapsedMs: number) => {
@@ -390,7 +412,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     model: connection!.model
                 })
                 try {
-                    db.recordLlmUsage(user, turn.id, connection!.model, usage, elapsedMs)
+                    db.recordLlmUsage(scope(user), turn.id, connection!.model, usage, elapsedMs)
                 } catch {
                     record('error', '用量记录失败，回复继续', undefined, 'failed')
                 }
@@ -429,7 +451,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 timeoutMs: researchSettings.httpTimeoutSeconds * 1000,
             }))
             const researchRunner = researchActive ? createResearchToolRunner({
-                db, username: user, sources: active.sources, settings: researchSettings, searchApiKey,
+                db, username: user, sourceStorageKey: scope(user), sources: active.sources, settings: researchSettings, searchApiKey,
                 auth: research.campus, campus: campusService, campusBudget, deadline, assertCurrent,
             }) : null
             const permittedSources = () => active.sources.filter(source => campusAllowed || source.source === 'web')
@@ -441,8 +463,8 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             const previous = sourceMode === 'web'
                 ? allPrevious.filter(item => item.sourceMode !== 'all')
                 : allPrevious
-            let compacted = db.getCompaction(user)
-            const pendingUpdates = db.getChatContextUpdates(user, compacted?.updatesThrough)
+            let compacted = db.getCompaction(scope(user))
+            const pendingUpdates = db.getChatContextUpdates(scope(user), compacted?.updatesThrough)
             const history = compactTurns(uncompactedTurns(previous, compacted))
             history.recent = history.recent.map((turn, index) => ({
                 ...turn,
@@ -484,7 +506,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                                         })
                                     }], [], signal,
                                 {onUsage, onRetry, ...observeRequest(event)})
-                            patchDetails(event, {responseRef: db.saveChatPayload(user, redactTrace(response, secrets))})
+                            patchDetails(event, {responseRef: db.saveChatPayload(scope(user), redactTrace(response, secrets))})
                             assertCurrent()
                             chunkSummary = validateCompaction(response.content ?? '')
                             break
@@ -509,7 +531,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                         summary, coversUpTo: history.older.at(-1)!.id,
                         updatesThrough: pendingUpdates.at(-1)?.seq ?? compacted?.updatesThrough ?? 0
                     }
-                    db.saveCompaction(user, compacted)
+                    db.saveCompaction(scope(user), compacted)
                     event.status = 'completed';
                     patchDetails(event, redactTrace(compacted, secrets) as Record<string, unknown>)
                     try {
@@ -554,7 +576,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                         coversUpTo: covered,
                         updatesThrough: compacted?.updatesThrough
                     }
-                    db.saveCompaction(user, compacted)
+                    db.saveCompaction(scope(user), compacted)
                     event.status = 'failed'
                     event.label = `压缩连续 ${compactionAttempts} 次失败，保留最近 ${fallbackTurns} 轮`
                     patchDetails(event, {
@@ -566,9 +588,9 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             }
             const recentUserText = [previous.at(-1)?.user, turn.user].filter(Boolean).join('\n')
             const currentMemories = db.getMemoryEnabled(user) ? db.getMemories(user) : []
-            const memories = selectMemories(currentMemories, recentUserText, Date.now(), memoryCarry.get(user))
-            memoryCarry.set(user, selectMemories(currentMemories, recentUserText).map(item => item.id))
-            const contextUpdates = db.getChatContextUpdates(user, compacted?.updatesThrough).map(item => item.data)
+            const memories = selectMemories(currentMemories, recentUserText, Date.now(), memoryCarry.get(scope(user)))
+            memoryCarry.set(scope(user), selectMemories(currentMemories, recentUserText).map(item => item.id))
+            const contextUpdates = db.getChatContextUpdates(scope(user), compacted?.updatesThrough).map(item => item.data)
             const today = new Date().toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'})
             const researchBlock = webReady || campusAllowed
                 ? researchRuntimeBlock(campusAllowed, researchSettings.reviewEnabled) : ''
@@ -790,7 +812,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     assertCurrent()
                     event.status = 'completed';
                     event.elapsedMs = Math.round(performance.now() - start)
-                    patchDetails(event, {responseRef: db.saveChatPayload(user, redactTrace(response, secrets))})
+                    patchDetails(event, {responseRef: db.saveChatPayload(scope(user), redactTrace(response, secrets))})
                 } catch (error) {
                     event.status = signal.aborted ? 'cancelled' : 'failed'
                     event.elapsedMs = Math.round(performance.now() - start)
@@ -884,7 +906,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             try {
                 persist(user, active, true)
             } finally {
-                running.delete(user);
+                running.delete(scope(user));
                 publish(user)
                 flushDecisions(user)
             }
@@ -892,7 +914,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     }
 
     function updateSummaryRequest(user: string, turnId: string, requestId: string, update: (request: ChatSummaryRequest) => void) {
-        const active = running.get(user)
+        const active = running.get(scope(user))
         const turns = active?.turns ?? load(user)
         const turn = turns.find(item => item.id === turnId)
         const request = turn?.summaryRequests?.find(item => item.id === requestId)
@@ -907,7 +929,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 }
             } : {}), error: request.error
         }
-        db.appendChatContextUpdate(user, {kind: 'notice_summary', ...summaryData})
+        db.appendChatContextUpdate(scope(user), {kind: 'notice_summary', ...summaryData})
         trace(turn, 'approval', `摘要请求：${chatSummaryStatusLabels[request.status]}`, {
             requestId,
             status: request.status,
@@ -924,14 +946,14 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             } catch {
             }
         }
-        db.saveChatTrace(user, turn.id, turn.trace ?? [])
+        db.saveChatTrace(scope(user), turn.id, turn.trace ?? [])
         if (active) persist(user, active)
         else {
-            db.saveChatConversation(user, JSON.stringify(turns.map(turn => ({
+            db.saveChatConversation(scope(user), JSON.stringify(turns.map(turn => ({
                 ...turn,
                 trace: turn.trace?.map(({details: _details, ...event}) => event)
             }))))
-            db.clearRunningTurn(user)
+            db.clearRunningTurn(scope(user))
         }
         publish(user)
     }
@@ -977,7 +999,10 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 item.status = 'failed';
                 item.error = error instanceof Error ? error.message : '摘要生成失败，请重试。'
             })
-        }).finally(() => summaryJobs.delete(key)).catch(() => {
+        }).finally(() => {
+            summaryJobs.delete(key)
+            publish(user)
+        }).catch(() => {
         })
         return snapshot(user)
     })
@@ -992,7 +1017,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             requestId, status: request.status, action: presentAction(request.action),
             result: presentActionResult(request.action, request.result), error: request.error
         }
-        db.appendChatContextUpdate(user, actionData)
+        db.appendChatContextUpdate(scope(user), actionData)
         trace(turn, request.status === 'undone' ? 'undo' : 'approval', `${chatActionTitles[request.action.kind]}：${chatActionStatusLabels[request.status]}`, {
             requestId,
             action: request.action,
@@ -1010,27 +1035,27 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             } catch {
             }
         }
-        db.saveChatTrace(user, turn.id, turn.trace ?? [])
-        db.saveChatConversation(user, JSON.stringify(turns.map(turn => ({
+        db.saveChatTrace(scope(user), turn.id, turn.trace ?? [])
+        db.saveChatConversation(scope(user), JSON.stringify(turns.map(turn => ({
             ...turn,
             trace: turn.trace?.map(({details: _details, ...event}) => event)
         }))))
-        db.clearRunningTurn(user)
+        db.clearRunningTurn(scope(user))
     }
 
     const queuedDecisions = new Map<string, Array<() => void>>()
 
     function queueDecision(user: string, task: () => void) {
-        const queue = queuedDecisions.get(user) ?? []
+        const queue = queuedDecisions.get(scope(user)) ?? []
         if (queue.length >= 10) throw new Error('待处理的审批过多，请等待当前回复完成。')
         queue.push(task);
-        queuedDecisions.set(user, queue)
+        queuedDecisions.set(scope(user), queue)
     }
 
     function flushDecisions(user: string) {
-        const queue = queuedDecisions.get(user)
+        const queue = queuedDecisions.get(scope(user))
         if (!queue) return
-        queuedDecisions.delete(user)
+        queuedDecisions.delete(scope(user))
         for (const task of queue) try {
             task()
         } catch (error) {
@@ -1110,7 +1135,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     const target = turns.find(item => item.id === turnId)
                     if (target) {
                         target.context.push({role: 'assistant', content: confirmText(action, result)})
-                        db.saveChatConversation(user, JSON.stringify(turns))
+                        db.saveChatConversation(scope(user), JSON.stringify(turns))
                     }
                 })
             } catch (error) {
@@ -1129,7 +1154,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         if (typeof turnId !== 'string' || typeof requestId !== 'string' || typeof allow !== 'boolean') throw new Error('操作请求参数无效。')
         const request = load(user).find(item => item.id === turnId)?.actionRequests?.find(item => item.id === requestId)
         if (!request) throw new Error('操作请求不存在或已被清除。')
-        if (running.has(user)) {
+        if (running.has(scope(user))) {
             if (request.status !== 'pending') return snapshot(user)
             queueDecision(user, () => applyActionDecision(user, turnId, requestId, allow))
             return snapshot(user)
@@ -1139,18 +1164,18 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     })
     handle('chat:trace', (user, input) => {
         if (typeof input !== 'string' || input.length > 100) throw new Error('执行记录参数无效。')
-        const turn = (running.get(user)?.turns ?? load(user)).find(item => item.id === input)
+        const turn = (running.get(scope(user))?.turns ?? load(user)).find(item => item.id === input)
         if (!turn) throw new Error('执行记录不存在或已被清除。')
         const metadata = new Map(turn.trace?.map(item => [item.id, item]))
-        return db.getChatTrace(user, input).map(item => db.hydrateChatTrace(user, {...item, ...metadata.get(item.id)}))
+        return db.getChatTrace(scope(user), input).map(item => db.hydrateChatTrace(scope(user), {...item, ...metadata.get(item.id)}))
     })
     handle('chat:session-trace', user => {
-        const turns = running.get(user)?.turns ?? load(user)
+        const turns = running.get(scope(user))?.turns ?? load(user)
         const live = new Map<string, ChatTraceEvent>()
         for (const turn of turns) for (const item of turn.trace ?? []) live.set(item.id, item)
         return turns.map(turn => ({
             turnId: turn.id, user: turn.user, at: turn.startedAt ?? '',
-            events: db.getChatTraceMetadata(user, turn.id).map(item => {
+            events: db.getChatTraceMetadata(scope(user), turn.id).map(item => {
                 const liveItem = live.get(item.id)
                 if (!liveItem) return item
                 const {details, ...rest} = liveItem
@@ -1162,13 +1187,13 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('执行记录参数无效。')
         const {turnId, eventId} = input as Record<string, unknown>
         if (typeof turnId !== 'string' || typeof eventId !== 'string') throw new Error('执行记录参数无效。')
-        const turn = (running.get(user)?.turns ?? load(user)).find(item => item.id === turnId)
+        const turn = (running.get(scope(user))?.turns ?? load(user)).find(item => item.id === turnId)
         if (!turn) throw new Error('执行记录不存在或已被清除。')
-        const stored = db.getChatTrace(user, turnId).find(item => item.id === eventId)
+        const stored = db.getChatTrace(scope(user), turnId).find(item => item.id === eventId)
         const live = turn.trace?.find(item => item.id === eventId)
         const event = {...stored, ...live}
         if (!event.id) throw new Error('执行记录不存在或已被清除。')
-        return db.hydrateChatTrace(user, event as ChatTraceEvent)
+        return db.hydrateChatTrace(scope(user), event as ChatTraceEvent)
     })
     handle('chat:usage', user => db.getUsage(user))
     handle('chat:open-source', (_user, input) => {
@@ -1186,7 +1211,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         return null
     })
     handle('chat:undo', (user, input) => {
-        if (running.has(user)) throw new Error('请等待回复结束后撤销。')
+        if (running.has(scope(user))) throw new Error('请等待回复结束后撤销。')
         if (!input || typeof input !== 'object') throw new Error('撤销参数无效。')
         const {turnId, requestId} = input as Record<string, unknown>
         if (typeof turnId !== 'string' || typeof requestId !== 'string') throw new Error('撤销参数无效。')
@@ -1241,8 +1266,10 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     handle('memory:set-enabled', (user, input) => {
         if (typeof input !== 'boolean') throw new Error('记忆启用状态无效。')
         db.setMemoryEnabled(user, input)
-        if (!input) memoryCarry.delete(user)
-        if (!input) running.get(user)?.controller.abort('settings_changed')
+        if (!input) for (const item of db.getChatSessions(user)) {
+            memoryCarry.delete(item.storageKey)
+            running.get(item.storageKey)?.controller.abort('settings_changed')
+        }
         return memoryState(user)
     })
     handle('memory:save', (user, input) => {
@@ -1291,10 +1318,44 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     })
     handle('chat:get', user => snapshot(user))
 
+    function selectedSnapshot(user: string) {
+        return sessionContext.run({user, ...db.getSelectedChatSession(user)}, () => {
+            publish(user)
+            return snapshot(user)
+        })
+    }
+    handle('chat:create-session', user => {
+        db.createChatSession(user)
+        return selectedSnapshot(user)
+    })
+    handle('chat:select-session', (user, id) => {
+        if (typeof id !== 'string') throw new Error('对话参数无效。')
+        db.selectChatSession(user, id)
+        return selectedSnapshot(user)
+    })
+    handle('chat:rename-session', (user, input) => {
+        if (!input || typeof input !== 'object') throw new Error('对话参数无效。')
+        const {id, title} = input as Record<string, unknown>
+        if (typeof id !== 'string' || typeof title !== 'string' || !title.trim() || title.trim().length > 80) {
+            throw new Error('请输入 1–80 个字符的对话名称。')
+        }
+        db.renameChatSession(user, id, title.trim())
+        return selectedSnapshot(user)
+    })
+    handle('chat:delete-session', (user, id) => {
+        if (typeof id !== 'string') throw new Error('对话参数无效。')
+        const target = db.getChatSession(user, id)
+        if (sessionList(user).find(item => item.id === id)?.busy) throw new Error('请等待该对话的任务完成，或先停止回复。')
+        db.deleteChatSession(user, id)
+        memoryCarry.delete(target.storageKey)
+        return selectedSnapshot(user)
+    })
+
     function startTurn(user: string, text: string, sourceMode: ResearchSourceMode) {
         llm.getRequestSignal()
         const settings = llm.get()
         if (!settings.baseUrl || !settings.model) throw new Error('请先在 LLM 设置中配置接口和模型。')
+        db.touchChatSession(user, session(user).id, text, sourceMode)
         const turn: StoredTurn = {
             id: randomUUID(),
             startedAt: new Date().toISOString(), trace: [],
@@ -1306,13 +1367,13 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         }
         const active: RunningChat = {
             turns: [...load(user), turn],
-            sources: db.getResearchSources(user),
+            sources: db.getResearchSources(scope(user)),
             status: '思考中',
             controller: new AbortController(),
             savedTrace: new Map()
         }
         persist(user, active)
-        running.set(user, active)
+        running.set(scope(user), active)
         publish(user)
         void run(user, active).catch(() => {
         })
@@ -1320,7 +1381,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
     }
 
     handle('chat:send', (user, input) => {
-        if (running.has(user)) throw new Error('请等待当前回复完成，或先停止回复。')
+        if (running.has(scope(user))) throw new Error('请等待当前回复完成，或先停止回复。')
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('请输入 1–8000 个字符。')
         const value = input as { text?: unknown; sourceMode?: unknown }
         if (typeof value.text !== 'string' || !value.text.trim() || value.text.length > 8000) {
@@ -1330,7 +1391,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         return startTurn(user, value.text.trim(), value.sourceMode)
     })
     handle('chat:retry', (user, input) => {
-        if (running.has(user)) throw new Error('请等待当前回复完成，或先停止回复。')
+        if (running.has(scope(user))) throw new Error('请等待当前回复完成，或先停止回复。')
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('重发参数无效。')
         const {turnId, text} = input as Record<string, unknown>
         if (typeof turnId !== 'string' || typeof text !== 'string' || !text.trim() || text.length > 8000) {
@@ -1341,32 +1402,31 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         if (index < 0) throw new Error('这条消息不存在或已被清除。')
         if (index !== turns.length - 1) throw new Error('只能编辑最近一条消息。')
         if (!turns[index].error) throw new Error('只有失败的回复可以编辑重发。')
-        const mode = turns[index].sourceMode
         const remaining = turns.filter(turn => turn.id !== turnId)
         db.transaction(() => {
-            db.saveChatConversation(user, JSON.stringify(remaining.map(turn => serializeTurn(turn, false))))
-            db.removeChatTrace(user, turnId)
-            db.clearRunningTurn(user)
-            if (db.getCompaction(user)?.coversUpTo === turnId) db.saveCompaction(user, null)
+            db.saveChatConversation(scope(user), JSON.stringify(remaining.map(turn => serializeTurn(turn, false))))
+            db.removeChatTrace(scope(user), turnId)
+            db.clearRunningTurn(scope(user))
+            if (db.getCompaction(scope(user))?.coversUpTo === turnId) db.saveCompaction(scope(user), null)
         })
         publish(user)
-        return startTurn(user, text.trim(), mode)
+        return startTurn(user, text.trim(), 'auto')
     })
     handle('chat:cancel', user => {
-        running.get(user)?.controller.abort('user');
+        running.get(scope(user))?.controller.abort('user');
         return null
     })
     handle('chat:clear', user => {
-        if (running.has(user)) throw new Error('请先停止当前回复。')
+        if (sessionList(user).find(item => item.id === session(user).id)?.busy) throw new Error('请等待该对话的任务完成，或先停止回复。')
         db.transaction(() => {
-            db.saveChatConversation(user, '[]');
-            db.saveCompaction(user, null)
-            db.clearChatTrace(user);
-            db.clearRunningTurn(user);
-            db.clearChatContextUpdates(user);
-            db.clearResearchSources(user);
-            memoryCarry.delete(user);
-            db.clearLlmUsage(user)
+            db.saveChatConversation(scope(user), '[]');
+            db.saveCompaction(scope(user), null)
+            db.clearChatTrace(scope(user));
+            db.clearRunningTurn(scope(user));
+            db.clearChatContextUpdates(scope(user));
+            db.clearResearchSources(scope(user));
+            memoryCarry.delete(scope(user));
+            db.clearLlmUsage(scope(user))
         });
         publish(user);
         return snapshot(user)

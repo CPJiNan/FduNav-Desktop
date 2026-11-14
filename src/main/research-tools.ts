@@ -98,6 +98,7 @@ function textArg(input: Fields, key: string, required = false, max = 500): strin
 export interface ResearchToolContext {
     db: AppDatabase
     username: string
+    sourceStorageKey?: string
     sources: ResearchSource[]
     settings: ResearchSettings
     searchApiKey: string
@@ -130,7 +131,7 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
         const index = sources.findIndex(item => item.id === source.id)
         if (index >= 0) sources[index] = source
         else sources.push(source)
-        db.saveResearchSource(username, source)
+        db.saveResearchSource(context.sourceStorageKey ?? username, source)
     }
 
     function campusPostSource(post: CampusPost, read: boolean): ResearchSource {
