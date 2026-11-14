@@ -94,7 +94,7 @@ export function MailWidget({refreshVersion, onOpenMail, onOpenMailbox}: {
 
     return <div aria-busy={busy}>
         <div className="dashboard-widget-heading">
-            <h2><Icon name="inbox"/>邮件速览</h2>
+            <h2><Icon name="mail"/>邮件速览</h2>
             <button type="button" onClick={onOpenMailbox}>全部<Icon name="chevron"/></button>
         </div>
         {busy && !overview && <p className="dashboard-widget-caption" role="status">正在读取邮件…</p>}
