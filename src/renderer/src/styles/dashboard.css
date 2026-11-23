@@ -71,7 +71,8 @@
 }
 
 .dashboard-widget-editor .icon-button {
-    background: var(--color-bg-subtle);
+    background: transparent;
+    border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-full);
     color: var(--color-icon);
 }
