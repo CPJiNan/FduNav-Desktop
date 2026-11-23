@@ -3,8 +3,9 @@
 }
 
 .llm-section-heading {
-    margin: 0 0 12px;
-    font-size: 16px;
+    margin: 0 0 var(--space-4);
+    font-size: var(--font-size-lg);
+    line-height: var(--line-height-tight);
 }
 
 .llm-enable-field {
@@ -20,34 +21,35 @@
     min-height: var(--size-touch-target);
     padding: 0;
     border: 0;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-full);
     background: transparent;
 }
 
 .llm-switch-track {
     display: flex;
     align-items: center;
-    width: 40px;
-    height: 24px;
+    width: 2.625rem;
+    height: 1.5rem;
     padding: 3px;
-    border-radius: 12px;
-    background: var(--color-text-muted);
+    border-radius: var(--radius-full);
+    background: var(--color-border-control);
 }
 
 .llm-switch-track > span {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: var(--color-bg-surface);
+    background: var(--palette-white);
+    box-shadow: var(--shadow-sm);
 }
 
 .llm-switch[aria-checked="true"] .llm-switch-track {
-    background: var(--color-accent);
+    background: var(--color-action);
 }
 
 .llm-switch[aria-checked="true"] .llm-switch-track > span {
     margin-left: auto;
-    background: var(--color-on-accent);
+    background: var(--color-on-action);
 }
 
 .llm-actions {
@@ -69,9 +71,9 @@
 
 .llm-prompt-section {
     margin-top: var(--space-3);
-    border: var(--border-width) solid var(--color-border-control);
+    border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-md);
-    background: light-dark(#fff, var(--color-bg-surface));
+    background: var(--panel-bg);
 }
 
 .llm-prompt-heading {
@@ -80,7 +82,7 @@
     gap: var(--space-2);
     padding: var(--space-1) var(--space-2);
     border-radius: inherit;
-    background: light-dark(#fff, var(--color-bg-surface));
+    background: var(--color-bg-subtle);
 }
 
 .llm-prompt-heading h4 {
@@ -211,7 +213,7 @@
     padding: var(--space-2) var(--space-3);
     border: var(--border-width) solid var(--input-border);
     border-radius: var(--input-radius);
-    background: var(--color-bg-surface);
+    background: var(--color-bg-subtle);
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
 }
@@ -253,7 +255,7 @@
     width: 1rem;
     height: 1rem;
     flex-shrink: 0;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-action);
 }
 
 .llm-status {
@@ -275,14 +277,14 @@
 
 .agent-settings {
     border-top: 1px solid var(--color-border-subtle);
-    padding-top: 24px;
-    margin-top: 28px;
+    padding-top: var(--space-5);
+    margin-top: var(--space-6);
     min-width: 0;
 }
 
 .agent-settings h3 {
-    font-size: 16px;
-    margin-bottom: 12px;
+    font-size: var(--font-size-lg);
+    margin-bottom: var(--space-3);
 }
 
 .agent-settings p, .agent-settings small {
@@ -302,8 +304,10 @@
 }
 
 .memory-list > li {
-    padding: 16px 0;
-    border-bottom: 1px solid var(--color-border-subtle);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-subtle);
+    margin-block: var(--space-2);
 }
 
 .memory-actions {
@@ -349,7 +353,7 @@ html:has(.memory-list-dialog[open]) {
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
-    padding: 0 var(--space-6);
+    padding: var(--space-2) var(--space-4);
 }
 
 .memory-list-body .memory-list {
@@ -419,13 +423,13 @@ html:has(.memory-list-dialog[open]) {
 }
 
 .memory-actions .icon-button[aria-pressed="true"] {
-    color: var(--color-accent);
+    color: var(--color-action);
 }
 
 .usage-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    gap: var(--space-2);
     margin: 16px 0;
 }
 
@@ -434,9 +438,9 @@ html:has(.memory-list-dialog[open]) {
     gap: 6px;
     align-content: start;
     padding: 16px;
-    border: 1px solid var(--color-border-subtle);
+    border: 0;
     border-radius: var(--radius-md);
-    background: transparent;
+    background: var(--color-bg-subtle);
 }
 
 .usage-grid h4 {
@@ -466,5 +470,6 @@ html:has(.memory-list-dialog[open]) {
 }
 
 .memory-diff-new {
-    color: var(--color-accent);
+    color: var(--color-text-primary);
+    font-weight: var(--font-weight-medium);
 }

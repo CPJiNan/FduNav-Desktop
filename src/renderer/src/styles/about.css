@@ -8,12 +8,13 @@
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
     align-items: baseline;
-    gap: var(--space-3) var(--space-4);
+    gap: var(--space-3) var(--space-5);
     margin: 0;
-    padding: var(--space-4) 0;
+    padding: var(--space-2) 0;
     color: var(--color-text-primary);
     font-size: var(--font-size-sm);
     line-height: var(--line-height-relaxed);
+    background: transparent;
 }
 
 .about-meta dt {
@@ -37,6 +38,10 @@
     font: inherit;
     line-height: inherit;
     text-align: left;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-decoration: underline;
+    text-underline-offset: .18em;
 }
 
 .about-link .icon {

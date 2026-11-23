@@ -17,7 +17,6 @@ export function ChatHistory({sessions, selectedId, disabled, onAction, onClose}:
     const [title, setTitle] = useState('')
     const [error, setError] = useState('')
     const dialog = useRef<HTMLDialogElement>(null)
-    const sidebar = useRef<HTMLElement>(null)
     const search = useRef<HTMLInputElement>(null)
     const searchTrigger = useRef<HTMLButtonElement>(null)
     const list = useRef<HTMLElement>(null)
@@ -30,18 +29,6 @@ export function ChatHistory({sessions, selectedId, disabled, onAction, onClose}:
     useEffect(() => {
         if (action?.kind === 'rename') dialog.current?.showModal()
     }, [action])
-    useEffect(() => {
-        if (action) return
-        const dismiss = (event: MouseEvent) => {
-            const target = event.target
-            if (!(target instanceof Element) || sidebar.current?.contains(target)) return
-            // Portalled session menus belong to the sidebar. The toggle handles itself.
-            if (target.closest('[data-chat-menu-owner="chat-history"], button[aria-controls="chat-history"]')) return
-            onClose()
-        }
-        document.addEventListener('click', dismiss, true)
-        return () => document.removeEventListener('click', dismiss, true)
-    }, [action, onClose])
 
     async function perform() {
         if (!action || disabled) return
@@ -59,7 +46,7 @@ export function ChatHistory({sessions, selectedId, disabled, onAction, onClose}:
         setError('')
     }
 
-    return <aside ref={sidebar} className="chat-history" id="chat-history" aria-label="历史对话">
+    return <aside className="chat-history" id="chat-history" aria-label="历史对话">
         <header><strong className="chat-history-brand">FduNav</strong>
             <div className="chat-history-tools">
                 <button ref={searchTrigger} type="button" className="icon-button" aria-label="搜索历史对话"
