@@ -2,6 +2,7 @@
     width: 100%;
     display: grid;
     gap: var(--space-6);
+    container-type: inline-size;
 }
 
 .general-setting-group {
@@ -12,34 +13,47 @@
 }
 
 .general-setting-group > legend {
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-3);
     padding: 0;
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
 }
 
 .general-setting-row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     align-items: center;
-    justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-4) 0;
-    border-bottom: 1px solid var(--color-border-subtle);
+    padding: var(--space-2) 0;
     font-size: var(--font-size-sm);
+    background: transparent;
+    grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.general-setting-group > legend + .general-setting-row {
-    padding-top: 0;
+.general-setting-row + .general-setting-row {
+    margin-top: var(--space-1);
 }
 
 .general-setting-row select {
     max-width: 100%;
-    min-height: var(--size-touch-target);
+    min-height: var(--size-control-md);
     padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--input-border);
+    border: 1px solid transparent;
     border-radius: var(--input-radius);
-    background: var(--color-bg-surface);
+    background: var(--color-bg-subtle);
     color: var(--color-text-primary);
     font: inherit;
+}
+
+@media (max-width: 540px) {
+    .general-setting-row {
+        padding: var(--space-2) 0;
+        gap: var(--space-2);
+    }
+}
+
+@container (max-width: 17rem) {
+    .general-setting-row:has(select) {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }

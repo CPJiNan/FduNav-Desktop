@@ -9,29 +9,30 @@
     right: 0;
     min-width: 17px;
     padding: 0 4px;
-    border: 2px solid var(--color-bg-canvas);
+    border: 2px solid var(--panel-bg);
     border-radius: var(--radius-full);
-    background: var(--color-accent);
-    color: var(--color-on-accent);
+    background: var(--color-info);
+    color: var(--color-bg-surface);
     font-size: 10px;
     line-height: 15px;
+    font-weight: var(--font-weight-semibold);
 }
 
 .summary-queue-panel {
     position: fixed;
-    left: calc(var(--layout-rail-width) + 8px);
-    bottom: 16px;
+    left: calc(var(--layout-rail-width) + 2 * var(--shell-inset));
+    bottom: var(--shell-inset);
     z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
-    width: min(380px, calc(100vw - var(--layout-rail-width) - 24px));
+    width: min(24rem, calc(100vw - var(--layout-rail-width) - 3 * var(--shell-inset)));
     max-height: min(680px, calc(100dvh - 64px));
     overflow: hidden;
-    border: 1px solid var(--color-border-subtle);
-    border-radius: var(--radius-lg);
-    background: color-mix(in srgb, var(--color-bg-sidebar) 94%, transparent);
-    backdrop-filter: blur(28px);
-    box-shadow: var(--shadow-lg), 0 0 0 1px var(--shadow-color-soft);
+    border: 0;
+    border-radius: var(--panel-radius);
+    background: var(--color-bg-glass);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--shadow-lg);
     animation: summary-center-appear var(--duration-normal) var(--ease-standard);
 }
 
@@ -41,12 +42,13 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
+    background: transparent;
 }
 
 .summary-queue-panel .icon-button {
     width: 32px;
     height: 32px;
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-full);
 }
 
 .summary-queue-panel .icon-button .icon {
@@ -63,7 +65,7 @@
     overflow: hidden;
     appearance: none;
     background: var(--color-border-subtle);
-    accent-color: var(--color-accent);
+    accent-color: var(--color-action);
 }
 
 .summary-queue-progress::-webkit-progress-bar {
@@ -72,7 +74,7 @@
 }
 
 .summary-queue-progress::-webkit-progress-value {
-    background: var(--color-accent);
+    background: var(--color-action);
     border-radius: var(--radius-full);
     transition: width var(--duration-normal) var(--ease-standard);
 }
@@ -83,12 +85,12 @@
     overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: var(--color-border-default) transparent;
-    padding: 12px;
+    padding: var(--space-3);
 }
 
 .summary-queue-list {
     display: grid;
-    gap: 8px;
+    gap: var(--space-1);
     list-style: none;
     padding: 0;
     margin: 0;
@@ -96,10 +98,10 @@
 
 .summary-queue-card {
     position: relative;
-    border: 1px solid var(--color-border-subtle);
+    border: 0;
     border-radius: var(--radius-md);
-    background: var(--color-bg-surface);
-    box-shadow: var(--shadow-sm);
+    background: var(--panel-bg);
+    box-shadow: none;
     transition: border-color var(--duration-fast), background var(--duration-fast);
 }
 
@@ -140,7 +142,7 @@
 .summary-queue-card-status.is-generating,
 .summary-queue-card-status.is-reading,
 .summary-queue-card-status.is-saving {
-    color: var(--color-accent);
+    color: var(--color-info);
 }
 
 .summary-queue-card-status.is-failed {
@@ -176,7 +178,7 @@
 }
 
 .summary-queue-task-progress:indeterminate {
-    background: linear-gradient(90deg, transparent 0%, var(--color-accent) 35%, var(--color-accent) 65%, transparent 100%) no-repeat,
+    background: linear-gradient(90deg, transparent 0%, var(--color-action) 35%, var(--color-action) 65%, transparent 100%) no-repeat,
     var(--color-border-subtle);
     background-size: 40% 100%, 100% 100%;
     animation: summary-progress-slide 1.6s ease-in-out infinite;
@@ -205,7 +207,7 @@
     flex-wrap: wrap;
     padding: 10px 16px;
     border-top: 1px solid var(--color-border-subtle);
-    background: color-mix(in srgb, var(--color-bg-subtle) 75%, transparent);
+    background: var(--color-bg-subtle);
 }
 
 .summary-queue-command {
@@ -216,9 +218,9 @@
     min-height: 36px;
     padding: 6px 10px;
     border: 1px solid var(--color-border-subtle);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg-surface);
-    color: var(--color-text-secondary);
+    border-radius: var(--button-radius);
+    background: var(--color-bg-subtle);
+    color: var(--color-text-primary);
     font-size: var(--font-size-xs);
 }
 
@@ -286,7 +288,7 @@
 
 .notice-row--selectable > input {
     flex-shrink: 0;
-    accent-color: var(--color-accent);
+    accent-color: var(--color-action);
     width: 18px;
     height: 18px;
 }
@@ -294,4 +296,19 @@
 .notice-row--selectable .notice-open {
     min-width: 0;
     flex: 1;
+}
+
+@media (max-width: 680px) {
+    .summary-queue-anchor {
+        position: static;
+    }
+    .summary-queue-panel {
+        left: 0;
+        right: 0;
+        bottom: calc(100% + var(--space-2));
+        width: min(100%, 24rem);
+        max-height: calc(100dvh - var(--size-titlebar) - var(--dock-clearance) - var(--space-2));
+        position: absolute;
+        margin-inline: auto;
+    }
 }
