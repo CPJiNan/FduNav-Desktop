@@ -138,6 +138,7 @@ export function CalendarTimeline({
     const scroll = useRef<HTMLDivElement>(null)
     const start = mode === 'week' ? weekStartDate(date) : date
     const dates = Array.from({length: mode === 'week' ? 7 : 1}, (_, index) => dateAfter(start, index))
+    const allDay = dates.some(day => items.some(item => item.date === day && item.allDay))
     useEffect(() => {
         if (scroll.current) scroll.current.scrollTop = 7 * 64
     }, [start, mode])
@@ -147,13 +148,13 @@ export function CalendarTimeline({
             <div className="calendar-time-content">
                 <div className="calendar-time-heading">
                     <CalendarDateStrip date={date} today={today} onDate={onDate} onNavigate={onNavigate}/>
-                    <div className="calendar-time-columns calendar-all-day"><span>全天</span>
+                    {allDay && <div className="calendar-time-columns calendar-all-day"><span>全天</span>
                         {dates.map(day => <div
                             key={day}>{items.filter(item => item.date === day && item.allDay).map(item =>
                             <button type="button" key={item.key} className="calendar-event calendar-all-day-event"
                                     style={{backgroundColor: occurrenceColor(item)}}
                                     onClick={() => onOpen(item)}><span>{item.title}</span></button>)}</div>)}
-                    </div>
+                    </div>}
                 </div>
                 <div className="calendar-time-columns calendar-hour-grid">
                     <div className="calendar-hours">{Array.from({length: 24}, (_, hour) => <div key={hour}>

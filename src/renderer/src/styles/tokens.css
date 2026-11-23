@@ -7,7 +7,7 @@
     --color-bg-sidebar: var(--color-bg-surface);
     --color-bg-elevated: light-dark(var(--palette-white), #383a42);
     --color-bg-subtle: light-dark(#f4f5f7, #333439);
-    --color-bg-hover: light-dark(#eff0f2, #3b3d44);
+    --color-bg-hover: color-mix(in srgb, var(--color-text-primary) 4%, transparent);
     --color-bg-pressed: light-dark(#e3e5e9, #484a52);
     --color-bg-selected: light-dark(#edeff2, #3c3e46);
     --color-bg-disabled: light-dark(#f2f2f3, #303136);
@@ -39,6 +39,9 @@
     --color-warning-subtle: light-dark(#faf3e5, #393229);
     --color-danger: light-dark(#a93642, #f0a4ac);
     --color-danger-subtle: light-dark(#fcf0f1, #3d2c2f);
+    --color-danger-solid: light-dark(#c62828, #f0a4ac);
+    --color-danger-solid-hover: light-dark(#b71c1c, #f6b5bd);
+    --color-danger-solid-pressed: light-dark(#991b1b, #e0838d);
     --color-overlay: light-dark(rgb(25 26 29 / 28%), rgb(0 0 0 / 62%));
 
     --font-family-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;

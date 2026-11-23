@@ -560,38 +560,39 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                         </div>)}
                     </div>
                 </div>
-            </div>
-            <footer className="chat-footer">
-                <div className="chat-footer-status">
-                    <ChatStatusBar stats={state.turns.length || state.busy ? state.stats : undefined}/>
-                    {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
-                    {syncError && <p className="chat-error" role="alert">{syncError}</p>}
-                    {error && <p className="chat-error" role="alert">{error}</p>}
-                </div>
-                {editingTurnId && <div className="chat-edit-hint" role="status">
-                    <span>正在编辑最近一条失败消息，发送后会替换它。</span>
-                    <button type="button" className="secondary-button" onClick={cancelEdit}>取消编辑</button>
-                </div>}
-                <form className="chat-composer" onSubmit={event => void send(event)}>
-                <textarea ref={input} value={draft} maxLength={8000} rows={2} aria-label="聊天消息"
-                          placeholder="发送消息…"
-                          onChange={event => setDraft(event.target.value)} onKeyDown={event => {
-                    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                        event.preventDefault();
-                        if (!busy) event.currentTarget.form?.requestSubmit()
-                    }
-                }}/>
-                    <div className="chat-composer-actions">
-                        {state.busy ?
-                            <button type="button" className="icon-button" title="停止回复" aria-label="停止回复"
-                                    onClick={() => void cancel()}><Icon name="stop"/></button> :
-                            <button type="submit" className="icon-button chat-send"
-                                    title={editingTurnId ? '重新发送' : '发送'}
-                                    aria-label={editingTurnId ? '重新发送' : '发送'}
-                                    disabled={busy || loading || syncing || !draft.trim()}><Icon name="send"/></button>}
+                <footer className="chat-footer">
+                    <div className="chat-footer-status">
+                        <ChatStatusBar stats={state.turns.length || state.busy ? state.stats : undefined}/>
+                        {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
+                        {syncError && <p className="chat-error" role="alert">{syncError}</p>}
+                        {error && <p className="chat-error" role="alert">{error}</p>}
                     </div>
-                </form>
-            </footer>
+                    {editingTurnId && <div className="chat-edit-hint" role="status">
+                        <span>正在编辑最近一条失败消息，发送后会替换它。</span>
+                        <button type="button" className="secondary-button" onClick={cancelEdit}>取消编辑</button>
+                    </div>}
+                    <form className="chat-composer" onSubmit={event => void send(event)}>
+                    <textarea ref={input} value={draft} maxLength={8000} rows={2} aria-label="聊天消息"
+                              placeholder="发送消息…"
+                              onChange={event => setDraft(event.target.value)} onKeyDown={event => {
+                        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                            event.preventDefault();
+                            if (!busy) event.currentTarget.form?.requestSubmit()
+                        }
+                    }}/>
+                        <div className="chat-composer-actions">
+                            {state.busy ?
+                                <button type="button" className="icon-button" title="停止回复" aria-label="停止回复"
+                                        onClick={() => void cancel()}><Icon name="stop"/></button> :
+                                <button type="submit" className="icon-button chat-send"
+                                        title={editingTurnId ? '重新发送' : '发送'}
+                                        aria-label={editingTurnId ? '重新发送' : '发送'}
+                                        disabled={busy || loading || syncing || !draft.trim()}><Icon name="send"/>
+                                </button>}
+                        </div>
+                    </form>
+                </footer>
+            </div>
             {editor && <CalendarEventDialog date={editor.date} item={editor} create={false} onClose={closeEditor}
                                             onSaved={() => void refreshCards()} onRemoved={() => void refreshCards()}/>}
         </div>

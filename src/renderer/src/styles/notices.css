@@ -186,7 +186,6 @@
     font-variant-numeric: tabular-nums;
     padding: .4375rem .375rem;
     border-radius: var(--radius-sm);
-    background: var(--color-bg-subtle);
 }
 
 .notice-open > time strong {
@@ -623,7 +622,7 @@
 
 .notice-search:focus-within {
     outline: var(--focus-width) solid var(--color-focus);
-    outline-offset: var(--focus-offset);
+    outline-offset: calc(-1 * var(--focus-width));
 }
 
 .notice-search input:focus {

@@ -213,7 +213,6 @@
     font-size: var(--font-size-sm);
     font-variant-numeric: tabular-nums;
     color: var(--color-text-secondary);
-    padding-top: 0;
     font-weight: var(--font-weight-medium);
     padding: .5625rem .375rem;
     background: var(--color-bg-subtle);
@@ -380,9 +379,9 @@
     flex-direction: column;
     min-width: 0;
     padding: var(--space-3);
-    border: 0;
+    border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-md);
-    background: var(--color-bg-subtle);
+    background: transparent;
 }
 
 .dashboard-weather-campus-heading {
@@ -633,12 +632,14 @@
 .dashboard-news ul {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-1);
+    gap: 0;
 }
 
 .dashboard-news li button {
     flex-direction: column;
     gap: var(--space-1);
+    height: 100%;
+    padding: .625rem var(--space-1);
 }
 
 .dashboard-news-meta {
@@ -675,15 +676,15 @@
 }
 
 .dashboard-widget .dashboard-agenda-list li button {
-    padding-inline: 0;
     padding: .5rem var(--space-1);
 }
 
-.dashboard-library-counts > div, .dashboard-news li button {
+.dashboard-library-counts > div {
     height: 100%;
     padding: .625rem var(--space-3);
+    border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-sm);
-    background: var(--color-bg-subtle);
+    background: transparent;
 }
 
 .dashboard-news li, .dashboard-mail-list li {

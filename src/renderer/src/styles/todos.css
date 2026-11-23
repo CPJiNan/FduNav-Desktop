@@ -58,8 +58,8 @@
 }
 
 .todo-check[aria-pressed=true] > .icon, .is-completing .todo-check > .icon {
-    background: var(--color-action);
-    border-color: var(--color-action);
+    background: var(--color-accent);
+    border-color: var(--color-accent);
     stroke-width: 2.5;
 }
 
@@ -187,7 +187,7 @@
 }
 
 .todo-check[aria-pressed="true"], .is-completing .todo-check {
-    color: var(--color-on-action);
+    color: var(--color-on-accent);
     background: transparent;
 }
 

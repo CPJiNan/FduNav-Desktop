@@ -207,7 +207,6 @@
     flex-wrap: wrap;
     padding: 10px 16px;
     border-top: 1px solid var(--color-border-subtle);
-    background: var(--color-bg-subtle);
 }
 
 .summary-queue-command {
@@ -217,9 +216,9 @@
     gap: 6px;
     min-height: 36px;
     padding: 6px 10px;
-    border: 1px solid var(--color-border-subtle);
+    border: 1px solid transparent;
     border-radius: var(--button-radius);
-    background: var(--color-bg-subtle);
+    background: transparent;
     color: var(--color-text-primary);
     font-size: var(--font-size-xs);
 }

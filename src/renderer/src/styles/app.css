@@ -254,7 +254,6 @@ h2 {
 .rail-button.is-active {
     background: var(--nav-item-active-bg);
     color: var(--nav-item-active-text);
-    box-shadow: inset 0 0 0 1px var(--color-border-subtle);
 }
 
 .rail-notice-icon {
@@ -313,11 +312,8 @@ h2 {
     flex: 1;
     min-height: 0;
     padding-top: var(--layout-page-gutter);
+    padding-right: var(--layout-page-gutter);
     overflow-y: auto;
-}
-
-.main-content > * {
-    max-inline-size: calc(100cqi - var(--layout-page-gutter));
 }
 
 .primary-button, .secondary-button {
@@ -375,7 +371,7 @@ h2 {
     grid-template-columns: clamp(9.5rem, 16vw, 12rem) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     gap: var(--panel-gap);
-    align-items: start;
+    align-items: stretch;
 }
 
 .settings-tabs, .settings-panel {
@@ -415,7 +411,6 @@ h2 {
     background: var(--nav-item-active-bg);
     color: var(--nav-item-active-text);
     font-weight: var(--font-weight-semibold);
-    box-shadow: inset 0 0 0 1px var(--color-border-subtle);
 }
 
 .settings-panel {
@@ -465,7 +460,7 @@ h2 {
 .theme-option.is-selected {
     border-color: var(--color-border-default);
     box-shadow: none;
-    background: var(--color-bg-subtle);
+    background: transparent;
 }
 
 .theme-option:has(input:focus-visible) {
