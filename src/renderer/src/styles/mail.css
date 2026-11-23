@@ -35,8 +35,10 @@
 }
 
 .mail-page-feedback {
-    min-height: var(--space-6);
     font-size: var(--font-size-sm);
+}
+
+.mail-page-feedback > div {
     margin-top: var(--space-4);
 }
 

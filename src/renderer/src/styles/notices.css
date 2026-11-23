@@ -662,6 +662,7 @@
         width: 2.1875rem;
         height: 2.5rem;
     }
+
     .notices-filter {
         flex-wrap: wrap;
         gap: var(--space-2);

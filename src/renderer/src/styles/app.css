@@ -34,10 +34,16 @@ button:disabled {
     overflow-wrap: anywhere;
 }
 
-.account-status, .account-time {
+.account-status {
     color: var(--color-text-muted);
     font-size: var(--font-size-xs);
     margin-top: var(--space-2);
+}
+
+.account-time {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    margin-top: var(--space-4);
 }
 
 .account-form {
@@ -84,6 +90,10 @@ button:disabled {
     flex-wrap: wrap;
     gap: var(--space-3);
     margin-top: var(--space-5);
+}
+
+.account-actions button {
+    min-width: 8rem;
 }
 
 .account-feedback {
@@ -377,9 +387,10 @@ h2 {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
-    padding: var(--space-1);
-    background: transparent;
+    padding: .5rem var(--space-1);
+    background: var(--color-bg-glass);
     border-radius: var(--panel-radius);
+    box-shadow: var(--shadow-md);
 }
 
 .settings-tab {
@@ -401,9 +412,10 @@ h2 {
 }
 
 .settings-tab.is-active {
-    background: var(--panel-bg);
-    color: var(--color-text-primary);
+    background: var(--nav-item-active-bg);
+    color: var(--nav-item-active-text);
     font-weight: var(--font-weight-semibold);
+    box-shadow: inset 0 0 0 1px var(--color-border-subtle);
 }
 
 .settings-panel {
@@ -490,7 +502,6 @@ h2 {
     flex-shrink: 0;
     border-radius: var(--radius-full);
     background: var(--color-bg-surface);
-    box-shadow: inset 0 8px var(--nav-item-active-text);
 }
 
 .mini-content {

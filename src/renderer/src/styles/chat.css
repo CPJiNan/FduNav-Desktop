@@ -3,6 +3,18 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    gap: var(--space-1);
+}
+
+.chat-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--panel-bg);
+    border: var(--panel-border);
+    border-radius: var(--panel-radius);
 }
 
 .chat-header {
@@ -11,7 +23,7 @@
     align-items: center;
     gap: var(--space-2);
     min-height: 3.25rem;
-    padding: var(--space-1) var(--space-2);
+    padding: var(--space-2) var(--space-3);
     background: transparent;
 }
 
@@ -252,7 +264,7 @@
 }
 
 .chat-header .icon-button {
-    background: var(--panel-bg);
+    background: var(--color-bg-subtle);
     width: var(--size-control-md);
     height: var(--size-control-md);
 }
@@ -307,7 +319,7 @@
     height: 3.5rem;
     color: var(--color-icon);
     border-radius: var(--radius-full);
-    background: var(--panel-bg);
+    background: var(--color-bg-subtle);
 }
 
 .chat-welcome-icon .icon {
@@ -598,8 +610,21 @@
 }
 
 .chat-footer {
-    padding: var(--space-1) var(--space-1) var(--space-2);
+    padding: var(--space-1) 0 var(--space-2);
     flex-shrink: 0;
+}
+
+.chat-footer-status {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+}
+
+.chat-footer-status .chat-status,
+.chat-footer-status .chat-error {
+    font-size: var(--font-size-xs);
+    margin: 0;
 }
 
 .chat-composer {
@@ -661,16 +686,16 @@
 
 @media (max-width: 700px) {
     .chat-header {
-        padding: var(--space-1) var(--space-2);
+        padding: var(--space-2);
         min-height: var(--size-touch-target);
     }
 
     .chat-messages {
-        padding: var(--space-3) var(--space-1);
+        padding: var(--space-3) var(--space-2);
     }
 
     .chat-footer {
-        padding: 0 var(--space-1) var(--space-2);
+        padding: 0 0 var(--space-2);
     }
 
     .chat-cards {

@@ -394,171 +394,180 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                      disabled={loading || sending || decidingRequest} onAction={manageSession}
                                      onClose={() => setHistoryOpen(false)}/>}
         <div className="chat-page">
-            <header className="chat-header">
-                <button type="button" className="icon-button" aria-label="历史对话" title="历史对话"
-                        aria-controls="chat-history" aria-expanded={historyOpen}
-                        onClick={() => setHistoryOpen(value => !value)}><Icon name="menu"/></button>
-                <strong className="chat-current-title"
-                        title={state.sessions.find(item => item.id === state.sessionId)?.title}>
-                    {state.sessions.find(item => item.id === state.sessionId)?.title ?? '新对话'}</strong>
-                {!historyOpen && <button type="button" className="icon-button" aria-label="新对话" title="新对话"
-                                         disabled={loading || sending || decidingRequest}
-                                         onClick={() => void manageSession({kind: 'create'})}><Icon name="chat-plus"/>
-                </button>}
-                <ChatMenu label="当前对话选项" items={[
-                    {
-                        label: sessionTrace ? '收起会话轨迹' : '会话轨迹', icon: 'panel', disabled: !state.turns.length,
-                        onSelect: () => {
-                            setTraceTurnId(null);
-                            setSessionTrace(value => !value)
-                        }
-                    },
-                    {
-                        label: '清空聊天', icon: 'clean', danger: true,
-                        disabled: busy || decidingRequest || state.sessions.find(item => item.id === state.sessionId)?.busy || !state.turns.length,
-                        onSelect: () => setConfirmClear(true)
-                    },
-                    {label: 'LLM 设置', icon: 'settings', onSelect: onSettings}
-                ]}/>
-            </header>
-            {confirmClear && <ConfirmDialog title="清空聊天记录"
-                                            message="是否清空当前对话的聊天记录？其他对话不受影响。"
-                                            confirmLabel="清空" danger busy={sending}
-                                            onConfirm={() => void clear()}
-                                            onCancel={() => setConfirmClear(false)}/>}
-            <div className="chat-messages" ref={scroll} onScroll={() => {
-                const element = scroll.current
-                if (element) stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
-            }}>
-                <div className="chat-thread">
-                    {loading ? <p className="chat-status" role="status">正在读取聊天记录…</p> : !state.turns.length &&
-                        <div className="chat-welcome"><span className="chat-welcome-icon"><Icon name="chat"/></span>
-                            <h2>有什么可以帮你？</h2>
-                            <div className="chat-suggestions">{suggestions.map(text => <button type="button" key={text}
-                                                                                               onClick={() => {
-                                                                                                   setDraft(text);
-                                                                                                   input.current?.focus()
-                                                                                               }}>{text}<Icon
-                                name="chevron"/></button>)}</div>
-                        </div>}
-                    {state.turns.map(turn => <div className="chat-turn" key={turn.id}
-                                                  data-streaming={streaming(turn.id) || undefined}>
-                        <article className="chat-user" aria-label="我的消息">{turn.user}</article>
-                        <div className="chat-message-actions chat-user-actions">
-                            <CopyButton text={turn.user} label="复制这条消息"/>
-                            {turn.error && turn.id === state.turns.at(-1)?.id && !busy &&
-                                <button type="button" className="chat-message-action"
-                                        onClick={() => startEdit(turn)}>编辑并重发</button>}
-                        </div>
-                        <article className="chat-assistant" aria-label="助手回复">
-                            <TurnActivity trace={turn.trace} stage={streaming(turn.id) ? state.status : ''}
-                                          busy={streaming(turn.id)}/>
-                            {turn.reply &&
-                                <div className="chat-markdown"><Markdown remarkPlugins={[remarkGfm, remarkBreaks]}
-                                                                         components={{
-                                                                             a: ({href, children}) => {
-                                                                                 const id = href?.match(/^#citation-([WC]\d+)$/)?.[1]
-                                                                                 if (id) {
-                                                                                     const exists = sourcesFor(turn).some(source => source.id === id)
-                                                                                     return exists
-                                                                                         ? <button type="button"
-                                                                                                   className="chat-citation"
-                                                                                                   aria-label={`查看来源 #${sourceDisplayId(id)}`}
+            <div className="chat-panel">
+                <header className="chat-header">
+                    <button type="button" className="icon-button" aria-label="历史对话" title="历史对话"
+                            aria-controls="chat-history" aria-expanded={historyOpen}
+                            onClick={() => setHistoryOpen(value => !value)}><Icon name="menu"/></button>
+                    <strong className="chat-current-title"
+                            title={state.sessions.find(item => item.id === state.sessionId)?.title}>
+                        {state.sessions.find(item => item.id === state.sessionId)?.title ?? '新对话'}</strong>
+                    {!historyOpen && <button type="button" className="icon-button" aria-label="新对话" title="新对话"
+                                             disabled={loading || sending || decidingRequest}
+                                             onClick={() => void manageSession({kind: 'create'})}><Icon
+                        name="chat-plus"/>
+                    </button>}
+                    <ChatMenu label="当前对话选项" items={[
+                        {
+                            label: sessionTrace ? '收起会话轨迹' : '会话轨迹',
+                            icon: 'panel',
+                            disabled: !state.turns.length,
+                            onSelect: () => {
+                                setTraceTurnId(null);
+                                setSessionTrace(value => !value)
+                            }
+                        },
+                        {
+                            label: '清空聊天', icon: 'clean', danger: true,
+                            disabled: busy || decidingRequest || state.sessions.find(item => item.id === state.sessionId)?.busy || !state.turns.length,
+                            onSelect: () => setConfirmClear(true)
+                        },
+                        {label: 'LLM 设置', icon: 'settings', onSelect: onSettings}
+                    ]}/>
+                </header>
+                {confirmClear && <ConfirmDialog title="清空聊天记录"
+                                                message="是否清空当前对话的聊天记录？其他对话不受影响。"
+                                                confirmLabel="清空" danger busy={sending}
+                                                onConfirm={() => void clear()}
+                                                onCancel={() => setConfirmClear(false)}/>}
+                <div className="chat-messages" ref={scroll} onScroll={() => {
+                    const element = scroll.current
+                    if (element) stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
+                }}>
+                    <div className="chat-thread">
+                        {loading ?
+                            <p className="chat-status" role="status">正在读取聊天记录…</p> : !state.turns.length &&
+                            <div className="chat-welcome"><span className="chat-welcome-icon"><Icon name="chat"/></span>
+                                <h2>有什么可以帮你？</h2>
+                                <div className="chat-suggestions">{suggestions.map(text => <button type="button"
+                                                                                                   key={text}
                                                                                                    onClick={() => {
-                                                                                                       setSourceTurnId(turn.id)
-                                                                                                       setSelectedSourceId(id)
-                                                                                                   }}>{children}</button>
-                                                                                         : <span>{children}</span>
-                                                                                 }
-                                                                                 return <span>{children}</span>
-                                                                             },
-                                                                             img: ({alt}) => <span>{alt}</span>
-                                                                         }}>{linkCitations(turn.reply)}</Markdown>
+                                                                                                       setDraft(text);
+                                                                                                       input.current?.focus()
+                                                                                                   }}>{text}<Icon
+                                    name="chevron"/></button>)}</div>
+                            </div>}
+                        {state.turns.map(turn => <div className="chat-turn" key={turn.id}
+                                                      data-streaming={streaming(turn.id) || undefined}>
+                            <article className="chat-user" aria-label="我的消息">{turn.user}</article>
+                            <div className="chat-message-actions chat-user-actions">
+                                <CopyButton text={turn.user} label="复制这条消息"/>
+                                {turn.error && turn.id === state.turns.at(-1)?.id && !busy &&
+                                    <button type="button" className="chat-message-action"
+                                            onClick={() => startEdit(turn)}>编辑并重发</button>}
+                            </div>
+                            <article className="chat-assistant" aria-label="助手回复">
+                                <TurnActivity trace={turn.trace} stage={streaming(turn.id) ? state.status : ''}
+                                              busy={streaming(turn.id)}/>
+                                {turn.reply &&
+                                    <div className="chat-markdown"><Markdown remarkPlugins={[remarkGfm, remarkBreaks]}
+                                                                             components={{
+                                                                                 a: ({href, children}) => {
+                                                                                     const id = href?.match(/^#citation-([WC]\d+)$/)?.[1]
+                                                                                     if (id) {
+                                                                                         const exists = sourcesFor(turn).some(source => source.id === id)
+                                                                                         return exists
+                                                                                             ? <button type="button"
+                                                                                                       className="chat-citation"
+                                                                                                       aria-label={`查看来源 #${sourceDisplayId(id)}`}
+                                                                                                       onClick={() => {
+                                                                                                           setSourceTurnId(turn.id)
+                                                                                                           setSelectedSourceId(id)
+                                                                                                       }}>{children}</button>
+                                                                                             : <span>{children}</span>
+                                                                                     }
+                                                                                     return <span>{children}</span>
+                                                                                 },
+                                                                                 img: ({alt}) => <span>{alt}</span>
+                                                                             }}>{linkCitations(turn.reply)}</Markdown>
+                                    </div>}
+                                {!!turn.cards.length && <div className="chat-cards">{turn.cards.map(card => {
+                                    const notice = card.kind === 'notice' ? card.notice : null
+                                    const event = card.kind === 'event' ? card.event : null
+                                    const course = card.kind === 'course' ? card.occurrence : null
+                                    const deleted = card.kind === 'event' && card.deleted
+                                    return <button type="button" className="chat-card"
+                                                   key={notice ? `${notice.sourceId}:${notice.url}` : course?.key ?? event!.id}
+                                                   disabled={opening || deleted} onClick={() => void openCard(card)}>
+                                        <Icon name={notice ? 'notices' : course ? 'book' : 'calendar'}/><span>
+                                        <small>{notice ? `${notice.sourceName} · ${notice.published}` :
+                                            course ? `${course.date} ${timeLabel(course.startMinute)} — ${timeLabel(course.endMinute)} · 课程` :
+                                                `${event!.startDate} ${event!.allDay ? '全天' : event!.startTime} — ${event!.endDate} ${event!.allDay ? '' : event!.endTime}`}</small>
+                                        <strong>{notice?.title ?? course?.title ?? event!.title}</strong>
+                                        {notice?.relevance &&
+                                            <em>{notice.relevance === 'related' ? '@与我有关' : '@可能有关'}</em>}
+                                        {event?.location && <small>{event.location}</small>}
+                                        {course?.location && <small>{course.location}</small>}
+                                        {deleted && <small>已删除</small>}
+                                    </span><Icon name="chevron"/>
+                                    </button>
+                                })}</div>}
+                                {!!turn.summaryRequests?.length && <div className="chat-summary-requests">
+                                    {turn.summaryRequests.map(request => <ChatSummaryRequestCard key={request.id}
+                                                                                                 request={request}
+                                                                                                 disabled={state.busy || sending || decidingRequest}
+                                                                                                 onDecide={allow => void decideRequest('summary', turn.id, request.id, allow)}
+                                                                                                 onOpen={() => void openCard({
+                                                                                                     kind: 'notice',
+                                                                                                     notice: request.notice
+                                                                                                 })}/>)}
                                 </div>}
-                            {!!turn.cards.length && <div className="chat-cards">{turn.cards.map(card => {
-                                const notice = card.kind === 'notice' ? card.notice : null
-                                const event = card.kind === 'event' ? card.event : null
-                                const course = card.kind === 'course' ? card.occurrence : null
-                                const deleted = card.kind === 'event' && card.deleted
-                                return <button type="button" className="chat-card"
-                                               key={notice ? `${notice.sourceId}:${notice.url}` : course?.key ?? event!.id}
-                                               disabled={opening || deleted} onClick={() => void openCard(card)}>
-                                    <Icon name={notice ? 'notices' : course ? 'book' : 'calendar'}/><span>
-                                    <small>{notice ? `${notice.sourceName} · ${notice.published}` :
-                                        course ? `${course.date} ${timeLabel(course.startMinute)} — ${timeLabel(course.endMinute)} · 课程` :
-                                            `${event!.startDate} ${event!.allDay ? '全天' : event!.startTime} — ${event!.endDate} ${event!.allDay ? '' : event!.endTime}`}</small>
-                                    <strong>{notice?.title ?? course?.title ?? event!.title}</strong>
-                                    {notice?.relevance &&
-                                        <em>{notice.relevance === 'related' ? '@与我有关' : '@可能有关'}</em>}
-                                    {event?.location && <small>{event.location}</small>}
-                                    {course?.location && <small>{course.location}</small>}
-                                    {deleted && <small>已删除</small>}
-                                </span><Icon name="chevron"/>
-                                </button>
-                            })}</div>}
-                            {!!turn.summaryRequests?.length && <div className="chat-summary-requests">
-                                {turn.summaryRequests.map(request => <ChatSummaryRequestCard key={request.id}
-                                                                                             request={request}
-                                                                                             disabled={state.busy || sending || decidingRequest}
-                                                                                             onDecide={allow => void decideRequest('summary', turn.id, request.id, allow)}
-                                                                                             onOpen={() => void openCard({
-                                                                                                 kind: 'notice',
-                                                                                                 notice: request.notice
-                                                                                             })}/>)}
-                            </div>}
-                            {!!turn.actionRequests?.length && <div className="chat-summary-requests">
-                                {turn.actionRequests.map(request => <ChatActionRequestCard key={request.id}
-                                                                                           request={request}
-                                                                                           disabled={state.busy || sending || decidingRequest}
-                                                                                           onDecide={allow => void decideRequest('action', turn.id, request.id, allow)}
-                                                                                           onUndo={() => void undo(turn.id, request.id)}/>)}
-                            </div>}
-                            {sourceTurnId === turn.id &&
-                                <SourcesPanel sources={sourcesFor(turn)} selected={selectedSourceId}
-                                              onClearSelection={() => setSelectedSourceId(null)}
-                                              onClose={() => {
-                                                  setSourceTurnId(null)
-                                                  setSelectedSourceId(null)
-                                              }}/>}
-                            {!!turn.warnings?.length &&
-                                <p className="chat-notice">{[...new Set(turn.warnings)].join(' ')}</p>}
-                            {turn.endReason === 'budget' &&
-                                <p className="chat-notice">本轮已达到处理时限，仍有未核实的信息。</p>}
-                            {(turn.startedAt || turn.reply) && <div className="turn-meta">
-                                {turn.startedAt && <time
-                                    dateTime={turn.startedAt}>{new Date(turn.startedAt).toLocaleTimeString('zh-CN', {
-                                    hour: '2-digit', minute: '2-digit', hour12: false
-                                })}</time>}
-                                {turn.startedAt && turn.finishedAt && <><i className="turn-meta-dot"
-                                                                           aria-hidden="true"/>
-                                    <span>{((Date.parse(turn.finishedAt) - Date.parse(turn.startedAt)) / 1000).toFixed(1)}s</span></>}
-                                {turn.reply && <CopyButton text={turn.reply} label="复制回复"/>}
-                                {!!sourcesFor(turn).length && <button type="button"
-                                                                      className="chat-message-action chat-message-icon"
-                                                                      aria-label={`查看来源（${sourcesFor(turn).length}）`}
-                                                                      title={`查看来源（${sourcesFor(turn).length}）`}
-                                                                      aria-expanded={sourceTurnId === turn.id}
-                                                                      onClick={() => toggleSources(turn.id)}>
-                                    <Icon name="search"/>
-                                </button>}
-                                {turn.startedAt && <button type="button" className="icon-button turn-meta-button"
-                                                           aria-label="查看执行记录"
-                                                           title="查看执行记录" aria-controls="chat-trace-panel"
-                                                           aria-expanded={traceTurnId === turn.id}
-                                                           onClick={() => traceTurnId === turn.id ? closeTrace() : openTrace(turn.id)}>
-                                    <Icon
-                                        name="panel"/></button>}
-                            </div>}
-                            {turn.error && <p className="chat-error" role="alert">{turn.error}</p>}
-                        </article>
-                    </div>)}
+                                {!!turn.actionRequests?.length && <div className="chat-summary-requests">
+                                    {turn.actionRequests.map(request => <ChatActionRequestCard key={request.id}
+                                                                                               request={request}
+                                                                                               disabled={state.busy || sending || decidingRequest}
+                                                                                               onDecide={allow => void decideRequest('action', turn.id, request.id, allow)}
+                                                                                               onUndo={() => void undo(turn.id, request.id)}/>)}
+                                </div>}
+                                {sourceTurnId === turn.id &&
+                                    <SourcesPanel sources={sourcesFor(turn)} selected={selectedSourceId}
+                                                  onClearSelection={() => setSelectedSourceId(null)}
+                                                  onClose={() => {
+                                                      setSourceTurnId(null)
+                                                      setSelectedSourceId(null)
+                                                  }}/>}
+                                {!!turn.warnings?.length &&
+                                    <p className="chat-notice">{[...new Set(turn.warnings)].join(' ')}</p>}
+                                {turn.endReason === 'budget' &&
+                                    <p className="chat-notice">本轮已达到处理时限，仍有未核实的信息。</p>}
+                                {(turn.startedAt || turn.reply) && <div className="turn-meta">
+                                    {turn.startedAt && <time
+                                        dateTime={turn.startedAt}>{new Date(turn.startedAt).toLocaleTimeString('zh-CN', {
+                                        hour: '2-digit', minute: '2-digit', hour12: false
+                                    })}</time>}
+                                    {turn.startedAt && turn.finishedAt && <><i className="turn-meta-dot"
+                                                                               aria-hidden="true"/>
+                                        <span>{((Date.parse(turn.finishedAt) - Date.parse(turn.startedAt)) / 1000).toFixed(1)}s</span></>}
+                                    {turn.reply && <CopyButton text={turn.reply} label="复制回复"/>}
+                                    {!!sourcesFor(turn).length && <button type="button"
+                                                                          className="chat-message-action chat-message-icon"
+                                                                          aria-label={`查看来源（${sourcesFor(turn).length}）`}
+                                                                          title={`查看来源（${sourcesFor(turn).length}）`}
+                                                                          aria-expanded={sourceTurnId === turn.id}
+                                                                          onClick={() => toggleSources(turn.id)}>
+                                        <Icon name="search"/>
+                                    </button>}
+                                    {turn.startedAt && <button type="button" className="icon-button turn-meta-button"
+                                                               aria-label="查看执行记录"
+                                                               title="查看执行记录" aria-controls="chat-trace-panel"
+                                                               aria-expanded={traceTurnId === turn.id}
+                                                               onClick={() => traceTurnId === turn.id ? closeTrace() : openTrace(turn.id)}>
+                                        <Icon
+                                            name="panel"/></button>}
+                                </div>}
+                                {turn.error && <p className="chat-error" role="alert">{turn.error}</p>}
+                            </article>
+                        </div>)}
+                    </div>
                 </div>
             </div>
             <footer className="chat-footer">
-                <ChatStatusBar stats={state.turns.length || state.busy ? state.stats : undefined}/>
-                {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
-                {syncError && <p className="chat-error" role="alert">{syncError}</p>}
-                {error && <p className="chat-error" role="alert">{error}</p>}
+                <div className="chat-footer-status">
+                    <ChatStatusBar stats={state.turns.length || state.busy ? state.stats : undefined}/>
+                    {syncing && <p className="chat-status" role="status">正在刷新通知和课表…</p>}
+                    {syncError && <p className="chat-error" role="alert">{syncError}</p>}
+                    {error && <p className="chat-error" role="alert">{error}</p>}
+                </div>
                 {editingTurnId && <div className="chat-edit-hint" role="status">
                     <span>正在编辑最近一条失败消息，发送后会替换它。</span>
                     <button type="button" className="secondary-button" onClick={cancelEdit}>取消编辑</button>

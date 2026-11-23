@@ -19,13 +19,13 @@ export function ChatStatusBar({stats}: { stats?: ChatStats }) {
     return <div className="chat-status-bar">
         <span className="chat-stat" title="对话轮次 · 工具调用步数 · 平均吞吐">
             <span className="chat-stat-icon" aria-hidden="true">◷</span>
-            {data.turns} 轮 · {data.steps} 步
-            {data.tokensPerSecond ? ` · ${data.tokensPerSecond} tok/s` : ''}
+            {data.turns} 轮 {data.steps} 步
+            {data.tokensPerSecond ? ` ${data.tokensPerSecond} token/s` : ''}
         </span>
         <span className="chat-stat" title="本次会话累计 token 与提示缓存命中率">
             <span className="chat-stat-icon" aria-hidden="true">⛁</span>
-            {compact(tokens)} tok
-            {cache !== null && ` · 缓存命中 ${cache}%`}
+            {compact(tokens)} token
+            {cache !== null && ` 缓存命中 ${cache}%`}
         </span>
         <span className="chat-stat" title="最近一次请求发送的上下文 token 数">
             <span className="chat-stat-icon" aria-hidden="true">▤</span>
