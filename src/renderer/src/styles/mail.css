@@ -964,7 +964,6 @@ html:has(.mail-connection-dialog[open]) {
     flex: 0 0 auto;
     color: var(--color-icon-muted);
     padding: .8125rem;
-    background: var(--panel-bg);
     border-radius: var(--radius-full);
 }
 
@@ -1002,7 +1001,6 @@ html:has(.mail-connection-dialog[open]) {
     color: var(--color-icon-muted);
     padding: 1rem;
     border-radius: var(--radius-full);
-    background: var(--panel-bg);
 }
 
 .mailbox-initial h2 {
