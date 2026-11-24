@@ -70,7 +70,7 @@ button:disabled {
     padding: var(--space-3) var(--space-4);
     border: 1px solid var(--input-border);
     border-radius: var(--input-radius);
-    background: var(--color-bg-subtle);
+    background: var(--panel-bg);
     color: var(--color-text-primary);
     min-height: var(--size-touch-target);
 }
@@ -112,7 +112,7 @@ button:disabled {
 
 .account-notice {
     color: var(--color-info);
-    background: var(--color-bg-subtle);
+    background: var(--panel-bg);
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);

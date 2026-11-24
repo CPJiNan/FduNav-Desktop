@@ -43,7 +43,7 @@ select {
     padding: var(--space-2) var(--space-3);
     border: var(--border-width) solid var(--input-border);
     border-radius: var(--input-radius);
-    background-color: var(--color-bg-subtle);
+    background-color: var(--panel-bg);
     color: var(--color-text-primary);
     cursor: pointer;
     transition: border-color var(--duration-fast) var(--ease-standard);
