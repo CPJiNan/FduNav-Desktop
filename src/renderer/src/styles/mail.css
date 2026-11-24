@@ -98,7 +98,7 @@ html:has(.mail-connection-dialog[open]) {
     min-height: var(--size-touch-target);
     border: var(--border-width) solid var(--input-border);
     border-radius: var(--input-radius);
-    background: var(--color-bg-subtle);
+    background: var(--panel-bg);
     color: var(--color-text-primary);
     padding: var(--space-2) var(--space-3);
 }
@@ -376,8 +376,8 @@ html:has(.mail-connection-dialog[open]) {
     font-size: var(--font-size-xs);
     padding: var(--space-2);
     margin-bottom: var(--space-3);
-    background: var(--color-bg-subtle);
-    border: 1px solid var(--color-border-subtle);
+    background: var(--panel-bg);
+    border: 1px solid var(--input-border);
 }
 
 .mailbox-sidebar nav {
@@ -492,9 +492,9 @@ html:has(.mail-connection-dialog[open]) {
     gap: var(--space-2);
     padding: 0 var(--space-3);
     min-height: var(--size-control-md);
-    border: 1px solid transparent;
+    border: 1px solid var(--input-border);
     border-radius: var(--radius-full);
-    background: var(--color-bg-subtle);
+    background: var(--panel-bg);
     color: var(--color-text-muted);
 }
 
