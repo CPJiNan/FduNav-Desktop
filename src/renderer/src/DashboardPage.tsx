@@ -172,7 +172,7 @@ export function DashboardPage({onNavigate, onOpenNotice, onOpenMail}: {
     const today = localToday()
     const minute = now.getHours() * 60 + now.getMinutes()
     const agenda = calendarOccurrences(timetable.data, events.data, today, today)
-    const visibleAgenda = agenda.filter(item => !item.allDay && item.startMinute > minute).slice(0, 3)
+    const visibleAgenda = agenda.filter(item => item.allDay || item.endMinute > minute).slice(0, 3)
     const pending = todos.data.filter(item => !item.completed).sort((a, b) =>
         (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || a.dueTime.localeCompare(b.dueTime))
     const overdue = pending.filter(item => item.dueDate && `${item.dueDate}T${item.dueTime}` < `${today}T${timeLabel(minute)}`).length
@@ -200,7 +200,7 @@ export function DashboardPage({onNavigate, onOpenNotice, onOpenMail}: {
             {!loading && !scheduleError && !visibleAgenda.length && <p className="dashboard-empty">暂无安排</p>}
             <ul className="dashboard-agenda-list">{visibleAgenda.map(item => <li key={item.key}>
                 <button type="button" onClick={() => onNavigate('calendar')}>
-                    <time>{timeLabel(item.startMinute)}</time>
+                    <time>{item.allDay ? '全天' : timeLabel(item.startMinute)}</time>
                     <div><strong>{item.title}</strong><small>{item.location || (item.course ? '课程' : '日程')}</small>
                     </div>
                 </button>

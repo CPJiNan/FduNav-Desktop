@@ -37,13 +37,13 @@ export function extractPageText(raw: string): string {
         .replace(/\n\s*\n+/g, '\n').trim()
 }
 
-export async function readWebPage(source: ResearchSource, timeoutMs: number): Promise<PageRead> {
+export async function readWebPage(source: ResearchSource, timeoutMs: number, signal?: AbortSignal): Promise<PageRead> {
     if (source.source !== 'web' || !source.url) {
         throw new ResearchError('unknown_source', '来源编号不存在或不是网页来源，请先搜索。', 404)
     }
     let page: Awaited<ReturnType<typeof requestSourcePage>>
     try {
-        page = await requestSourcePage(source.url, timeoutMs)
+        page = await requestSourcePage(source.url, timeoutMs, signal)
     } catch (error) {
         throw mapReadError(error)
     }

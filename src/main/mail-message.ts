@@ -42,10 +42,11 @@ export function messageAttachments(message: FetchMessageObject): MailAttachment[
     let visited = 0
     const visit = (part: MessageStructureObject, depth: number) => {
         if (depth > 16 || visited++ >= 256) return
-        if (part.part && (attachedPart(part) || (!part.childNodes?.length && !/^text\/(?:plain|html)$/.test(part.type)))) {
+        const section = part.part || (depth === 0 && !part.type.startsWith('multipart/') ? '1' : '')
+        if (section && (attachedPart(part) || (!part.childNodes?.length && !/^text\/(?:plain|html)$/.test(part.type)))) {
             const name = mailHeader(part.dispositionParameters?.filename || part.parameters?.name || '附件', 240).replace(/[\/\\]/g, '_')
             result.push({
-                part: part.part,
+                part: section,
                 name: !name || /^\.+$/.test(name) ? '附件' : name,
                 type: part.type,
                 size: part.encoding?.toLowerCase() === 'base64' ? Math.ceil((part.size ?? 0) * 3 / 4) : part.size ?? 0

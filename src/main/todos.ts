@@ -50,21 +50,23 @@ export function registerTodoHandlers(db: AppDatabase, accounts: AccountService,
                     const existing = db.getTodos(username)
                     const bySource = new Map(existing.filter(todo => todo.elearning).map(todo =>
                         [`${todo.elearning!.courseId}:${todo.elearning!.assignmentId}`, todo]))
-                    for (const {course, assignment, submission} of rows) {
-                        if (!isUnfinishedAssignment(submission)) continue
-                        const courseId = String(course.id), assignmentId = String(assignment.id)
-                        if (db.hasElearningImport(username, courseId, assignmentId)) continue
-                        const key = `${courseId}:${assignmentId}`
-                        const previous = bySource.get(key)
-                        if (previous) {
+                    db.transaction(() => {
+                        for (const {course, assignment, submission} of rows) {
+                            if (!isUnfinishedAssignment(submission)) continue
+                            const courseId = String(course.id), assignmentId = String(assignment.id)
+                            if (db.hasElearningImport(username, courseId, assignmentId)) continue
+                            const key = `${courseId}:${assignmentId}`
+                            const previous = bySource.get(key)
+                            if (previous) {
+                                db.markElearningImport(username, courseId, assignmentId, syncedAt)
+                                continue
+                            }
+                            const todo = assignmentTodo(course, assignment, submission, undefined, db.getTodoDefaultReminder(), syncedAt)
+                            db.saveTodo(username, todo)
                             db.markElearningImport(username, courseId, assignmentId, syncedAt)
-                            continue
+                            db.afterCommit(() => reminders.changed(username, todo.id))
                         }
-                        const todo = assignmentTodo(course, assignment, submission, undefined, db.getTodoDefaultReminder(), syncedAt)
-                        db.saveTodo(username, todo)
-                        db.markElearningImport(username, courseId, assignmentId, syncedAt)
-                        reminders.changed(username, todo.id)
-                    }
+                    })
                     const todos = db.getTodos(username)
                     return {todos, total: todos.length, syncedAt}
                 })().finally(() => {
@@ -109,5 +111,10 @@ export function registerTodoHandlers(db: AppDatabase, accounts: AccountService,
     }
 
     handle('todos:remove', remove)
-    return {save, remove}
+    function restore(username: string, todo: import('../shared/todos').Todo) {
+        if (db.getTodo(username, todo.id)) throw new TodoError('待办已存在，无法恢复。')
+        db.saveTodo(username, todo)
+        db.afterCommit(() => reminders.changed(username, todo.id))
+    }
+    return {save, remove, restore}
 }

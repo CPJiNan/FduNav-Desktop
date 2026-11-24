@@ -51,7 +51,7 @@ import {
 } from '../shared/research'
 import {CampusBudget, CampusResearchService} from './campus-research'
 import {createResearchToolRunner, researchToolAllowed} from './research-tools'
-import {reviewDraft} from './chat-review'
+import {buildReviewPayload, reviewDraft} from './chat-review'
 import {
     answerIssues,
     characterLimit,
@@ -85,8 +85,6 @@ function confirmText(action: ChatAction, result?: CalendarEventOrTodoOrMemory): 
 
 const compactionAttempts = 3
 const fallbackTurns = 4
-const campusMaxPages = 8
-const campusMaxContentChars = 4000
 const contextTokenBudget = 100_000
 const contextCharFallback = 400_000
 const turnToolResultBudget = 60_000
@@ -281,14 +279,14 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         subscribers.set(sender, user)
     }
 
-    function handle<T>(channel: string, action: (user: string, input: unknown, event: IpcMainInvokeEvent) => T) {
-        ipcMain.handle(channel, (event, input): Result<T> => {
+    function handle<T>(channel: string, action: (user: string, input: unknown, event: IpcMainInvokeEvent) => T | Promise<T>) {
+        ipcMain.handle(channel, async (event, input): Promise<Result<T>> => {
             if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
             try {
                 const user = username()
                 subscribe(event.sender, user)
                 return {
-                    ok: true, data: sessionContext.run({user, ...db.getSelectedChatSession(user)},
+                    ok: true, data: await sessionContext.run({user, ...db.getSelectedChatSession(user)},
                         () => action(user, input, event))
                 }
             } catch (error) {
@@ -363,9 +361,8 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         return item
     }
 
-    async function run(user: string, active: RunningChat) {
+    async function run(user: string, active: RunningChat, connection?: Connection) {
         const turn = active.turns[active.turns.length - 1]
-        let connection: Connection | undefined
         let watch: ReturnType<typeof setInterval> | undefined
         let lastPublish = 0, lastPersist = 0
         let lastPromptTokens = 0
@@ -388,7 +385,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 }
             }
 
-            connection = await llm.getConnection()
+            connection ??= await llm.getConnection()
             assertCurrent()
             const secrets = [connection.apiKey]
             const record = (kind: ChatTraceEvent['kind'], label: string, details?: unknown,
@@ -412,13 +409,16 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             })
             const onUsage = (usage: import('./llm-stream').LlmUsage, elapsedMs: number) => {
                 if (usage.promptTokens && usage.promptTokens > 0) lastPromptTokens = usage.promptTokens
-                record('usage', '模型用量与耗时', {
+                const event = record('usage', '模型用量与耗时', {
                     ...usage,
                     elapsedMs: Math.round(elapsedMs),
                     model: connection!.model
                 })
                 try {
-                    db.recordLlmUsage(scope(user), turn.id, connection!.model, usage, elapsedMs)
+                    db.transaction(() => {
+                        db.recordLlmUsage(scope(user), turn.id, connection!.model, usage, elapsedMs)
+                        db.saveChatTraceEvent(scope(user), turn.id, event, turn.trace!.length - 1)
+                    })
                 } catch {
                     record('error', '用量记录失败，回复继续', undefined, 'failed')
                 }
@@ -451,9 +451,9 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             const researchActive = !noRetrieval && (webReady || campusAllowed)
             const requiredActions = researchActive ? [...requestedActions(turn.user)] : []
             const deadline = Date.now() + researchSettings.requestBudgetSeconds * 1000
-            const campusBudget = new CampusBudget(campusMaxPages)
+            const campusBudget = new CampusBudget(researchSettings.maxCampusPages)
             const campusService = new CampusResearchService(research.campus, () => ({
-                maxContentChars: campusMaxContentChars,
+                maxContentChars: researchSettings.campusMaxContentChars,
                 timeoutMs: researchSettings.httpTimeoutSeconds * 1000,
             }))
             const researchRunner = researchActive ? createResearchToolRunner({
@@ -466,7 +466,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 auth: research.campus,
                 campus: campusService,
                 campusBudget,
-                deadline,
+                deadline, signal,
                 assertCurrent,
             }) : null
             const permittedSources = () => active.sources.filter(source => campusAllowed || source.source === 'web')
@@ -684,27 +684,31 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 const known = knownSourceIds()
                 const canReview = researchSettings.reviewEnabled && sources.length > 0 &&
                     Date.now() < deadline && !signal.aborted
-                if (canReview) {
+                const reviewInput = {
+                    question: turn.user,
+                    userTurns: [...previous.slice(-2).map(item => item.user), turn.user],
+                    previousAnswer: previous.at(-1)?.reply?.slice(0, 4000) || null,
+                    draft: answer,
+                    limit: answerLimit,
+                    context: turn.context,
+                    sources,
+                    known,
+                    availableTools: currentToolNames,
+                    budget: researchRunner ? {
+                        remainingToolCalls: researchRunner.remaining().calls,
+                        remainingCampusPages: researchRunner.remaining().campusPages,
+                        remainingSeconds: researchRunner.remaining().seconds,
+                    } : {remainingToolCalls: 0, remainingCampusPages: 0, remainingSeconds: 0},
+                    requiredActions,
+                    retrievalForbidden: noRetrieval,
+                    runtimeNotices: [...warnings, ...(researchRunner?.warnings() ?? [])],
+                }
+                const payload = canReview || requiredActions.length ? buildReviewPayload(reviewInput) : null
+                if (payload?.missingActions.length) warnings.push(`未能执行要求的检索或读取：${payload.missingActions.join(', ')}。`)
+                if (canReview && payload) {
+                    const reviewSignal = AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, deadline - Date.now()))])
                     try {
-                        const outcome = await reviewDraft({
-                            question: turn.user,
-                            userTurns: [...previous.slice(-2).map(item => item.user), turn.user],
-                            previousAnswer: previous.at(-1)?.reply?.slice(0, 4000) || null,
-                            draft: answer,
-                            limit: answerLimit,
-                            context: turn.context,
-                            sources,
-                            known,
-                            availableTools: currentToolNames,
-                            budget: researchRunner ? {
-                                remainingToolCalls: researchRunner.remaining().calls,
-                                remainingCampusPages: researchRunner.remaining().campusPages,
-                                remainingSeconds: researchRunner.remaining().seconds,
-                            } : {remainingToolCalls: 0, remainingCampusPages: 0, remainingSeconds: 0},
-                            requiredActions,
-                            retrievalForbidden: noRetrieval,
-                            runtimeNotices: [...warnings, ...(researchRunner?.warnings() ?? [])],
-                        }, async (system, payload, label) => {
+                        const outcome = await reviewDraft(reviewInput, payload, async (system, payload, label) => {
                             assertCurrent()
                             const reviewEvent = record('model', label, {phase: 'review'}, 'running')
                             const started = performance.now()
@@ -712,14 +716,14 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                                 const result = await streamLlmWithTools(connection!, [
                                     {role: 'system', content: system},
                                     {role: 'user', content: JSON.stringify(payload)},
-                                ], [], signal, {
+                                ], [], reviewSignal, {
                                     thinking: 'disabled', onUsage, onRetry, ...observeRequest(reviewEvent),
                                 })
                                 reviewEvent.status = 'completed'
                                 reviewEvent.elapsedMs = Math.round(performance.now() - started)
                                 return result.content ?? ''
                             } catch (error) {
-                                reviewEvent.status = signal.aborted ? 'cancelled' : 'failed'
+                                reviewEvent.status = reviewSignal.aborted ? 'cancelled' : 'failed'
                                 reviewEvent.elapsedMs = Math.round(performance.now() - started)
                                 throw error
                             }
@@ -768,7 +772,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 const overBudget = lastPromptTokens > 0
                     ? lastPromptTokens > contextTokenBudget
                     : JSON.stringify(context).length > contextCharFallback
-                const final = round === 8 || calls >= 24 || overBudget
+                const final = round === 8 || calls >= 24 || overBudget || (researchActive && Date.now() >= deadline)
                 exhausted = final
                 active.status = final ? '整理已有结果' : '思考中'
                 if (final) context.push({
@@ -781,7 +785,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                         allowedResearch.add('search_web');
                         allowedResearch.add('read_web')
                     }
-                    if (campusAllowed) {
+                    if (campusAllowed && researchRunner.campusAllowed()) {
                         allowedResearch.add('search_campus_posts');
                         allowedResearch.add('read_campus_thread')
                     }
@@ -862,6 +866,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     try {
                         if (final || calls >= 24) throw new ToolError('budget_exhausted', '工具预算已耗尽，请总结已有结果。')
                         calls++
+                        if (!currentToolNames.includes(call.function.name)) throw new ToolError('forbidden', '本轮未开放该工具。')
                         const invoke = async () => researchToolAllowed(call.function.name)
                             ? researchRunner
                                 ? researchRunner.run(call.function.name, call.function.arguments)
@@ -1254,8 +1259,8 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                 else calendar.save(user, before as CalendarEvent)
             } else if (kind === 'delete_event' || kind === 'delete_todo') {
                 if (!before || findCurrent(before.id)) throw new Error('记录已存在，无法恢复。')
-                if (kind === 'delete_todo') todos.save(user, before as Todo)
-                else calendar.save(user, before as CalendarEvent)
+                if (kind === 'delete_todo') todos.restore(user, before as Todo)
+                else calendar.restore(user, before as CalendarEvent)
             } else {
                 if (!after) throw new Error('缺少操作结果，无法撤销。')
                 const current = findCurrent(after.id)
@@ -1367,11 +1372,10 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         return selectedSnapshot(user)
     })
 
-    function startTurn(user: string, text: string, sourceMode: ResearchSourceMode) {
+    function startTurn(user: string, text: string, sourceMode: ResearchSourceMode, replacing?: StoredTurn, connection?: Connection) {
         llm.getRequestSignal()
         const settings = llm.get()
         if (!settings.baseUrl || !settings.model) throw new Error('请先在 LLM 设置中配置接口和模型。')
-        db.touchChatSession(user, session(user).id, text, sourceMode)
         const turn: StoredTurn = {
             id: randomUUID(),
             startedAt: new Date().toISOString(), trace: [],
@@ -1382,16 +1386,25 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             sourceMode,
         }
         const active: RunningChat = {
-            turns: [...load(user), turn],
+            turns: [...load(user).filter(item => item.id !== replacing?.id), turn],
             sources: db.getResearchSources(scope(user)),
             status: '思考中',
             controller: new AbortController(),
             savedTrace: new Map()
         }
-        persist(user, active)
+        db.transaction(() => {
+            if (replacing) {
+                const previous = active.turns.slice(0, -1).map(item => serializeTurn(item, false))
+                db.saveChatConversation(scope(user), JSON.stringify(previous))
+                db.removeChatTrace(scope(user), replacing.id)
+                if (db.getCompaction(scope(user))?.coversUpTo === replacing.id) db.saveCompaction(scope(user), null)
+            }
+            db.touchChatSession(user, session(user).id, text, sourceMode)
+            persist(user, active)
+        })
         running.set(scope(user), active)
         publish(user)
-        void run(user, active).catch(() => {
+        void run(user, active, connection).catch(() => {
         })
         return snapshot(user)
     }
@@ -1406,7 +1419,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         if (!isResearchSourceMode(value.sourceMode)) throw new Error('数据源模式无效。')
         return startTurn(user, value.text.trim(), value.sourceMode)
     })
-    handle('chat:retry', (user, input) => {
+    handle('chat:retry', async (user, input) => {
         if (running.has(scope(user))) throw new Error('请等待当前回复完成，或先停止回复。')
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('重发参数无效。')
         const {turnId, text} = input as Record<string, unknown>
@@ -1418,15 +1431,17 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
         if (index < 0) throw new Error('这条消息不存在或已被清除。')
         if (index !== turns.length - 1) throw new Error('只能编辑最近一条消息。')
         if (!turns[index].error) throw new Error('只有失败的回复可以编辑重发。')
-        const remaining = turns.filter(turn => turn.id !== turnId)
-        db.transaction(() => {
-            db.saveChatConversation(scope(user), JSON.stringify(remaining.map(turn => serializeTurn(turn, false))))
-            db.removeChatTrace(scope(user), turnId)
-            db.clearRunningTurn(scope(user))
-            if (db.getCompaction(scope(user))?.coversUpTo === turnId) db.saveCompaction(scope(user), null)
-        })
-        publish(user)
-        return startTurn(user, text.trim(), 'auto')
+        const owner = accounts.getState(), enabled = llm.getRequestSignal()
+        const connection = await llm.getConnection()
+        try {
+            if (enabled.aborted || username() !== user || accounts.getState().lastLogin !== owner.lastLogin) throw new Error('账号或模型设置已变化，请重新发送。')
+            db.getChatSession(user, session(user).id)
+            if (running.has(scope(user)) || load(user).at(-1)?.id !== turnId) throw new Error('对话已变化，请重新选择消息。')
+            return startTurn(user, text.trim(), turns[index].sourceMode, turns[index], connection)
+        } catch (error) {
+            connection.apiKey = ''
+            throw error
+        }
     })
     handle('chat:cancel', user => {
         running.get(scope(user))?.controller.abort('user');

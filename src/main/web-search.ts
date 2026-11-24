@@ -36,15 +36,16 @@ function webUrl(value: unknown): string | null {
 }
 
 export async function searchWeb(settings: WebSearchSettings, query: string,
-                                request: typeof fetch = fetch): Promise<WebSearchResponse> {
+                                request: typeof fetch = fetch, signal?: AbortSignal): Promise<WebSearchResponse> {
     const trimmed = query.trim()
     if (!trimmed || trimmed.length > 500) throw new ResearchError('invalid_args', '搜索词须为 1–500 个字符。', 400)
     if (!settings.apiKey) throw new ResearchError('search_not_configured', '请在旦挞设置中填写 Tavily API Key。', 503)
+    const timeout = AbortSignal.timeout(Math.round(settings.timeoutSeconds * 1000))
     let response: Response
     try {
         response = await request('https://api.tavily.com/search', {
             method: 'POST', redirect: 'error', cache: 'no-store',
-            signal: AbortSignal.timeout(Math.round(settings.timeoutSeconds * 1000)),
+            signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
             headers: {'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}`},
             body: JSON.stringify({
                 query: trimmed, search_depth: settings.depth, topic: 'general',

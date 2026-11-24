@@ -1,4 +1,5 @@
 import {load} from 'cheerio'
+import {weekStartDate} from '../shared/calendar.ts'
 import {AuthError} from './fudan-auth.ts'
 import {type Semester, type TimetableCourse, validDate} from '../shared/timetable.ts'
 
@@ -22,7 +23,7 @@ export function parseSemesters(html: string): { semesters: Semester[]; defaultId
         const row = record(value)
         if (!/^\d+$/.test(String(row.id)) || typeof row.name !== 'string') throw invalid()
         const date = typeof row.startDate === 'string' ? row.startDate.slice(0, 10) : ''
-        const startDate = validDate(date) ? date : null
+        const startDate = validDate(date) ? weekStartDate(date) : null
         return {id: String(row.id), name: row.name, startDate}
     }).reverse()
     const defaultId = $('#allSemesters option[selected]').first().attr('value') ?? $('#allSemesters option').first().attr('value')

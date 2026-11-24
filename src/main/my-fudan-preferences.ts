@@ -114,6 +114,7 @@ function profileUrl(html: string): string | null {
 
 export async function syncMyFudanPreferences(accounts: AccountService, db: AppDatabase,
                                              parent?: BrowserWindow): Promise<MessagePreferences> {
+    const owner = db.getAccount()
     const existing = db.getMessagePreferences()
     if (validateRequiredMessagePreferences(existing).ok) return existing
 
@@ -127,8 +128,12 @@ export async function syncMyFudanPreferences(accounts: AccountService, db: AppDa
     let parsed = parseMyFudanPreferences(html)
     const rendered = await accounts.readMyFudanPage()
     if (rendered) parsed = {...parsed, ...parseMyFudanPreferences(rendered)}
-    if (!Object.keys(parsed).length) return existing
-
-    const checked = validateMessagePreferences({...existing, ...parsed})
-    return checked.ok ? db.setMessagePreferences(checked.data) : existing
+    const current = db.getAccount()
+    if (!owner || current?.username !== owner.username || current.last_login !== owner.last_login) return db.getMessagePreferences()
+    const latest = db.getMessagePreferences()
+    if (!Object.keys(parsed).length) return latest
+    const unchanged = Object.entries(parsed).filter(([field]) =>
+        latest[field as keyof MessagePreferences] === existing[field as keyof MessagePreferences])
+    const checked = validateMessagePreferences({...latest, ...Object.fromEntries(unchanged)})
+    return checked.ok ? db.setMessagePreferences(checked.data) : latest
 }

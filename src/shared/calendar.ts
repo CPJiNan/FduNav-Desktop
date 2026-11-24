@@ -22,6 +22,7 @@ export interface CalendarEventInput {
 
 export interface CalendarEvent extends CalendarEventInput {
     id: string
+    exam?: {course: string; term: string; sourceId: string; notes: string}
 }
 
 export interface CalendarAPI {
@@ -31,7 +32,7 @@ export interface CalendarAPI {
 
     remove(id: string): Promise<Result<null>>
 
-    syncExams(): Promise<Result<{ added: number; total: number }>>
+    syncExams(): Promise<Result<{ added: number; updated: number; removed: number; total: number }>>
 }
 
 export interface CalendarOccurrence {

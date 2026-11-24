@@ -98,7 +98,7 @@ export function CalendarPage({initialView = 'week'}: { initialView?: CalendarVie
                 if (reportError) setEventError(result.error)
                 return
             }
-            if (result.data.added > 0) await loadEvents()
+            if (result.data.added || result.data.updated || result.data.removed) await loadEvents()
         } catch {
             if (reportError) setEventError('同步考试安排失败，请重试。')
         }

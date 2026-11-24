@@ -68,17 +68,20 @@ export class SourceRefreshService {
         return this.refreshing
     }
 
+    async refreshSource(source: MessageSource) {
+        try {
+            const result = await collectSource(source, this.requestPage)
+            this.db.saveNotices(result.items, source.id, source.revision, result.listUrl)
+        } catch (error) {
+            this.db.setSourceError(source.id, source.revision, error instanceof Error ? error.message : '来源加载失败。')
+        }
+    }
+
     private async run() {
         const pending = this.db.getSources().filter(source => source.enabled)
         await Promise.all(Array.from({length: Math.min(3, pending.length)}, async () => {
             while (pending.length) {
-                const source = pending.shift()!
-                try {
-                    const result = await collectSource(source, this.requestPage)
-                    this.db.saveNotices(result.items, source.id, source.revision, result.listUrl)
-                } catch (error) {
-                    this.db.setSourceError(source.id, source.revision, error instanceof Error ? error.message : '来源加载失败。')
-                }
+                await this.refreshSource(pending.shift()!)
             }
         }))
         return this.db.getNotices()

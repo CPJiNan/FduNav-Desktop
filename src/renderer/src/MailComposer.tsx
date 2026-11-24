@@ -15,6 +15,7 @@ export function MailComposer({initial, accounts, onClose, onSent, onDraftChange,
     const dialog = useRef<HTMLDialogElement>(null), toField = useRef<HTMLInputElement>(null),
         bodyField = useRef<HTMLTextAreaElement>(null)
     const current = useRef({draft, version}), mounted = useRef(true), queue = useRef<Promise<void>>(Promise.resolve())
+    const discarded = useRef(false)
     const savedVersion = useRef(initial.updatedAt ? 0 : -1),
         requestId = useRef(initial.sendRequestId ?? crypto.randomUUID().replace(/-/g, ''))
     current.current = {draft, version}
@@ -49,11 +50,11 @@ export function MailComposer({initial, accounts, onClose, onSent, onDraftChange,
 
     async function persist() {
         const snapshot = current.current
-        if (!window.mail || savedVersion.current === snapshot.version || (!hasContent(snapshot.draft) && savedVersion.current < 0)) return
+        if (discarded.current || !window.mail || savedVersion.current === snapshot.version || (!hasContent(snapshot.draft) && savedVersion.current < 0)) return
         let failure: Error | undefined
         queue.current = queue.current.catch(() => {
         }).then(async () => {
-            if (savedVersion.current >= snapshot.version) return
+            if (discarded.current || savedVersion.current >= snapshot.version) return
             if (mounted.current) setStatus('正在保存草稿…')
             try {
                 const result = await window.mail!.saveDraft(snapshot.draft)
@@ -96,7 +97,8 @@ export function MailComposer({initial, accounts, onClose, onSent, onDraftChange,
     }
 
     async function discard() {
-        if (!window.mail) return
+        if (!window.mail || discarded.current) return
+        discarded.current = true
         setClosing(true);
         setDiscarding(false)
         try {
@@ -107,6 +109,7 @@ export function MailComposer({initial, accounts, onClose, onSent, onDraftChange,
             onDraftChange();
             onClose()
         } catch (reason) {
+            discarded.current = false
             setError(reason instanceof Error ? reason.message : '未能删除草稿。');
             setClosing(false)
         }

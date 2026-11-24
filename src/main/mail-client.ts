@@ -245,6 +245,7 @@ export class MailClient {
         if (this.sending.has(key)) throw new MailError('transient', '这封邮件正在发送，请勿重复操作。')
         this.sending.add(key)
         const fingerprint = this.drafts.fingerprint(draft)
+        let deliveryResult: MailSendResult | undefined
         try {
             try {
                 const existing = await this.drafts.get(draft.id)
@@ -283,6 +284,7 @@ export class MailClient {
                         message: known ? error.message : '发送结果尚未确认，请先检查“已发送”，不要重复发送。',
                         messageId: prepared.messageId
                     }
+                    if (!known) deliveryResult = result
                     await this.drafts.saveReceipt(owner, raw.requestId, {
                         fingerprint,
                         state: known ? 'failed' : 'unknown',
@@ -303,6 +305,7 @@ export class MailClient {
                     message: delivered.rejected.length ? '邮件已发送。以下收件人未被接受：' + delivered.rejected.join(', ').slice(0, 1200) : '邮件已发送。',
                     messageId: prepared.messageId
                 }
+                deliveryResult = result
                 await this.drafts.saveReceipt(owner, raw.requestId, {fingerprint, state: 'sent', result})
                 this.accounts.owner(owner);
                 this.drafts.remove(draft.id)
@@ -321,6 +324,10 @@ export class MailClient {
                 await this.drafts.saveReceipt(owner, raw.requestId, {fingerprint, state: 'sent', result})
                 return result
             })
+        } catch (error) {
+            if (!deliveryResult) throw error
+            this.accounts.owner(owner)
+            return deliveryResult
         } finally {
             this.sending.delete(key)
         }

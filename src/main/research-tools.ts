@@ -16,6 +16,7 @@ import {ResearchError} from './research-error'
 import {readWebPage} from './research-reader'
 import {parseToolArguments} from './tool-args'
 import {searchWeb} from './web-search'
+import {awaitWithAbort} from './abortable'
 
 type Fields = Record<string, unknown>
 const str = (description: string) => ({type: 'string', description})
@@ -106,6 +107,7 @@ export interface ResearchToolContext {
     campus: CampusResearchService
     campusBudget: CampusBudget
     deadline: number
+    signal?: AbortSignal
     assertCurrent: () => void
 }
 
@@ -121,9 +123,16 @@ export interface ResearchToolRunner {
 
 export function createResearchToolRunner(context: ResearchToolContext): ResearchToolRunner {
     const {db, username, sources, settings, searchApiKey, campus, campusBudget, deadline, assertCurrent} = context
+    const deadlineSignal = AbortSignal.timeout(Math.max(1, Math.ceil(deadline - Date.now())))
+    const signal = context.signal ? AbortSignal.any([context.signal, deadlineSignal]) : deadlineSignal
+    function checkTime() {
+        assertCurrent()
+        context.signal?.throwIfAborted()
+        if (deadlineSignal.aborted || Date.now() >= deadline) throw new ToolError('budget_exhausted', '本轮检索时间已用完。')
+    }
     const attempted = new Set<string>()
     let calls = 0
-    let webAllowed = settings.hasSearchApiKey && !!searchApiKey
+    const webAllowed = settings.hasSearchApiKey && !!searchApiKey
     let campusEnabled = settings.campus.loggedIn
     const notices: string[] = []
 
@@ -154,7 +163,6 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
 
     function stopReason(): string | null {
         if (calls >= settings.researchMaxToolCalls) return `本轮已用完 ${settings.researchMaxToolCalls} 次检索调用，回答基于已取得的资料。`
-        if (Date.now() >= deadline) return '本轮检索时间已用完，已停止查找并留出时间整理回答。'
         return null
     }
 
@@ -180,7 +188,7 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
             seconds: Math.max(0, Math.round((deadline - Date.now()) / 1000)),
         }),
         async run(name: string, raw: string): Promise<unknown> {
-            assertCurrent()
+            checkTime()
             const toolName = name as ResearchToolName
             const schema = researchTools.find(item => item.function.name === name)?.function.parameters
             if (!schema) throw new ToolError('forbidden', '不支持的工具。')
@@ -202,17 +210,18 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
             }
             try {
                 if (toolName === 'search_web') {
-                    const response = await searchWeb({
+                    const response = await awaitWithAbort(searchWeb({
                         apiKey: searchApiKey,
                         depth: settings.searchDepth,
                         maxResults: settings.searchMaxResults,
                         maxSnippetChars: settings.searchMaxSnippetChars,
                         timeoutSeconds: settings.searchTimeoutSeconds,
-                    }, textArg(input, 'query', true))
-                    assertCurrent()
+                    }, textArg(input, 'query', true), fetch, signal), signal)
+                    checkTime()
                     const results = response.results.map(item => {
                         const existing = sources.find(source => source.source === 'web' && source.url === item.url)
                         const source: ResearchSource = {
+                            ...existing,
                             id: existing?.id ?? nextSourceId(sources, 'web'),
                             source: 'web', title: item.title, url: item.url, snippet: item.snippet,
                             publishedAt: item.publishedAt, truncated: item.truncated,
@@ -232,18 +241,18 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
                     const sourceId = textArg(input, 'sourceId', true, 20)
                     const source = sources.find(item => item.id === sourceId && item.source === 'web')
                     if (!source) throw new ResearchError('unknown_source', '来源编号不存在，请先搜索。', 404)
-                    const page = await readWebPage(source, settings.httpTimeoutSeconds * 1000)
-                    assertCurrent()
+                    const page = await awaitWithAbort(readWebPage(source, settings.httpTimeoutSeconds * 1000, signal), signal)
+                    checkTime()
                     source.pageRead = true
                     source.pageTruncated = page.truncated
                     upsert(source)
                     return {...page, remainingResearch: budgetLeft()}
                 }
                 if (toolName === 'search_campus_posts') {
-                    const page = await campus.searchPosts(username, textArg(input, 'query', true),
+                    const page = await awaitWithAbort(campus.searchPosts(username, textArg(input, 'query', true),
                         typeof input.offset === 'number' ? input.offset : 0,
-                        typeof input.limit === 'number' ? input.limit : 20, campusBudget)
-                    assertCurrent()
+                        typeof input.limit === 'number' ? input.limit : 20, campusBudget, signal), signal)
+                    checkTime()
                     return {
                         ...page,
                         query: textArg(input, 'query', true),
@@ -253,10 +262,10 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
                     }
                 }
                 if (toolName === 'read_campus_thread') {
-                    const page = await campus.readThread(username, input.holeId as number,
+                    const page = await awaitWithAbort(campus.readThread(username, input.holeId as number,
                         typeof input.offset === 'number' ? input.offset : 0,
-                        typeof input.limit === 'number' ? input.limit : 20, campusBudget)
-                    assertCurrent()
+                        typeof input.limit === 'number' ? input.limit : 20, campusBudget, signal), signal)
+                    checkTime()
                     return {
                         ...page,
                         results: page.results.map(post => modelSourceView(campusPostSource(post, true))),
@@ -292,6 +301,7 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
                     remainingResearch: budgetLeft(),
                 }
             } catch (error) {
+                checkTime()
                 if (error instanceof ResearchError && campusAuthCodes.has(error.code)) {
                     denyCampus('树洞认证已失效，本轮停止使用树洞，继续使用公开网页并说明限制。')
                 }
