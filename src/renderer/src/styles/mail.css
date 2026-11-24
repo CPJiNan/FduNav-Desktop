@@ -543,7 +543,7 @@ html:has(.mail-connection-dialog[open]) {
 .mailbox-filter {
     padding: var(--space-1) var(--space-3);
     min-height: 28px;
-    background: var(--color-bg-subtle);
+    background: transparent;
     border: 0;
     border-radius: var(--radius-full);
     color: var(--color-text-muted);
@@ -711,6 +711,7 @@ html:has(.mail-connection-dialog[open]) {
 .mailbox-list-empty > .icon {
     width: 28px;
     height: 28px;
+    flex: 0 0 auto;
 }
 
 .mailbox-load-more {
@@ -960,6 +961,7 @@ html:has(.mail-connection-dialog[open]) {
 .mailbox-reader-empty > .icon {
     width: 3.25rem;
     height: 3.25rem;
+    flex: 0 0 auto;
     color: var(--color-icon-muted);
     padding: .8125rem;
     background: var(--panel-bg);
@@ -996,6 +998,7 @@ html:has(.mail-connection-dialog[open]) {
 .mailbox-initial > .icon {
     width: 3.75rem;
     height: 3.75rem;
+    flex: 0 0 auto;
     color: var(--color-icon-muted);
     padding: 1rem;
     border-radius: var(--radius-full);
