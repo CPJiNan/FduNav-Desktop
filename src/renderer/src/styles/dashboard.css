@@ -216,7 +216,6 @@
     color: var(--color-text-secondary);
     font-weight: var(--font-weight-medium);
     padding: .5625rem .375rem;
-    background: var(--color-bg-subtle);
     border-radius: var(--radius-sm);
     text-align: center;
 }
