@@ -111,13 +111,18 @@ export function registerNoticeHandlers(db: AppDatabase, accounts: AccountService
         }
     }
 
-    function refreshNotices() {
+    function refreshNotices(source?: ReturnType<AppDatabase['getSource']>): Promise<void> {
+        if (source && refreshing) return refreshing.then(() => {
+            const current = db.getSource(source.id)
+            if (current?.enabled && current.revision === source.revision) return refreshNotices(current)
+        })
         if (!refreshing) {
             const known = new Set(db.getNotices().items.map(detailKey))
             const username = db.getAccount()?.username
             const autoSummary = db.getNoticeAutoSummary()
             const generation = autoSummaryGeneration
-            refreshing = refresh.refresh().then(list => {
+            const request = source ? refresh.refreshSource(source).then(() => db.getNotices()) : refresh.refresh()
+            refreshing = request.then(list => {
                 if (!username || db.getAccount()?.username !== username) return
                 for (const [key, pending] of pendingReminders) {
                     if (pending.username !== username || Date.now() - pending.receivedAt > 24 * 60 * 60_000) pendingReminders.delete(key)
@@ -344,9 +349,8 @@ export function registerNoticeHandlers(db: AppDatabase, accounts: AccountService
     })
 
     function listNotices() {
-        requireReady()
-        const list = db.getNotices()
-        return {...list, items: list.items.map(item => ({...item, relevance: summaries.relevanceFor(item)}))}
+        const profile = summaries.profile()
+        return db.getNotices(profile.username, profile.key)
     }
 
     async function readDetail(input: unknown) {
@@ -366,7 +370,7 @@ export function registerNoticeHandlers(db: AppDatabase, accounts: AccountService
     }
 
     handle('notices:detail', async (input: unknown) => {
-        return readNoticePdfs(await readDetail(input))
+        return summaries.detail(input as NoticeRef)
     })
 
     async function summarize(input: unknown) {
@@ -430,14 +434,21 @@ export function registerNoticeHandlers(db: AppDatabase, accounts: AccountService
         if (!value || !isSourceId(value.id) || typeof value.enabled !== 'boolean') {
             throw new AuthError('来源设置无效。')
         }
+        const previous = db.getSource(value.id)
         const sources = db.setSourceEnabled(value.id, value.enabled)
+        const source = sources.find(item => item.id === value.id)
+        if (source?.enabled && source.revision !== previous?.revision) {
+            void refreshNotices(source).then(() => {
+                for (const sender of listSubscribers) if (!sender.isDestroyed()) sender.send('notices:changed')
+            }).catch(() => {})
+        }
         publishUnreadState()
         return sources
     }, false)
     return {
         list: listNotices, detail: async (ref: NoticeRef) => {
             requireReady()
-            return readNoticePdfs(await readDetail(ref))
+            return summaries.detail(ref)
         }, setRelevance, summarize
     }
 }

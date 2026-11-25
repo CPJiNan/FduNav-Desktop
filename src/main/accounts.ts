@@ -105,7 +105,7 @@ export class AccountService {
         return this.exclusive(async () => {
             if (!this.jar || !this.state.username) throw new AuthError('请先登录账号。')
             try {
-                const valid = await verifySession(new FudanTransport(this.jar), this.target)
+                const valid = await verifySession(new FudanTransport(this.jar))
                 this.state = {
                     ...this.state,
                     status: valid ? 'signed-in' : 'expired',
@@ -146,7 +146,7 @@ export class AccountService {
         return this.exclusive(async () => {
             const page = await new FudanTransport(this.jar ?? undefined).request(url)
             if (isAuthUrl(page.url)) {
-                if (this.state.username) {
+                if (this.state.username && this.jar && !await verifySession(new FudanTransport(this.jar))) {
                     this.replayCourseIds.clear()
                     this.state = {...this.state, status: 'expired', message: '登录已过期，请重新登录。'}
                     this.jar = null

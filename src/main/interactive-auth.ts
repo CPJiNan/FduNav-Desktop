@@ -7,7 +7,7 @@ import {browserCookieJar, browserCookies} from './auth-cookies.ts'
 
 export async function completeInteractiveAuthentication(
     challenge: AdditionalAuthenticationRequired, jar: CookieJar, parent?: BrowserWindow,
-    verify: (transport: Transport) => Promise<boolean> = transport => verifySession(transport, challenge.target),
+    verify: (transport: Transport) => Promise<boolean> = verifySession,
 ): Promise<CookieJar> {
     const loginUrl = validateUrl(challenge.loginUrl)
     const target = validateUrl(challenge.target)

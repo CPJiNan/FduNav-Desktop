@@ -1,3 +1,4 @@
+import {setTimeout as delay} from 'node:timers/promises'
 import type {AppDatabase} from './database'
 import type {SecretStorage} from './llm-settings'
 import {ResearchError} from './research-error'
@@ -31,6 +32,23 @@ export class CampusAuthService {
     private invalidAccess = new Map<string, string>()
     private refreshing = new Map<string, Promise<void>>()
 
+    private generations = new Map<string, number>()
+
+    private generation(username: string) {
+        return this.generations.get(username) ?? 0
+    }
+
+    private begin(username: string) {
+        const generation = this.generation(username) + 1
+        this.generations.set(username, generation)
+        this.refreshing.delete(username)
+        return generation
+    }
+
+    private assertCurrent(username: string, generation: number) {
+        if (this.generation(username) !== generation) throw new ResearchError('campus_auth_changed', '树洞账号状态已变化，请重试。', 409)
+    }
+
     constructor(private db: AppDatabase, private secrets: SecretStorage, private request: typeof fetch = fetch) {
     }
 
@@ -46,6 +64,7 @@ export class CampusAuthService {
     }
 
     async login(username: string, email: string, password: string): Promise<CampusState> {
+        const generation = this.begin(username)
         const response = await this.fetchOnce(`${AUTH_BASE}/login`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({email, password})
@@ -55,12 +74,13 @@ export class CampusAuthService {
         }
         if (!response.ok) throw new ResearchError('campus_login_failed', '树洞登录暂时不可用，请稍后重试。', 502)
         const tokens = await this.parseTokens(response)
-        await this.persist(username, {...tokens, email})
+        await this.persist(username, {...tokens, email}, generation)
         this.invalidAccess.delete(username)
         return {status: 'configured', loggedIn: true, email}
     }
 
     async logout(username: string): Promise<CampusState> {
+        this.begin(username)
         this.tokens.delete(username)
         this.statuses.set(username, 'missing')
         this.invalidAccess.delete(username)
@@ -69,21 +89,26 @@ export class CampusAuthService {
     }
 
     async get(username: string, path: string, params: Record<string, string | number> | undefined,
-              timeoutMs: number): Promise<Response> {
+              timeoutMs: number, signal?: AbortSignal): Promise<Response> {
         if (!forumPath.test(path)) throw new ResearchError('campus_endpoint_forbidden', '不允许请求此树洞接口。', 400)
+        const generation = this.generation(username)
         let tokens = await this.load(username)
+        this.assertCurrent(username, generation)
         if (!tokens) throw this.missingError(username)
         const url = new URL(FORUM_BASE + path)
         for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, String(value))
         let response = await this.requestWithRetry(url.href, {
-            method: 'GET', headers: {Authorization: `Bearer ${tokens.access}`}
+            method: 'GET', headers: {Authorization: `Bearer ${tokens.access}`}, signal
         }, timeoutMs)
+        this.assertCurrent(username, generation)
         if (response.status !== 401) return response
-        await this.refresh(username, tokens.access)
+        await this.refresh(username, tokens.access, generation, signal)
+        this.assertCurrent(username, generation)
         tokens = this.tokens.get(username) ?? tokens
         response = await this.requestWithRetry(url.href, {
-            method: 'GET', headers: {Authorization: `Bearer ${tokens.access}`}
+            method: 'GET', headers: {Authorization: `Bearer ${tokens.access}`}, signal
         }, timeoutMs)
+        this.assertCurrent(username, generation)
         if (response.status === 401) {
             this.invalidAccess.set(username, tokens.access)
             this.statuses.set(username, 'expired')
@@ -95,6 +120,7 @@ export class CampusAuthService {
     private async load(username: string): Promise<Tokens | null> {
         const cached = this.tokens.get(username)
         if (cached) return cached
+        const generation = this.generation(username)
         const encrypted = this.db.getCampusTokens(username)
         if (!encrypted) {
             this.statuses.set(username, 'missing')
@@ -105,10 +131,14 @@ export class CampusAuthService {
             const tokens = readCampusTokens(JSON.parse(await this.secrets.decrypt(encrypted)))
             if (!tokens) throw new Error('invalid tokens')
             if (!tokens.email) tokens.email = tokenEmail(tokens.access)
+            this.assertCurrent(username, generation)
+            const loaded = this.tokens.get(username)
+            if (loaded) return loaded
             this.tokens.set(username, tokens)
             this.statuses.set(username, this.invalidAccess.get(username) === tokens.access ? 'expired' : 'configured')
             return tokens
         } catch {
+            if (this.generation(username) !== generation) return this.tokens.get(username) ?? null
             this.statuses.set(username, 'invalid')
             return null
         }
@@ -122,7 +152,7 @@ export class CampusAuthService {
         return new ResearchError('campus_login_required', '尚未登录树洞，请在旦挞设置中登录。', 503)
     }
 
-    private async refresh(username: string, failedAccess: string): Promise<void> {
+    private async refresh(username: string, failedAccess: string, generation: number, signal?: AbortSignal): Promise<void> {
         const current = this.tokens.get(username)
         if (!current || current.access !== failedAccess) return
         const running = this.refreshing.get(username)
@@ -130,17 +160,20 @@ export class CampusAuthService {
             await running
             return
         }
-        const task = this.refreshLocked(username, failedAccess).finally(() => this.refreshing.delete(username))
+        const task = this.refreshLocked(username, failedAccess, generation, signal).finally(() => {
+            if (this.refreshing.get(username) === task) this.refreshing.delete(username)
+        })
         this.refreshing.set(username, task)
         await task
     }
 
-    private async refreshLocked(username: string, failedAccess: string): Promise<void> {
+    private async refreshLocked(username: string, failedAccess: string, generation: number, signal?: AbortSignal): Promise<void> {
         const current = this.tokens.get(username)
         if (!current || current.access !== failedAccess) return
         const response = await this.fetchOnce(`${AUTH_BASE}/refresh`, {
-            method: 'POST', headers: {Authorization: `Bearer ${current.refresh}`}
+            method: 'POST', headers: {Authorization: `Bearer ${current.refresh}`}, signal
         }, 15_000)
+        this.assertCurrent(username, generation)
         if (response.status === 401 || response.status === 403) {
             this.invalidAccess.set(username, current.access)
             this.statuses.set(username, 'expired')
@@ -148,7 +181,7 @@ export class CampusAuthService {
         }
         if (!response.ok) throw new ResearchError('campus_upstream_error', '树洞服务返回异常状态。', 502)
         const tokens = await this.parseTokens(response)
-        await this.persist(username, {...tokens, email: current.email})
+        await this.persist(username, {...tokens, email: current.email}, generation)
     }
 
     private async parseTokens(response: Response): Promise<Tokens> {
@@ -157,9 +190,11 @@ export class CampusAuthService {
         return tokens
     }
 
-    private async persist(username: string, tokens: Tokens): Promise<void> {
+    private async persist(username: string, tokens: Tokens, generation: number): Promise<void> {
         if (!await this.secrets.available()) throw new ResearchError('campus_credentials_write_failed', '系统安全存储不可用，无法保存树洞凭据。', 503)
-        this.db.saveCampusTokens(username, await this.secrets.encrypt(JSON.stringify(tokens)))
+        const encrypted = await this.secrets.encrypt(JSON.stringify(tokens))
+        this.assertCurrent(username, generation)
+        this.db.saveCampusTokens(username, encrypted)
         this.tokens.set(username, tokens)
         this.statuses.set(username, 'configured')
     }
@@ -168,9 +203,10 @@ export class CampusAuthService {
         try {
             return await this.request(url, {
                 ...init, redirect: 'error', cache: 'no-store',
-                signal: AbortSignal.timeout(timeoutMs),
+                signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
             })
         } catch (error) {
+            init.signal?.throwIfAborted()
             if (error instanceof Error && error.name === 'TimeoutError') {
                 throw new ResearchError('campus_timeout', '树洞请求超时，请稍后重试。', 504)
             }
@@ -184,7 +220,7 @@ export class CampusAuthService {
             if (![429, 502, 503, 504].includes(response.status) || attempt >= 1) return response
             const retryAfter = response.headers.get('retry-after')
             if (retryAfter !== null && (!/^\d+$/.test(retryAfter) || Number(retryAfter) > 1)) return response
-            await new Promise(resolve => setTimeout(resolve, 1000))
+            await delay(1000, undefined, {signal: init.signal ?? undefined})
         }
     }
 }

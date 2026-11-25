@@ -16,7 +16,7 @@ import {
 } from '../shared/notification-settings'
 import type {Notice, NoticeList, NoticeRef, NoticeRelevanceChoice, ParsedNotice} from '../shared/notices'
 import type {Timetable} from '../shared/timetable'
-import type {CalendarEvent} from '../shared/calendar'
+import {type CalendarEvent, weekStartDate} from '../shared/calendar'
 import {type CalendarReminderMinutes, isCalendarReminderMinutes} from '../shared/calendar-reminders'
 import type {Todo} from '../shared/todos'
 import {defaultSources, type MessageSource, type SourceId} from '../shared/sources.ts'
@@ -75,17 +75,15 @@ export class AppDatabase {
             CREATE TABLE IF NOT EXISTS llm_usage (
                 id INTEGER PRIMARY KEY, username TEXT NOT NULL, turn_id TEXT NOT NULL,
                 model TEXT NOT NULL, prompt_tokens INTEGER, completion_tokens INTEGER,
-                cache_hit_tokens INTEGER, cache_miss_tokens INTEGER,
                 elapsed_ms INTEGER NOT NULL, created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS llm_usage_owner_time ON llm_usage (username, created_at);
             CREATE TABLE IF NOT EXISTS chat_traces (
                 username TEXT NOT NULL, turn_id TEXT NOT NULL, event_id TEXT NOT NULL,
-                position INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT '', data TEXT NOT NULL, details TEXT,
+                position INTEGER NOT NULL, data TEXT NOT NULL, details TEXT,
                 PRIMARY KEY (username, turn_id, event_id)
             );
-            CREATE INDEX IF NOT EXISTS chat_traces_kind ON chat_traces (username, kind);
-            CREATE TABLE IF NOT EXISTS chat_trace_stats (username TEXT PRIMARY KEY, steps INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS chat_traces_event_kind ON chat_traces (username, json_extract(data, '$.kind'));
             CREATE TABLE IF NOT EXISTS chat_payloads (
                 username TEXT NOT NULL, hash TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (username, hash)
             );
@@ -194,6 +192,14 @@ export class AppDatabase {
                 PRIMARY KEY (source_id, url, cache_key),
                 FOREIGN KEY (source_id, url) REFERENCES notices (source_id, url) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS notice_body_fingerprints (
+                source_id TEXT NOT NULL, url TEXT NOT NULL, digest TEXT NOT NULL, checked_at INTEGER NOT NULL,
+                PRIMARY KEY (source_id, url),
+                FOREIGN KEY (source_id, url) REFERENCES notices (source_id, url) ON DELETE CASCADE
+            );
+            CREATE TRIGGER IF NOT EXISTS notice_metadata_changed AFTER UPDATE OF title, published ON notices
+                WHEN OLD.title <> NEW.title OR OLD.published <> NEW.published
+                BEGIN DELETE FROM notice_summary_cache WHERE source_id = NEW.source_id AND url = NEW.url; END;
             CREATE TABLE IF NOT EXISTS research_settings (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 search_depth TEXT NOT NULL,
@@ -297,7 +303,7 @@ export class AppDatabase {
     deleteChatSession(username: string, id: string) {
         const session = this.getChatSession(username, id)
         this.transaction(() => {
-            for (const table of ['chat_conversations', 'chat_compactions', 'chat_traces', 'chat_trace_stats',
+            for (const table of ['chat_conversations', 'chat_compactions', 'chat_traces',
                 'chat_payloads', 'chat_running_turns', 'chat_context_updates', 'research_sources', 'llm_usage']) {
                 this.db.prepare(`DELETE FROM ${table} WHERE username = ?`).run(session.storageKey)
             }
@@ -311,20 +317,10 @@ export class AppDatabase {
         const {details, ...data} = event
         const serialized = JSON.stringify(data)
         const detailJson = details === undefined ? null : JSON.stringify(details)
-        const inserted = this.db.prepare(`INSERT INTO chat_traces (username, turn_id, event_id, position, kind, data, details)
-                                          VALUES (?, ?, ?, ?, ?, ?,
-                                                  ?) ON CONFLICT(username, turn_id, event_id) DO NOTHING`)
-            .run(username, turnId, event.id, position, event.kind, serialized, detailJson)
-        if (Number(inserted.changes) > 0) this.bumpSteps(username, event.kind === 'tool' ? 1 : 0)
-        this.db.prepare(`UPDATE chat_traces
-                         SET position = ?,
-                             kind     = ?,
-                             data     = ?,
-                             details  = COALESCE(?, details)
-                         WHERE username = ?
-                           AND turn_id = ?
-                           AND event_id = ?`)
-            .run(position, event.kind, serialized, detailJson, username, turnId, event.id)
+        this.db.prepare(`INSERT INTO chat_traces (username, turn_id, event_id, position, data, details)
+            VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(username, turn_id, event_id) DO UPDATE SET
+            position = excluded.position, data = excluded.data, details = COALESCE(excluded.details, chat_traces.details)`)
+            .run(username, turnId, event.id, position, serialized, detailJson)
     }
 
     saveChatTrace(username: string, turnId: string, events: ChatTraceEvent[]) {
@@ -412,16 +408,11 @@ export class AppDatabase {
 
     clearChatTrace(username: string) {
         this.db.prepare('DELETE FROM chat_traces WHERE username = ?').run(username)
-        this.db.prepare('DELETE FROM chat_trace_stats WHERE username = ?').run(username)
         this.db.prepare('DELETE FROM chat_payloads WHERE username = ?').run(username)
     }
 
     removeChatTrace(username: string, turnId: string) {
-        this.db.prepare('DELETE FROM chat_traces WHERE username = ? AND turn_id = ?').run(username, turnId)
-        const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND kind = 'tool'").get(username)!
-        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps)
-                         VALUES (?, ?) ON CONFLICT(username) DO
-        UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
+        this.db.prepare("DELETE FROM chat_traces WHERE username = ? AND turn_id = ? AND json_extract(data, '$.kind') <> 'usage'").run(username, turnId)
     }
 
     pruneChatTrace(username: string, keepTurns?: number) {
@@ -429,16 +420,13 @@ export class AppDatabase {
         this.db.prepare(`DELETE
                          FROM chat_traces
                          WHERE username = ?
+                           AND json_extract(data, '$.kind') <> 'usage'
                            AND turn_id NOT IN (SELECT turn_id
                                                FROM (SELECT turn_id, MAX(rowid) AS last
                                                      FROM chat_traces
                                                      WHERE username = ?
                                                      GROUP BY turn_id
                                                      ORDER BY last DESC LIMIT ?))`).run(username, username, keepTurns)
-        const steps = this.db.prepare("SELECT COUNT(*) AS n FROM chat_traces WHERE username = ? AND kind = 'tool'").get(username)!
-        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps)
-                         VALUES (?, ?) ON CONFLICT(username) DO
-        UPDATE SET steps = excluded.steps`).run(username, Number(steps.n))
     }
 
     saveRunningTurn(username: string, turnId: string, position: number, data: string) {
@@ -529,31 +517,28 @@ export class AppDatabase {
     }
 
     recordLlmUsage(username: string, turnId: string, model: string,
-                   usage: {
-                       promptTokens: number | null; completionTokens: number | null;
-                       cacheHitTokens?: number | null; cacheMissTokens?: number | null
-                   }, elapsedMs: number) {
-        this.db.prepare('INSERT INTO llm_usage (username, turn_id, model, prompt_tokens, completion_tokens, cache_hit_tokens, cache_miss_tokens, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(username, turnId, model, usage.promptTokens, usage.completionTokens,
-                usage.cacheHitTokens ?? null, usage.cacheMissTokens ?? null, Math.round(elapsedMs), new Date().toISOString())
+                   usage: {promptTokens: number | null; completionTokens: number | null}, elapsedMs: number) {
+        this.db.prepare('INSERT INTO llm_usage (username, turn_id, model, prompt_tokens, completion_tokens, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(username, turnId, model, usage.promptTokens, usage.completionTokens, Math.round(elapsedMs), new Date().toISOString())
     }
 
     getChatStats(username: string) {
         const usage = this.db.prepare(`SELECT COUNT(*)                            AS requests,
                                               COALESCE(SUM(prompt_tokens), 0)     AS prompt,
                                               COALESCE(SUM(completion_tokens), 0) AS completion,
-                                              COALESCE(SUM(cache_hit_tokens), 0)  AS cache_hit,
                                               COALESCE(SUM(elapsed_ms), 0)        AS elapsed
                                        FROM llm_usage
                                        WHERE username = ?`).get(username)!
         const last = this.db.prepare('SELECT prompt_tokens FROM llm_usage WHERE username = ? ORDER BY id DESC LIMIT 1').get(username)
-        const steps = this.db.prepare('SELECT steps FROM chat_trace_stats WHERE username = ?').get(username)
+        const steps = this.db.prepare("SELECT COUNT(*) AS steps FROM chat_traces WHERE username = ? AND json_extract(data, '$.kind') = 'tool'").get(username)!
+        const cache = this.db.prepare(`SELECT SUM(json_extract(details, '$.cacheHitTokens')) AS hits
+            FROM chat_traces WHERE username = ? AND json_extract(data, '$.kind') = 'usage'`).get(username)!
         const saved = this.db.prepare('SELECT data FROM chat_conversations WHERE username = ?').get(username)
         const turns = saved ? (JSON.parse(String(saved.data)) as unknown[]).length : 0
         return {
-            turns, steps: steps ? Number(steps.steps) : 0, requests: Number(usage.requests),
+            turns, steps: Number(steps.steps), requests: Number(usage.requests),
             promptTokens: Number(usage.prompt), completionTokens: Number(usage.completion),
-            cacheHitTokens: Number(usage.cache_hit), elapsedMs: Number(usage.elapsed),
+            cacheHitTokens: Number(cache.hits ?? 0), elapsedMs: Number(usage.elapsed),
             lastPromptTokens: last ? Number(last.prompt_tokens ?? 0) : 0
         }
     }
@@ -823,7 +808,9 @@ export class AppDatabase {
         const row = this.db.prepare('SELECT data FROM timetable_cache WHERE username = ? AND kind = ?').get(username, kind)
         if (!row) return null
         try {
-            return JSON.parse(String(row.data)) as Timetable
+            const timetable = JSON.parse(String(row.data)) as Timetable
+            if (timetable.startDate) timetable.startDate = weekStartDate(timetable.startDate)
+            return timetable
         } catch {
             return null
         }
@@ -954,18 +941,23 @@ export class AppDatabase {
     }
 
     getMessagePreferences(): MessagePreferences {
-        const row = this.db.prepare("SELECT value FROM preferences WHERE key = 'message_preferences'").get()
+        const row = this.db.prepare('SELECT value FROM preferences WHERE key = ?').get(this.messagePreferencesKey())
         if (!row) return emptyMessagePreferences()
         const result = validateMessagePreferences(JSON.parse(String(row.value)))
         if (!result.ok) throw new Error('Invalid saved message preferences')
         return result.data
     }
 
+    private messagePreferencesKey() {
+        const username = this.getAccount()?.username
+        return username ? `message_preferences:${username}` : 'guest_message_preferences'
+    }
+
     setMessagePreferences(input: MessagePreferences): MessagePreferences {
         const result = validateMessagePreferences(input)
         if (!result.ok) throw new Error(result.error)
-        this.db.prepare("INSERT INTO preferences (key, value) VALUES ('message_preferences', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-            .run(JSON.stringify(result.data))
+        this.db.prepare('INSERT INTO preferences (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+            .run(this.messagePreferencesKey(), JSON.stringify(result.data))
         return result.data
     }
 
@@ -982,20 +974,23 @@ export class AppDatabase {
                                       LIMIT 1`).get(username)
     }
 
-    getNotices(username = this.getAccount()?.username ?? ''): NoticeList {
+    getNotices(username = this.getAccount()?.username ?? '', summaryKey = ''): NoticeList {
         const rows = this.db.prepare(`SELECT n.url,
                                              n.title,
                                              n.published,
                                              n.source_id AS sourceId,
                                              s.name      AS sourceName,
-                                             r.url IS NOT NULL AS read
+                                             r.url IS NOT NULL AS read,
+                                             NULLIF(NULLIF(COALESCE(choice.relevance, summary.relevance), 'none'), '') AS relevance
                                       FROM notices n
                                           JOIN message_sources s
                                       ON s.id = n.source_id
                                           LEFT JOIN notice_reads r ON r.source_id = n.source_id AND r.url = n.url AND r.username = ?
+                                          LEFT JOIN notice_relevance_choices choice ON choice.source_id = n.source_id AND choice.url = n.url AND choice.username = ?
+                                          LEFT JOIN notice_summary_cache summary ON summary.source_id = n.source_id AND summary.url = n.url AND summary.cache_key = ?
                                       WHERE s.enabled = 1
                                       ORDER BY n.published
-                                          DESC, n.title, n.source_id`).all(username) as unknown as (Omit<Notice, 'read'> & {
+                                          DESC, n.title, n.source_id`).all(username, username, summaryKey) as unknown as (Omit<Notice, 'read'> & {
             read: number
         })[]
         const items = rows.map(row => ({...row, read: !!row.read}))
@@ -1056,19 +1051,36 @@ export class AppDatabase {
             .run(username, sourceId, url, relevance)
     }
 
+    noticeBodyDigest(ref: NoticeRef): string | undefined {
+        return this.db.prepare('SELECT digest FROM notice_body_fingerprints WHERE source_id = ? AND url = ?').get(ref.sourceId, ref.url)?.digest as string | undefined
+    }
+
+    observeNoticeBody(ref: NoticeRef, digest: string) {
+        this.transaction(() => {
+            if (this.noticeBodyDigest(ref) !== digest) {
+                this.db.prepare('DELETE FROM notice_summary_cache WHERE source_id = ? AND url = ?').run(ref.sourceId, ref.url)
+            }
+            this.db.prepare(`INSERT INTO notice_body_fingerprints (source_id, url, digest, checked_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(source_id, url) DO UPDATE SET digest = excluded.digest, checked_at = excluded.checked_at`)
+                .run(ref.sourceId, ref.url, digest, Date.now())
+        })
+    }
+
     getNoticeSummary(sourceId: string, url: string, cacheKey: string): {
         model: string;
         summary: string;
+        checkedAt: number;
         relevance: string
     } | null {
-        return this.db.prepare(`SELECT model, summary, relevance
-                                FROM notice_summary_cache
+        return this.db.prepare(`SELECT model, summary, relevance, COALESCE(checked_at, 0) AS checkedAt
+                                FROM notice_summary_cache LEFT JOIN notice_body_fingerprints USING (source_id, url)
                                 WHERE source_id = ?
                                   AND url = ?
                                   AND cache_key = ?`)
             .get(sourceId, url, cacheKey) as unknown as {
             model: string;
             summary: string;
+            checkedAt: number;
             relevance: string
         } ?? null
     }
@@ -1148,7 +1160,7 @@ export class AppDatabase {
     }
 
     setSourceEnabled(id: SourceId, enabled: boolean): MessageSource[] {
-        this.db.prepare('UPDATE message_sources SET enabled = ? WHERE id = ?').run(Number(enabled), id)
+        this.db.prepare('UPDATE message_sources SET enabled = ?, revision = revision + 1, last_error = NULL WHERE id = ? AND enabled <> ?').run(Number(enabled), id, Number(enabled))
         return this.getSources()
     }
 
@@ -1159,13 +1171,6 @@ export class AppDatabase {
 
     close() {
         this.db.close()
-    }
-
-    private bumpSteps(username: string, delta: number) {
-        if (!delta) return
-        this.db.prepare(`INSERT INTO chat_trace_stats (username, steps)
-                         VALUES (?, ?) ON CONFLICT(username) DO
-        UPDATE SET steps = steps + excluded.steps`).run(username, delta)
     }
 
     private initializeSources() {

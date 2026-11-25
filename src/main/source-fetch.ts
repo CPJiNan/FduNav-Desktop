@@ -1,6 +1,7 @@
 import {lookup} from 'node:dns/promises'
 import {request} from 'node:https'
 import {isIP} from 'node:net'
+import {awaitWithAbort} from './abortable.ts'
 import {sourceUrl} from '../shared/sources.ts'
 
 export interface SourcePage {
@@ -20,8 +21,8 @@ export function isPublicAddress(address: string): boolean {
     return isIP(address) === 6 && /^[23]/i.test(address) && !/^2001:db8:/i.test(address)
 }
 
-export async function requestSourcePage(value: string, timeoutMs: number): Promise<SourcePage> {
-    const {bytes, type, url} = await requestSource(value, 'page', undefined, timeoutMs)
+export async function requestSourcePage(value: string, timeoutMs: number, signal?: AbortSignal): Promise<SourcePage> {
+    const {bytes, type, url} = await requestSource(value, 'page', undefined, timeoutMs, signal)
     const charset = /charset\s*=\s*["']?([\w-]+)/i.exec(type)?.[1] ??
         /charset\s*=\s*["']?([\w-]+)/i.exec(bytes.subarray(0, 2048).toString('ascii'))?.[1] ?? 'utf-8'
     try {
@@ -42,12 +43,14 @@ export async function requestSourceImage(value: string, referer: string): Promis
     return bytes
 }
 
-async function requestSource(value: string, kind: 'page' | 'pdf' | 'image', referer: string | undefined, timeoutMs: number) {
+async function requestSource(value: string, kind: 'page' | 'pdf' | 'image', referer: string | undefined, timeoutMs: number, external?: AbortSignal) {
     let url = sourceUrl(value)
-    const signal = AbortSignal.timeout(timeoutMs)
+    const timeout = AbortSignal.timeout(timeoutMs)
+    const signal = external ? AbortSignal.any([external, timeout]) : timeout
     for (let redirects = 0; redirects < 6; redirects++) {
         const parsed = new URL(url)
-        const addresses = await lookup(parsed.hostname, {all: true})
+        signal.throwIfAborted()
+        const addresses = await awaitWithAbort(lookup(parsed.hostname, {all: true}), signal)
         if (!addresses.length || addresses.some(record => !isPublicAddress(record.address))) {
             throw new Error('来源网址未指向公开网站。')
         }

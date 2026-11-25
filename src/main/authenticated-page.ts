@@ -206,10 +206,14 @@ export async function readMyFudanPage(jar: CookieJar | null): Promise<string | n
         while (Date.now() < deadline) {
             if (window.isDestroyed()) return null
             const current = window.webContents.getURL()
-            if (isAuthUrl(current)) return null
-            if (current && !window.webContents.isLoading() && new URL(current).hostname === 'my.fudan.edu.cn') break
+            if (current && !window.webContents.isLoading()) {
+                if (isAuthUrl(current)) return null
+                if (new URL(current).origin === new URL(url).origin) break
+            }
             await wait(250)
         }
+        const loaded = window.webContents.getURL()
+        if (!loaded || window.webContents.isLoading() || new URL(loaded).hostname !== 'my.fudan.edu.cn') return null
         await wait(1500)
         const clicked = await window.webContents.executeJavaScript(`(() => {
             const target = [...document.querySelectorAll('a,button')]
@@ -218,8 +222,13 @@ export async function readMyFudanPage(jar: CookieJar | null): Promise<string | n
             target.click()
             return true
         })()`).catch(() => false)
-        if (clicked) await wait(1500)
-        if (window.isDestroyed() || isAuthUrl(window.webContents.getURL())) return null
+        if (clicked) {
+            await wait(1500)
+            while (!window.isDestroyed() && window.webContents.isLoading() && Date.now() < deadline) await wait(250)
+        }
+        if (window.isDestroyed()) return null
+        const profileUrl = window.webContents.getURL()
+        if (!profileUrl || new URL(profileUrl).origin !== new URL(url).origin || window.webContents.isLoading()) return null
         const html: unknown = await window.webContents.executeJavaScript('document.documentElement.outerHTML')
         return typeof html === 'string' ? html : null
     } catch {
@@ -269,8 +278,8 @@ export async function readExamPage(jar: CookieJar | null): Promise<string | null
                 }
                 return null
             })()`).catch(() => null)
-            if (typeof html === 'string' && /\d{4}[-/.年]\d{1,2}/.test(html) &&
-                (html.includes('考试') || html.includes('考场'))) {
+            if (typeof html === 'string' && (html.includes('考试') || html.includes('考场')) &&
+                (/\d{4}[-/.年]\d{1,2}|已取消|已撤销/.test(html) || /(?:共|总计)\s*0\s*(?:条|场)/.test(html))) {
                 return html
             }
             await wait(500)

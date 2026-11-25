@@ -2,10 +2,9 @@ import {constants, createPublicKey, publicEncrypt} from 'node:crypto'
 import {setTimeout as delay} from 'node:timers/promises'
 import {load} from 'cheerio'
 import {CookieJar} from 'tough-cookie'
-import {parseNotices} from './notice-parser.ts'
 
 const ID_BASE = 'https://id.fudan.edu.cn'
-const LIST_URL = 'https://jwc.fudan.edu.cn/9397/list.htm'
+const accountPortal = 'https://my.fudan.edu.cn/'
 
 export class AuthError extends Error {
 }
@@ -162,16 +161,10 @@ export class FudanTransport implements Transport {
 }
 
 export async function findLogin(transport: Transport) {
-    const list = await transport.request(LIST_URL)
-    checkPage(list.text)
-    if (isAuthUrl(list.url)) return {loginUrl: list.url, target: LIST_URL}
-    const targets = parseNotices(list.text, list.url, 'jwc').slice(0, 8).map(notice => notice.url)
-    for (const target of targets) {
-        const page = await transport.request(target)
-        checkPage(page.text)
-        if (isAuthUrl(page.url)) return {loginUrl: page.url, target}
-    }
-    throw new AuthError('未找到需要认证的教务通知，无法建立登录流程。请稍后重试。')
+    const page = await transport.request(accountPortal)
+    checkPage(page.text)
+    if (isAuthUrl(page.url)) return {loginUrl: page.url, target: accountPortal}
+    throw new AuthError('学校门户未跳转到统一身份认证，请稍后重试。')
 }
 
 export async function authenticate(transport: Transport, username: string, password: string) {
@@ -212,17 +205,16 @@ export async function authenticate(transport: Transport, username: string, passw
         throw error
     }
     await transport.request(ticket)
-    if (!await verifySession(transport, target)) throw additionalAuthentication()
+    if (!await verifySession(transport)) throw additionalAuthentication()
     return target
 }
 
-export async function verifySession(transport: Transport, target: string) {
-    const page = await transport.request(validateUrl(target))
+export async function verifySession(transport: Transport) {
+    const page = await transport.request(accountPortal)
     checkPage(page.text)
     if (isAuthUrl(page.url)) return false
-    if (new URL(page.url).hostname !== 'jwc.fudan.edu.cn') throw new AuthError('会话验证返回了非预期页面。')
-    const $ = load(page.text)
-    if (!$('.wp_articlecontent, #vsb_content, .v_news_content, article, a[href*="page.htm"]').length) {
+    if (new URL(page.url).origin !== new URL(accountPortal).origin) throw new AuthError('会话验证返回了非预期页面。')
+    if (!/<(?:html|body)\b/i.test(page.text)) {
         throw new AuthError('无法确认目标页面权限，学校页面可能已更新。')
     }
     return true

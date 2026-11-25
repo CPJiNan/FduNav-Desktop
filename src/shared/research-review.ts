@@ -22,6 +22,21 @@ export function retrievalForbidden(question: string): boolean {
     return /(?:不要|不再|不用|无需|禁止)(?:再)?(?:搜索|检索|查找|查阅)|只(?:依据|根据|用)(?:已有|现有)/.test(question)
 }
 
+export function requestedReads(question: string) {
+    const reads = new Map<ResearchToolName, Set<string>>()
+    const text = question.replace(/[“「『].*?[”」』]/g, '')
+    for (const match of text.matchAll(/(?:^|请|并|再|先|帮我|，|。|；|：)(?:读取|阅读|读一下|读一读)\s*([^。！？；]{0,120})/g)) {
+        const target = match[1].split(/(?:然后|之后|并且|并请|并(?:搜索|检索|总结|比较))/)[0]
+        const web = [...target.matchAll(/\b(W[1-9]\d{0,5})\b/gi)].map(item => item[1].toUpperCase())
+        const campus = [...target.matchAll(/(?:洞号\s*#?\s*|#\s*)([1-9]\d*)|\b(C[1-9]\d{0,5})\b/gi)].map(item => item[1] ?? item[2].toUpperCase())
+        if (campus.length || /帖子|树洞|上下文/.test(target)) reads.set('read_campus_thread', new Set([...(reads.get('read_campus_thread') ?? []), ...campus]))
+        if (web.length || /网页|页面|官网/.test(target) || (!campus.length && !/帖子|树洞|上下文/.test(target) && /正文/.test(target))) {
+            reads.set('read_web', new Set([...(reads.get('read_web') ?? []), ...web]))
+        }
+    }
+    return reads
+}
+
 export function requestedActions(question: string): Set<ResearchToolName> {
     if (retrievalForbidden(question)) return new Set()
     const text = question.replace(/[“「『].*?[”」』]/g, '')
@@ -31,11 +46,7 @@ export function requestedActions(question: string): Set<ResearchToolName> {
         if (/树洞|帖子/.test(target)) actions.add('search_campus_posts')
         if (/官网|官方|网页|公开/.test(target) || !/树洞|帖子/.test(target)) actions.add('search_web')
     }
-    for (const match of text.matchAll(/(?:^|请|并|再|先|，|。|；|：)(?:读取|阅读|读一下|读一读)([^。！？；]{0,60})/g)) {
-        const target = match[1]
-        if (/帖子|树洞|上下文/.test(target)) actions.add('read_campus_thread')
-        else if (/网页|正文|页面|官网/.test(target)) actions.add('read_web')
-    }
+    for (const tool of requestedReads(text).keys()) actions.add(tool)
     if (text.includes('只用公开网页') || /(?:对照|比较)[^。！？；]{0,30}官方/.test(text)) actions.add('search_web')
     return actions
 }

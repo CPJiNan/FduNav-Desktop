@@ -4,6 +4,7 @@ import {
     answerIssues,
     factCheckErrors,
     fallbackAnswer,
+    requestedReads,
     type ReviewAudit,
     shortFailure,
     validateAudit
@@ -78,7 +79,7 @@ function readEnvelope(content: string): {
     }
 }
 
-export function buildReviewPayload(input: ReviewInput): Record<string, unknown> {
+export function buildReviewPayload(input: ReviewInput) {
     const evidence = new Map<string, Record<string, unknown>>()
     for (const source of input.sources) evidence.set(source.id, {...modelSourceView(source)})
     const toolNames = new Map<string, string>()
@@ -137,7 +138,19 @@ export function buildReviewPayload(input: ReviewInput): Record<string, unknown> 
             })
         }
     }
-    const missingActions = input.requiredActions.filter(action => !actions.some(item => item.tool === action))
+    const reads = requestedReads(input.question)
+    const missingActions = input.requiredActions.flatMap(tool => {
+        const completed = actions.filter(action => action.tool === tool && action.status === 'complete')
+        const targets = tool === 'read_web' || tool === 'read_campus_thread' ? reads.get(tool) : undefined
+        if (!targets?.size) return completed.length ? [] : [tool]
+        return [...targets].filter(target => {
+            const holeId = target.startsWith('C') ? input.sources.find(source => source.id === target)?.holeId : target
+            return !completed.some(action => {
+                const args = action.arguments as {sourceId?: string; holeId?: number} | null
+                return tool === 'read_web' ? args?.sourceId === target : holeId != null && String(args?.holeId) === String(holeId)
+            })
+        }).map(target => `${tool}(${target})`)
+    })
     return {
         question: input.question,
         userTurns: input.userTurns,
@@ -167,9 +180,8 @@ function parseAudit(text: string): ReviewAudit | null {
     }
 }
 
-export async function reviewDraft(input: ReviewInput, complete: ReviewComplete): Promise<ReviewOutcome> {
+export async function reviewDraft(input: ReviewInput, payload: ReturnType<typeof buildReviewPayload>, complete: ReviewComplete): Promise<ReviewOutcome> {
     const warnings: string[] = []
-    const payload = buildReviewPayload(input)
     let audit: ReviewAudit | null = null
     let formatError: string | null = null
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -189,10 +201,9 @@ export async function reviewDraft(input: ReviewInput, complete: ReviewComplete):
         return {answer: input.draft, reviewed: false, warnings, issues: []}
     }
     const corrections = [...audit.corrections]
-    const missingActions = (payload.missingActions as string[]) ?? []
+    const missingActions = payload.missingActions
     if (missingActions.length) {
         corrections.push(`本轮未能执行用户明确要求的操作：${missingActions.join(', ')}。请在回答中说明限制，不要声称已检索或读取。`)
-        warnings.push(`未能执行要求的检索或读取：${missingActions.join(', ')}。`)
     }
     const factErrors = factCheckErrors(audit, new Map(input.sources.map(source => [source.id, source])), input.draft)
     if (factErrors.length) {

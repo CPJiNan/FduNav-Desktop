@@ -650,7 +650,7 @@ function SourcesPanel({sources, selected, onClose, onClearSelection}: {
                 <p>{source.snippet}</p>
                 {source.source === 'web'
                     ?
-                    <small>{source.pageRead ? '已读取正文' : '搜索摘要'}{source.truncated ? ' · 内容已截断' : ''}</small>
+                    <small>{source.pageRead ? '已读取正文' : '搜索摘要'}{(source.pageRead ? source.pageTruncated : source.truncated) ? ' · 内容已截断' : ''}</small>
                     : source.truncated && <small>内容已截断</small>}
             </article>)}
         </div>

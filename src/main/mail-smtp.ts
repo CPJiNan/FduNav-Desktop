@@ -67,8 +67,10 @@ export async function prepareMailMessage(account: StoredMailAccount, draft: Mail
 }
 
 export async function deliverMail(account: StoredMailAccount, message: Awaited<ReturnType<typeof prepareMailMessage>>, signal: AbortSignal, factory: SmtpFactory = smtpFactory) {
-    signal.throwIfAborted()
+    if (signal.aborted) throw new MailError('transient', '邮件尚未提交，发送请求已取消。')
     const transport = factory(smtpConnectionOptions(account))
+    const abort = () => transport.close()
+    signal.addEventListener('abort', abort, {once: true})
     try {
         const result = await transport.sendMail({raw: message.raw, envelope: message.envelope})
         if (!result.accepted.length) throw new MailError('transient', '发信服务器未接受任何收件人，邮件未发出。')
@@ -78,6 +80,7 @@ export async function deliverMail(account: StoredMailAccount, message: Awaited<R
         if (error instanceof MailError || /^(?:EAUTH|EENVELOPE|EDNS)$/.test(v.code ?? '') || (Number.isInteger(v.responseCode) && v.responseCode! >= 400 && v.responseCode! <= 599)) throw safeMailError(error, '发送邮件')
         throw new MailError('send_unknown', '发送结果尚未确认，请先检查“已发送”，不要重复发送。')
     } finally {
+        signal.removeEventListener('abort', abort)
         transport.close()
     }
 }

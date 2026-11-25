@@ -5,6 +5,13 @@ import {calendarReminderOptions} from '../../shared/calendar-reminders'
 import {Icon} from './Icon'
 
 
+function eventTime(event: CalendarEventInput) {
+    const sameDay = event.startDate === event.endDate
+    if (event.allDay) return sameDay ? `${event.startDate} 全天` : `${event.startDate} — ${event.endDate} 全天`
+    const end = sameDay ? event.endTime : `${event.endDate} ${event.endTime}`
+    return `${event.startDate} ${event.startTime} — ${end}`
+}
+
 function factRows(value: CalendarEventInput | TodoInput) {
     const todo = 'dueDate' in value
     const reminder = calendarReminderOptions.find(item => item.value === value.reminderMinutes)?.label ?? '无'
@@ -14,7 +21,7 @@ function factRows(value: CalendarEventInput | TodoInput) {
             <dd>{value.dueDate ? `${value.dueDate} ${value.dueTime}` : '无截止日期'}</dd>
         </> : <>
             <dt>时间</dt>
-            <dd>{value.startDate} {value.allDay ? '全天' : `${value.startTime} — ${value.endTime}`}</dd>
+            <dd>{eventTime(value)}</dd>
             <dt>地点</dt>
             <dd>{value.location || '无'}</dd>
         </>}

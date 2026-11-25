@@ -112,7 +112,7 @@ export class CampusResearchService {
     }
 
     async searchPosts(username: string, query: string, offset: number, limit: number,
-                      budget: CampusBudget): Promise<CampusPage> {
+                      budget: CampusBudget, signal?: AbortSignal): Promise<CampusPage> {
         const text = query.trim()
         if (!text || text.length > 500) throw new ResearchError('invalid_args', '搜索词须为 1–500 个字符。', 400)
         const range = this.range(offset, limit)
@@ -121,21 +121,21 @@ export class CampusResearchService {
             search: text,
             offset: range.offset,
             size: range.limit
-        })
+        }, signal)
         const floors = await this.floors(response)
         return this.page(floors, range.offset, range.limit, `search:${text.toLocaleLowerCase()}`, budget)
     }
 
     async readThread(username: string, holeId: number, offset: number, limit: number,
-                     budget: CampusBudget): Promise<CampusPage> {
+                     budget: CampusBudget, signal?: AbortSignal): Promise<CampusPage> {
         if (!positiveInteger(holeId)) throw new ResearchError('invalid_args', '洞号无效。', 400)
         const range = this.range(offset, limit)
         budget.consume()
-        const detail = threadRecord(await this.json(await this.get(username, `/holes/${holeId}`, undefined)))
+        const detail = threadRecord(await this.json(await this.get(username, `/holes/${holeId}`, undefined, signal)))
         if (!detail || detail.id !== holeId) {
             throw new ResearchError('campus_invalid_response', '树洞返回了不匹配的帖子。', 502)
         }
-        const response = await this.get(username, `/holes/${holeId}/floors`, {offset: range.offset, size: range.limit})
+        const response = await this.get(username, `/holes/${holeId}/floors`, {offset: range.offset, size: range.limit}, signal)
         return this.page(await this.floors(response), range.offset, range.limit, `thread:${holeId}`, budget, detail)
     }
 
@@ -163,9 +163,9 @@ export class CampusResearchService {
         }
     }
 
-    private async get(username: string, path: string, params?: Record<string, string | number>): Promise<Response> {
+    private async get(username: string, path: string, params: Record<string, string | number> | undefined, signal?: AbortSignal): Promise<Response> {
         const {timeoutMs} = this.settings()
-        const response = await this.auth.get(username, path, params, timeoutMs)
+        const response = await this.auth.get(username, path, params, timeoutMs, signal)
         if (response.status >= 200 && response.status < 300) return response
         const errors: Record<number, [string, string, number]> = {
             401: ['campus_auth_failed', '树洞认证已失效，请重新登录。', 401],
