@@ -177,7 +177,7 @@ html:has(.mail-connection-dialog[open]) {
 .mail-agent-consent input {
     width: 16px;
     height: 16px;
-    accent-color: var(--color-action);
+    accent-color: var(--color-accent);
     flex-shrink: 0;
 }
 

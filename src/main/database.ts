@@ -517,7 +517,7 @@ export class AppDatabase {
     }
 
     recordLlmUsage(username: string, turnId: string, model: string,
-                   usage: {promptTokens: number | null; completionTokens: number | null}, elapsedMs: number) {
+                   usage: { promptTokens: number | null; completionTokens: number | null }, elapsedMs: number) {
         this.db.prepare('INSERT INTO llm_usage (username, turn_id, model, prompt_tokens, completion_tokens, elapsed_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
             .run(username, turnId, model, usage.promptTokens, usage.completionTokens, Math.round(elapsedMs), new Date().toISOString())
     }
@@ -948,11 +948,6 @@ export class AppDatabase {
         return result.data
     }
 
-    private messagePreferencesKey() {
-        const username = this.getAccount()?.username
-        return username ? `message_preferences:${username}` : 'guest_message_preferences'
-    }
-
     setMessagePreferences(input: MessagePreferences): MessagePreferences {
         const result = validateMessagePreferences(input)
         if (!result.ok) throw new Error(result.error)
@@ -1171,6 +1166,11 @@ export class AppDatabase {
 
     close() {
         this.db.close()
+    }
+
+    private messagePreferencesKey() {
+        const username = this.getAccount()?.username
+        return username ? `message_preferences:${username}` : 'guest_message_preferences'
     }
 
     private initializeSources() {

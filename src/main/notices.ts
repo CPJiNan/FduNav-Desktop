@@ -440,7 +440,8 @@ export function registerNoticeHandlers(db: AppDatabase, accounts: AccountService
         if (source?.enabled && source.revision !== previous?.revision) {
             void refreshNotices(source).then(() => {
                 for (const sender of listSubscribers) if (!sender.isDestroyed()) sender.send('notices:changed')
-            }).catch(() => {})
+            }).catch(() => {
+            })
         }
         publishUnreadState()
         return sources

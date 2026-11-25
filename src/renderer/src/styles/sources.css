@@ -130,7 +130,7 @@
 .source-enabled input {
     width: 1rem;
     height: 1rem;
-    accent-color: var(--color-action);
+    accent-color: var(--color-accent);
 }
 
 .source-failed {

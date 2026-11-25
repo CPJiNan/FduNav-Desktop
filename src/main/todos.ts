@@ -111,10 +111,12 @@ export function registerTodoHandlers(db: AppDatabase, accounts: AccountService,
     }
 
     handle('todos:remove', remove)
+
     function restore(username: string, todo: import('../shared/todos').Todo) {
         if (db.getTodo(username, todo.id)) throw new TodoError('待办已存在，无法恢复。')
         db.saveTodo(username, todo)
         db.afterCommit(() => reminders.changed(username, todo.id))
     }
+
     return {save, remove, restore}
 }

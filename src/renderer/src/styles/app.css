@@ -557,9 +557,9 @@ h2 {
 }
 
 .is-selected .radio-indicator {
-    background: var(--color-action);
-    border-color: var(--color-action);
-    color: var(--color-on-action);
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-on-accent);
 }
 
 .radio-indicator .icon {

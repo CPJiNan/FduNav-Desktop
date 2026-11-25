@@ -79,7 +79,7 @@ export function parseExamPage(html: string) {
     })
     const total = /(?:本学期|当前学期)(?:的)?全部考试(?:安排)?[\s，,:：]*(?:共|总计)\s*(\d+)\s*(?:条|场)/.exec($.root().text())
     const completeTerm = selectedTerm && total && Number(total[1]) === exams.length && rowCount === exams.length &&
-        exams.every(exam => exam.term === selectedTerm) ? selectedTerm : null
+    exams.every(exam => exam.term === selectedTerm) ? selectedTerm : null
     return {exams, completeTerm}
 }
 
@@ -143,9 +143,11 @@ export function reconcileExams({exams, completeTerm}: ReturnType<typeof parseExa
             added.push(item)
         } else {
             const title = current.exam && current.title === `${current.exam.course}考试` ? item.title : current.title
-            const next = {...current, title, startDate: item.startDate, endDate: item.endDate, startTime: item.startTime,
+            const next = {
+                ...current, title, startDate: item.startDate, endDate: item.endDate, startTime: item.startTime,
                 endTime: item.endTime, location: item.location, exam: item.exam,
-                notes: current.notes === current.exam?.notes ? item.notes : current.notes}
+                notes: current.notes === current.exam?.notes ? item.notes : current.notes
+            }
             if (JSON.stringify(current) !== JSON.stringify(next)) updated.push(next)
         }
     }

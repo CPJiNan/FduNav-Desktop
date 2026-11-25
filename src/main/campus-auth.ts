@@ -34,21 +34,6 @@ export class CampusAuthService {
 
     private generations = new Map<string, number>()
 
-    private generation(username: string) {
-        return this.generations.get(username) ?? 0
-    }
-
-    private begin(username: string) {
-        const generation = this.generation(username) + 1
-        this.generations.set(username, generation)
-        this.refreshing.delete(username)
-        return generation
-    }
-
-    private assertCurrent(username: string, generation: number) {
-        if (this.generation(username) !== generation) throw new ResearchError('campus_auth_changed', '树洞账号状态已变化，请重试。', 409)
-    }
-
     constructor(private db: AppDatabase, private secrets: SecretStorage, private request: typeof fetch = fetch) {
     }
 
@@ -115,6 +100,21 @@ export class CampusAuthService {
             throw new ResearchError('campus_auth_failed', '树洞认证已失效，请重新登录。', 401)
         }
         return response
+    }
+
+    private generation(username: string) {
+        return this.generations.get(username) ?? 0
+    }
+
+    private begin(username: string) {
+        const generation = this.generation(username) + 1
+        this.generations.set(username, generation)
+        this.refreshing.delete(username)
+        return generation
+    }
+
+    private assertCurrent(username: string, generation: number) {
+        if (this.generation(username) !== generation) throw new ResearchError('campus_auth_changed', '树洞账号状态已变化，请重试。', 409)
     }
 
     private async load(username: string): Promise<Tokens | null> {

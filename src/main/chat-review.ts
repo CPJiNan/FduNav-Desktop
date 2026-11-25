@@ -146,7 +146,7 @@ export function buildReviewPayload(input: ReviewInput) {
         return [...targets].filter(target => {
             const holeId = target.startsWith('C') ? input.sources.find(source => source.id === target)?.holeId : target
             return !completed.some(action => {
-                const args = action.arguments as {sourceId?: string; holeId?: number} | null
+                const args = action.arguments as { sourceId?: string; holeId?: number } | null
                 return tool === 'read_web' ? args?.sourceId === target : holeId != null && String(args?.holeId) === String(holeId)
             })
         }).map(target => `${tool}(${target})`)

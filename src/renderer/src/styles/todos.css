@@ -346,7 +346,6 @@
     margin-bottom: var(--space-3);
     padding: .675rem;
     border-radius: var(--radius-full);
-    background: var(--panel-bg);
     color: var(--color-icon-muted);
 }
 

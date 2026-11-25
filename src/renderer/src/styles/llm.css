@@ -44,12 +44,12 @@
 }
 
 .llm-switch[aria-checked="true"] .llm-switch-track {
-    background: var(--color-action);
+    background: var(--color-accent);
 }
 
 .llm-switch[aria-checked="true"] .llm-switch-track > span {
     margin-left: auto;
-    background: var(--color-on-action);
+    background: var(--color-on-accent);
 }
 
 .llm-actions {
@@ -255,7 +255,7 @@
     width: 1rem;
     height: 1rem;
     flex-shrink: 0;
-    accent-color: var(--color-action);
+    accent-color: var(--color-accent);
 }
 
 .llm-status {

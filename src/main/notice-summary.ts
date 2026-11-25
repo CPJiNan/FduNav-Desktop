@@ -120,11 +120,6 @@ export class NoticeSummaryService {
         }
     }
 
-    private effectiveRelevance(notice: NoticeRef, username: string, predicted: NoticeRelevance | null): NoticeRelevance | null {
-        const choice = this.db.getNoticeRelevanceChoice(username, notice.sourceId, notice.url)
-        return choice === null ? predicted : choice === 'none' ? null : choice
-    }
-
     profile() {
         const account = this.db.getAccount()
         if (!account) throw new Error('请先登录。')
@@ -132,12 +127,12 @@ export class NoticeSummaryService {
         if (!checked.ok) throw new Error('请先完善消息偏好。')
         const preferences = checked.data
         const settings = this.llm.get()
-        return {preferences, settings, username: account.username, key: summaryProfileKey(preferences, settings, account.username)}
-    }
-
-    private contextFor(notice: Notice) {
-        const profile = this.profile()
-        return {...profile, notice, job: JSON.stringify([profile.key, notice.sourceId, notice.url, notice.title, notice.published])}
+        return {
+            preferences,
+            settings,
+            username: account.username,
+            key: summaryProfileKey(preferences, settings, account.username)
+        }
     }
 
     async detail(ref: NoticeRef) {
@@ -148,6 +143,20 @@ export class NoticeSummaryService {
             this.db.observeNoticeBody(ref, createHash('sha256').update(detail.content.trim()).digest('hex'))
         }
         return detail
+    }
+
+    private effectiveRelevance(notice: NoticeRef, username: string, predicted: NoticeRelevance | null): NoticeRelevance | null {
+        const choice = this.db.getNoticeRelevanceChoice(username, notice.sourceId, notice.url)
+        return choice === null ? predicted : choice === 'none' ? null : choice
+    }
+
+    private contextFor(notice: Notice) {
+        const profile = this.profile()
+        return {
+            ...profile,
+            notice,
+            job: JSON.stringify([profile.key, notice.sourceId, notice.url, notice.title, notice.published])
+        }
     }
 
     private context(ref: NoticeRef) {

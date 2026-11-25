@@ -125,11 +125,13 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
     const {db, username, sources, settings, searchApiKey, campus, campusBudget, deadline, assertCurrent} = context
     const deadlineSignal = AbortSignal.timeout(Math.max(1, Math.ceil(deadline - Date.now())))
     const signal = context.signal ? AbortSignal.any([context.signal, deadlineSignal]) : deadlineSignal
+
     function checkTime() {
         assertCurrent()
         context.signal?.throwIfAborted()
         if (deadlineSignal.aborted || Date.now() >= deadline) throw new ToolError('budget_exhausted', '本轮检索时间已用完。')
     }
+
     const attempted = new Set<string>()
     let calls = 0
     const webAllowed = settings.hasSearchApiKey && !!searchApiKey

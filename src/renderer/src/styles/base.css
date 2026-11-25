@@ -24,7 +24,7 @@ body {
     font-weight: var(--font-weight-regular);
     font-size: var(--font-size-md);
     line-height: var(--line-height-normal);
-    accent-color: var(--color-action);
+    accent-color: var(--color-accent);
     -webkit-font-smoothing: antialiased;
 }
 

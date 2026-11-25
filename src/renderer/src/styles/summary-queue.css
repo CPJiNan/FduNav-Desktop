@@ -65,7 +65,7 @@
     overflow: hidden;
     appearance: none;
     background: var(--color-border-subtle);
-    accent-color: var(--color-action);
+    accent-color: var(--color-accent);
 }
 
 .summary-queue-progress::-webkit-progress-bar {
@@ -287,7 +287,7 @@
 
 .notice-row--selectable > input {
     flex-shrink: 0;
-    accent-color: var(--color-action);
+    accent-color: var(--color-accent);
     width: 18px;
     height: 18px;
 }

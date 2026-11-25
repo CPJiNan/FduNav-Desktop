@@ -782,7 +782,7 @@
 .calendar-all-day-field input {
     width: 20px;
     height: 20px;
-    accent-color: var(--color-action);
+    accent-color: var(--color-accent);
 }
 
 .calendar-form-row {

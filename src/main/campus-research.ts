@@ -135,7 +135,10 @@ export class CampusResearchService {
         if (!detail || detail.id !== holeId) {
             throw new ResearchError('campus_invalid_response', '树洞返回了不匹配的帖子。', 502)
         }
-        const response = await this.get(username, `/holes/${holeId}/floors`, {offset: range.offset, size: range.limit}, signal)
+        const response = await this.get(username, `/holes/${holeId}/floors`, {
+            offset: range.offset,
+            size: range.limit
+        }, signal)
         return this.page(await this.floors(response), range.offset, range.limit, `thread:${holeId}`, budget, detail)
     }
 

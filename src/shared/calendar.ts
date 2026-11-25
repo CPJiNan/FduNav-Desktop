@@ -22,7 +22,7 @@ export interface CalendarEventInput {
 
 export interface CalendarEvent extends CalendarEventInput {
     id: string
-    exam?: {course: string; term: string; sourceId: string; notes: string}
+    exam?: { course: string; term: string; sourceId: string; notes: string }
 }
 
 export interface CalendarAPI {

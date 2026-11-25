@@ -48,7 +48,12 @@ export function registerCalendarHandlers(db: AppDatabase, accounts: AccountServi
     handle('calendar:save', save)
     handle('calendar:remove', remove)
 
-    ipcMain.handle('calendar:sync-exams', async (event): Promise<Result<{ added: number; updated: number; removed: number; total: number }>> => {
+    ipcMain.handle('calendar:sync-exams', async (event): Promise<Result<{
+        added: number;
+        updated: number;
+        removed: number;
+        total: number
+    }>> => {
         if (!trusted(event)) return {ok: false, error: '请求来源无效。'}
         try {
             const account = accounts.getState()
@@ -68,7 +73,15 @@ export function registerCalendarHandlers(db: AppDatabase, accounts: AccountServi
                 for (const id of result.removed) remove(username, id)
                 return result
             })
-            return {ok: true, data: {added: changes.added.length, updated: changes.updated.length, removed: changes.removed.length, total: schedule.exams.length}}
+            return {
+                ok: true,
+                data: {
+                    added: changes.added.length,
+                    updated: changes.updated.length,
+                    removed: changes.removed.length,
+                    total: schedule.exams.length
+                }
+            }
         } catch (error) {
             return {
                 ok: false,
@@ -76,10 +89,12 @@ export function registerCalendarHandlers(db: AppDatabase, accounts: AccountServi
             }
         }
     })
+
     function restore(username: string, event: CalendarEvent) {
         if (db.hasCalendarEvent(username, event.id)) throw new AuthError('日程已存在，无法恢复。')
         db.saveCalendarEvent(username, event)
         db.afterCommit(() => reminders.changed(username, event.id))
     }
+
     return {save, remove, restore}
 }
