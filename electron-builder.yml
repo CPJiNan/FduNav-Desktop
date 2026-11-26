@@ -21,7 +21,10 @@ win:
 mac:
   icon: resources/icon.icns
   category: public.app-category.productivity
-  identity: null
+  # 没有 Developer ID 证书时做 ad-hoc 签名，避免 Apple Silicon 将下载的 App 判定为已损坏。
+  identity: "-"
+  # ad-hoc 签名开启 hardened runtime 会触发库验证并导致启动失败；公证时再开启。
+  hardenedRuntime: false
   target:
     - target: dmg
       arch:
