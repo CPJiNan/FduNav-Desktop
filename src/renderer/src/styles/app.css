@@ -111,7 +111,7 @@ button:disabled {
 }
 
 .account-notice {
-    color: var(--color-info);
+    color: var(--color-text-primary);
     background: var(--panel-bg);
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-sm);
