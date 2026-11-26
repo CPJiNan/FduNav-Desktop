@@ -500,9 +500,9 @@
 .chat-summary-request {
     min-width: 0;
     padding: 14px;
-    border: 0;
+    border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-md);
-    background: var(--color-bg-subtle);
+    background: var(--panel-bg);
 }
 
 .chat-summary-request header {
