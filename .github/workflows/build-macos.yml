@@ -30,6 +30,12 @@ jobs:
       - name: Build
         run: npm run build:mac
 
+      - name: Verify code signature
+        run: |
+          app="release/mac-arm64/FduNav.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=2 "$app"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
