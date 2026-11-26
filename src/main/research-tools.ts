@@ -1,5 +1,5 @@
 import type {ChatTool} from './llm-connection'
-import {ToolError} from '../shared/agent'
+import {maxToolResultChars, ToolError} from '../shared/agent'
 import {defaultToolDescriptions} from '../shared/llm-prompts'
 import {
     modelSourceView,
@@ -10,7 +10,7 @@ import {
     researchToolNames,
 } from '../shared/research'
 import type {AppDatabase} from './database'
-import {CampusBudget, type CampusPost, type CampusResearchService} from './campus-research'
+import {CampusBudget, type CampusPost, type CampusResearchService, type CourseReviewItem} from './campus-research'
 import type {CampusAuthService} from './campus-auth'
 import {ResearchError} from './research-error'
 import {readWebPage} from './research-reader'
@@ -48,13 +48,22 @@ export const researchTools: ChatTool[] = [
         offset: integer('楼层分页偏移，首次省略', 0, 2_147_483_647),
         limit: integer('每页楼层数，默认 20', 1, 50),
     }, ['holeId']),
+    tool('search_course_reviews', {
+        query: str('课评搜索词，1–200 字；课程名称或课程代码，优先一个明确词'),
+        limit: integer('返回课程组数，默认 5', 1, 10),
+    }, ['query']),
+    tool('read_course_reviews', {
+        groupId: integer('课程组 ID，来自 search_course_reviews', 1, Number.MAX_SAFE_INTEGER),
+        offset: integer('课评分页偏移，首次省略', 0, 2_147_483_647),
+        limit: integer('每页课评数，默认 5', 1, 20),
+    }, ['groupId']),
     tool('plan_research', {
         questions: stringList('待回答的子问题，1–5 条'),
         gaps: stringList('仍缺的证据，最多 5 条'),
         nextAction: {type: 'string', enum: ['search', 'read_context', 'answer', 'clarify'], description: '下一步行动'},
         sources: {
             type: 'array',
-            items: {type: 'string', enum: ['web', 'campus']},
+            items: {type: 'string', enum: ['web', 'campus', 'danke']},
             maxItems: 2,
             description: '计划使用的来源'
         },
@@ -163,6 +172,30 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
         return source
     }
 
+    function courseReviewSource(item: CourseReviewItem): ResearchSource {
+        const existing = sources.find(source => source.source === 'danke' && source.reviewId === item.reviewId)
+        const label = [item.courseCode, item.courseName].filter(Boolean).join(' ')
+        const source: ResearchSource = {
+            id: existing?.id ?? nextSourceId(sources, 'danke'),
+            source: 'danke',
+            title: `${label || `课程组 #${item.courseGroupId}`} · 课评 #${item.reviewId}`,
+            snippet: item.content,
+            publishedAt: item.timeCreated,
+            truncated: item.truncated,
+            redacted: item.redacted,
+            courseGroupId: item.courseGroupId,
+            courseCode: item.courseCode ?? undefined,
+            courseName: item.courseName ?? undefined,
+            courseTeachers: item.teachers || undefined,
+            courseTerm: item.term || undefined,
+            reviewId: item.reviewId,
+            reviewRank: item.rank || undefined,
+            reviewVote: item.helpful,
+        }
+        upsert(source)
+        return source
+    }
+
     function stopReason(): string | null {
         if (calls >= settings.researchMaxToolCalls) return `本轮已用完 ${settings.researchMaxToolCalls} 次检索调用，回答基于已取得的资料。`
         return null
@@ -203,9 +236,10 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
                 throw new ToolError('invalid_args', '本轮已尝试相同调用，请使用已有结果、换关键词或说明缺口。')
             }
             attempted.add(signature)
-            const campusTool = toolName === 'search_campus_posts' || toolName === 'read_campus_thread'
+            const campusTool = toolName === 'search_campus_posts' || toolName === 'read_campus_thread' ||
+                toolName === 'search_course_reviews' || toolName === 'read_course_reviews'
             if (campusTool && !campusEnabled) {
-                throw new ToolError('forbidden', '本轮未授权或无法使用树洞，只能使用公开网页。')
+                throw new ToolError('forbidden', '本轮未授权或无法使用旦挞，只能使用公开网页。')
             }
             if (!campusTool && toolName !== 'plan_research' && !webAllowed) {
                 throw new ToolError('forbidden', '本轮没有可用的网页检索，请先配置 Tavily 或改用已有资料。')
@@ -275,6 +309,37 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
                         remainingResearch: budgetLeft(),
                     }
                 }
+                if (toolName === 'search_course_reviews') {
+                    const page = await awaitWithAbort(campus.searchCourseReviews(username, textArg(input, 'query', true, 200),
+                        typeof input.limit === 'number' ? input.limit : 5, campusBudget, signal), signal)
+                    checkTime()
+                    return {
+                        ...page,
+                        query: textArg(input, 'query', true, 200),
+                        remainingCampusPages: Math.max(0, campusBudget.maxPages - campusBudget.pages),
+                        remainingResearch: budgetLeft(),
+                    }
+                }
+                if (toolName === 'read_course_reviews') {
+                    const page = await awaitWithAbort(campus.readCourseReviews(username, input.groupId as number,
+                        typeof input.offset === 'number' ? input.offset : 0,
+                        typeof input.limit === 'number' ? input.limit : 5, campusBudget, signal), signal)
+                    checkTime()
+                    let keep = page.results.length
+                    let payload: Record<string, unknown> = {}
+                    for (; ;) {
+                        payload = {
+                            ...page,
+                            results: page.results.slice(0, keep).map(item => modelSourceView(courseReviewSource(item))),
+                            nextOffset: keep < page.results.length ? page.offset + keep : page.nextOffset,
+                            remainingCampusPages: Math.max(0, campusBudget.maxPages - campusBudget.pages),
+                            remainingResearch: budgetLeft(),
+                        }
+                        if (keep === 0 || JSON.stringify(payload).length <= maxToolResultChars - 400) break
+                        keep--
+                    }
+                    return payload
+                }
                 const questions = input.questions as unknown[]
                 if (!Array.isArray(questions) || !questions.length || questions.length > 5 ||
                     questions.some(item => typeof item !== 'string' || !item.trim() || item.length > 500)) {
@@ -285,11 +350,11 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
                     throw new ToolError('invalid_args', 'gaps 须为最多 5 条字符串。')
                 }
                 const planSources = input.sources === undefined ? [] : input.sources
-                if (!Array.isArray(planSources) || planSources.some(item => item !== 'web' && item !== 'campus')) {
-                    throw new ToolError('invalid_args', 'sources 只允许 web 或 campus。')
+                if (!Array.isArray(planSources) || planSources.some(item => item !== 'web' && item !== 'campus' && item !== 'danke')) {
+                    throw new ToolError('invalid_args', 'sources 只允许 web、campus 或 danke。')
                 }
-                if (planSources.includes('campus') && !campusEnabled) {
-                    throw new ToolError('forbidden', '计划包含未授权的树洞来源，请调整为公开网页。')
+                if ((planSources.includes('campus') || planSources.includes('danke')) && !campusEnabled) {
+                    throw new ToolError('forbidden', '计划包含未授权的旦挞来源，请调整为公开网页。')
                 }
                 return {
                     skill: 'ask-danta-research',
@@ -305,7 +370,7 @@ export function createResearchToolRunner(context: ResearchToolContext): Research
             } catch (error) {
                 checkTime()
                 if (error instanceof ResearchError && campusAuthCodes.has(error.code)) {
-                    denyCampus('树洞认证已失效，本轮停止使用树洞，继续使用公开网页并说明限制。')
+                    denyCampus('旦挞认证已失效，本轮停止使用树洞与课评，继续使用公开网页并说明限制。')
                 }
                 throw toolError(error)
             }

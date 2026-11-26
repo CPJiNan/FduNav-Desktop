@@ -12,7 +12,10 @@ export interface ReviewAudit {
     facts: ReviewFact[]
 }
 
-const reviewActionNames: ResearchToolName[] = ['search_web', 'read_web', 'search_campus_posts', 'read_campus_thread']
+const reviewActionNames: ResearchToolName[] = [
+    'search_web', 'read_web', 'search_campus_posts', 'read_campus_thread',
+    'search_course_reviews', 'read_course_reviews',
+]
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -30,7 +33,8 @@ export function requestedReads(question: string) {
         const web = [...target.matchAll(/\b(W[1-9]\d{0,5})\b/gi)].map(item => item[1].toUpperCase())
         const campus = [...target.matchAll(/(?:洞号\s*#?\s*|#\s*)([1-9]\d*)|\b(C[1-9]\d{0,5})\b/gi)].map(item => item[1] ?? item[2].toUpperCase())
         if (campus.length || /帖子|树洞|上下文/.test(target)) reads.set('read_campus_thread', new Set([...(reads.get('read_campus_thread') ?? []), ...campus]))
-        if (web.length || /网页|页面|官网/.test(target) || (!campus.length && !/帖子|树洞|上下文/.test(target) && /正文/.test(target))) {
+        if (/(?:课评|课程评价)/.test(target)) reads.set('read_course_reviews', reads.get('read_course_reviews') ?? new Set())
+        if (web.length || /网页|页面|官网/.test(target) || (!campus.length && !/帖子|树洞|上下文|课评|课程评价/.test(target) && /正文/.test(target))) {
             reads.set('read_web', new Set([...(reads.get('read_web') ?? []), ...web]))
         }
     }
@@ -44,7 +48,8 @@ export function requestedActions(question: string): Set<ResearchToolName> {
     for (const match of text.matchAll(/(?:^|请|帮我|先|再|并|同时|然后)(?:搜索|检索|查找|查阅|查)(?!到|无|不|完)([^。！？；]{0,120})/g)) {
         const target = match[1]
         if (/树洞|帖子/.test(target)) actions.add('search_campus_posts')
-        if (/官网|官方|网页|公开/.test(target) || !/树洞|帖子/.test(target)) actions.add('search_web')
+        if (/课评|课程评价/.test(target)) actions.add('search_course_reviews')
+        if (/官网|官方|网页|公开/.test(target) || !/树洞|帖子|课评|课程评价/.test(target)) actions.add('search_web')
     }
     for (const tool of requestedReads(text).keys()) actions.add(tool)
     if (text.includes('只用公开网页') || /(?:对照|比较)[^。！？；]{0,30}官方/.test(text)) actions.add('search_web')
@@ -66,7 +71,7 @@ export function normalizedText(text: string): string {
 export function copiedPostIds(answer: string, sources: readonly ResearchSource[]): string[] {
     const normalized = normalizedText(answer)
     return sources.filter(source => {
-        if (source.source !== 'campus') return false
+        if (source.source !== 'campus' && source.source !== 'danke') return false
         const body = normalizedText(source.snippet)
         return body.length >= 8 && normalized.includes(body)
     }).map(source => source.id)
@@ -82,7 +87,7 @@ export interface AnswerIssue {
 export function answerIssues(answer: string, known: ReadonlySet<string>, limit: number | null,
                              sources: readonly ResearchSource[] = []): AnswerIssue[] {
     const issues: AnswerIssue[] = []
-    const unknown = [...new Set([...answer.matchAll(/\[([WwCc][1-9][0-9]{0,5})\]/g)]
+    const unknown = [...new Set([...answer.matchAll(/\[([WwCcDd][1-9][0-9]{0,5})\]/g)]
         .map(match => match[1].toUpperCase()))].filter(id => !known.has(id))
     if (unknown.length) issues.push({code: 'unknown_citations', ids: unknown.sort()})
     if (limit !== null && answer.length > limit) issues.push({
@@ -130,7 +135,7 @@ export function validateAudit(value: unknown): ReviewAudit | null {
         if (!isRecord(item)) return null
         const {claim, sourceId, qualification} = item
         if (typeof claim !== 'string' || !claim.trim() || claim.length > 400) return null
-        if (typeof sourceId !== 'string' || !/^[WC][1-9][0-9]{0,5}$/.test(sourceId)) return null
+        if (typeof sourceId !== 'string' || !/^[WCD][1-9][0-9]{0,5}$/.test(sourceId)) return null
         if (typeof qualification !== 'string' || !qualification.trim() || qualification.length > 400) return null
         cleanedFacts.push({claim: claim.trim(), sourceId, qualification: qualification.trim()})
     }

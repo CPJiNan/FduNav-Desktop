@@ -6,7 +6,9 @@ import {type CampusAuthStatus, type CampusState, readCampusTokens} from '../shar
 
 const AUTH_BASE = 'https://auth.fduhole.com/api'
 const FORUM_BASE = 'https://forum.fduhole.com/api'
+const DANKE_BASE = 'https://danke.fduhole.com/api'
 const forumPath = /^\/(?:floors\/search|holes\/[1-9][0-9]{0,18}(?:\/floors)?)$/
+const dankePath = /^\/(?:v3\/course_groups\/search|v3\/course_groups\/[1-9][0-9]{0,18}|courses\/[A-Za-z0-9_-]{1,64}\/reviews)$/
 
 interface Tokens {
     access: string
@@ -55,7 +57,7 @@ export class CampusAuthService {
             body: JSON.stringify({email, password})
         }, 30_000)
         if ([400, 401, 403].includes(response.status)) {
-            throw new ResearchError('campus_login_failed', '树洞登录失败，请检查邮箱、密码及账号状态后重试。', 401)
+            throw new ResearchError('campus_login_failed', '旦挞登录失败，请检查邮箱、密码及账号状态后重试。', 401)
         }
         if (!response.ok) throw new ResearchError('campus_login_failed', '树洞登录暂时不可用，请稍后重试。', 502)
         const tokens = await this.parseTokens(response)
@@ -75,12 +77,13 @@ export class CampusAuthService {
 
     async get(username: string, path: string, params: Record<string, string | number> | undefined,
               timeoutMs: number, signal?: AbortSignal): Promise<Response> {
-        if (!forumPath.test(path)) throw new ResearchError('campus_endpoint_forbidden', '不允许请求此树洞接口。', 400)
+        const base = forumPath.test(path) ? FORUM_BASE : dankePath.test(path) ? DANKE_BASE : null
+        if (!base) throw new ResearchError('campus_endpoint_forbidden', '不允许请求此旦挞接口。', 400)
         const generation = this.generation(username)
         let tokens = await this.load(username)
         this.assertCurrent(username, generation)
         if (!tokens) throw this.missingError(username)
-        const url = new URL(FORUM_BASE + path)
+        const url = new URL(base + path)
         for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, String(value))
         let response = await this.requestWithRetry(url.href, {
             method: 'GET', headers: {Authorization: `Bearer ${tokens.access}`}, signal
@@ -97,7 +100,7 @@ export class CampusAuthService {
         if (response.status === 401) {
             this.invalidAccess.set(username, tokens.access)
             this.statuses.set(username, 'expired')
-            throw new ResearchError('campus_auth_failed', '树洞认证已失效，请重新登录。', 401)
+            throw new ResearchError('campus_auth_failed', '旦挞认证已失效，请重新登录。', 401)
         }
         return response
     }
@@ -149,7 +152,7 @@ export class CampusAuthService {
         if (status === 'invalid') {
             return new ResearchError('campus_credentials_invalid', '树洞凭据无法读取，请重新登录。', 503)
         }
-        return new ResearchError('campus_login_required', '尚未登录树洞，请在旦挞设置中登录。', 503)
+        return new ResearchError('campus_login_required', '尚未登录旦挞，请在旦挞设置中登录。', 503)
     }
 
     private async refresh(username: string, failedAccess: string, generation: number, signal?: AbortSignal): Promise<void> {
@@ -177,16 +180,16 @@ export class CampusAuthService {
         if (response.status === 401 || response.status === 403) {
             this.invalidAccess.set(username, current.access)
             this.statuses.set(username, 'expired')
-            throw new ResearchError('campus_auth_failed', '树洞刷新凭据失效，请重新登录。', 401)
+            throw new ResearchError('campus_auth_failed', '旦挞刷新凭据失效，请重新登录。', 401)
         }
-        if (!response.ok) throw new ResearchError('campus_upstream_error', '树洞服务返回异常状态。', 502)
+        if (!response.ok) throw new ResearchError('campus_upstream_error', '旦挞服务返回异常状态。', 502)
         const tokens = await this.parseTokens(response)
         await this.persist(username, {...tokens, email: current.email}, generation)
     }
 
     private async parseTokens(response: Response): Promise<Tokens> {
         const tokens = readCampusTokens(await response.json().catch(() => null))
-        if (!tokens) throw new ResearchError('campus_invalid_response', '树洞响应格式发生变化，无法安全读取。', 502)
+        if (!tokens) throw new ResearchError('campus_invalid_response', '旦挞响应格式发生变化，无法安全读取。', 502)
         return tokens
     }
 
@@ -208,9 +211,9 @@ export class CampusAuthService {
         } catch (error) {
             init.signal?.throwIfAborted()
             if (error instanceof Error && error.name === 'TimeoutError') {
-                throw new ResearchError('campus_timeout', '树洞请求超时，请稍后重试。', 504)
+                throw new ResearchError('campus_timeout', '旦挞请求超时，请稍后重试。', 504)
             }
-            throw new ResearchError('campus_unreachable', '暂时无法连接树洞服务。', 502)
+            throw new ResearchError('campus_unreachable', '暂时无法连接旦挞服务。', 502)
         }
     }
 

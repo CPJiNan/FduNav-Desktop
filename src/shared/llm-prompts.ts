@@ -24,6 +24,8 @@ export const defaultToolDescriptions = {
     "read_web": "读取已检索来源的网页正文。仅允许使用来源编号。",
     "search_campus_posts": "只读搜索树洞帖子，返回洞号、楼层号、正文、日期和来源编号。",
     "read_campus_thread": "读取帖子楼层上下文。",
+    "search_course_reviews": "只读搜索旦挞课评的课程组，返回课程组 ID、课程代码、名称、院系、学分、教师和课评数量。",
+    "read_course_reviews": "读取课程组的课评，返回评分维度、教师、学期与正文及来源编号。",
     "plan_research": "记录复杂调研的子问题、证据缺口和下一步行动。仅记录计划，不记录推理过程。"
 } as const
 

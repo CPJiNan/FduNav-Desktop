@@ -132,6 +132,7 @@ export const chatToolLabels: Record<string, string> = {
     update_event: '请求修改日程', delete_event: '请求删除日程',
     search_web: '搜索公开网页', read_web: '读取网页正文',
     search_campus_posts: '搜索树洞', read_campus_thread: '读取帖子上下文',
+    search_course_reviews: '搜索旦挞课评', read_course_reviews: '读取课评',
     plan_research: '规划资料检索',
 }
 

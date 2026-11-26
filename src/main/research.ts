@@ -63,7 +63,7 @@ export function registerResearchHandlers(db: AppDatabase, accounts: AccountServi
             if (!checked.ok) throw new Error(checked.error)
             return {ok: true, data: await campus.login(user, checked.data.email, checked.data.password)}
         } catch (error) {
-            return {ok: false, error: error instanceof Error ? error.message : '无法登录树洞。'}
+            return {ok: false, error: error instanceof Error ? error.message : '无法登录旦挞。'}
         } finally {
             if (input && typeof input === 'object' && 'password' in input) {
                 (input as { password: string }).password = ''
@@ -76,7 +76,7 @@ export function registerResearchHandlers(db: AppDatabase, accounts: AccountServi
         try {
             return {ok: true, data: await campus.logout(username())}
         } catch (error) {
-            return {ok: false, error: error instanceof Error ? error.message : '无法退出树洞。'}
+            return {ok: false, error: error instanceof Error ? error.message : '无法退出旦挞。'}
         }
     })
 

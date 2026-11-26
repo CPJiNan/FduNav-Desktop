@@ -55,7 +55,7 @@ export function ResearchPanel({active}: { active: boolean }) {
             }
             await reload()
         } catch {
-            setError('无法登录树洞。')
+            setError('无法登录旦挞。')
         } finally {
             setLoggingIn(false)
         }
@@ -70,7 +70,7 @@ export function ResearchPanel({active}: { active: boolean }) {
             if (!result.ok) setError(result.error)
             else await reload()
         } catch {
-            setError('无法退出树洞。')
+            setError('无法退出旦挞。')
         } finally {
             setLoggingIn(false)
         }
@@ -82,11 +82,12 @@ export function ResearchPanel({active}: { active: boolean }) {
 
     return <div className="llm-settings">
         <div className="llm-panel">
-            <h3 className="llm-section-heading">树洞</h3>
+            <h3 className="llm-section-heading">旦挞</h3>
+            <p className="section-description">同一账号用于树洞与旦挞课评的只读查询。</p>
             <div className="account-panel">
                 {settings?.campus.loggedIn && <div className="account-summary">
                     <div className="account-symbol"><Icon name="user"/></div>
-                    <div><strong>{settings.campus.email ?? (email.trim() || '树洞用户')}</strong>
+                    <div><strong>{settings.campus.email ?? (email.trim() || '旦挞用户')}</strong>
                         <p className="account-status">{campusLabel}</p></div>
                 </div>}
                 {!settings?.campus.loggedIn && <div className="account-form">

@@ -228,7 +228,7 @@ export async function reviewDraft(input: ReviewInput, payload: ReturnType<typeof
         if (!issues.length) return {answer, reviewed: true, warnings, issues}
     }
     const reason = issues.some(issue => issue.code === 'unknown_citations') ? '回答引用了不存在的来源。'
-        : issues.some(issue => issue.code === 'whole_post_copy') ? '回答复制了完整帖子。'
+        : issues.some(issue => issue.code === 'whole_post_copy') ? '回答复制了完整来源内容。'
             : '回答仍超出字数上限。'
     return {
         answer: input.limit !== null && input.limit < 80 ? shortFailure(input.limit) : fallbackAnswer(reason, true),

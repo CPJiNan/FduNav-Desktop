@@ -442,7 +442,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
             const sourceMode: ResearchSourceMode = requestedMode === 'auto' ? (campusReady ? 'all' : 'web') : requestedMode
             const campusAllowed = sourceMode === 'all' && campusReady
             const warnings: string[] = []
-            if (requestedMode === 'all' && !campusReady) warnings.push('树洞未登录或凭据失效，本轮仅使用公开网页。')
+            if (requestedMode === 'all' && !campusReady) warnings.push('旦挞未登录或凭据失效，本轮仅使用公开网页。')
             const searchApiKey = researchSettings.hasSearchApiKey
                 ? await research.settings.searchApiKey().catch(() => '') : ''
             const webReady = !!searchApiKey
@@ -750,7 +750,7 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     issues = answerIssues(answer, known, answerLimit, sources)
                     if (issues.length) {
                         const reason = issues.some(item => item.code === 'unknown_citations') ? '回答引用了不存在的来源。'
-                            : issues.some(item => item.code === 'whole_post_copy') ? '回答复制了完整帖子。' : '回答超出字数上限。'
+                            : issues.some(item => item.code === 'whole_post_copy') ? '回答复制了完整来源内容。' : '回答超出字数上限。'
                         answer = answerLimit !== null && answerLimit < 80 ? shortFailure(answerLimit) : fallbackAnswer(reason, true)
                         warnings.push(reason)
                         turn.endReason = 'error'
@@ -787,7 +787,9 @@ export function registerChatHandlers(db: AppDatabase, accounts: AccountService, 
                     }
                     if (campusAllowed && researchRunner.campusAllowed()) {
                         allowedResearch.add('search_campus_posts');
-                        allowedResearch.add('read_campus_thread')
+                        allowedResearch.add('read_campus_thread');
+                        allowedResearch.add('search_course_reviews');
+                        allowedResearch.add('read_course_reviews')
                     }
                     if (allowedResearch.size) allowedResearch.add('plan_research')
                 }

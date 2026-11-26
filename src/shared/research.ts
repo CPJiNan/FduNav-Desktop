@@ -3,10 +3,13 @@ import type {Result} from './accounts'
 export const researchSourceModes = ['auto', 'web', 'all'] as const
 export type ResearchSourceMode = typeof researchSourceModes[number]
 
-export type ResearchSourceKind = 'web' | 'campus'
+export type ResearchSourceKind = 'web' | 'campus' | 'danke'
 export type CampusAuthStatus = 'missing' | 'configured' | 'expired' | 'invalid'
 
-export const researchToolNames = ['search_web', 'read_web', 'search_campus_posts', 'read_campus_thread', 'plan_research'] as const
+export const researchToolNames = [
+    'search_web', 'read_web', 'search_campus_posts', 'read_campus_thread',
+    'search_course_reviews', 'read_course_reviews', 'plan_research',
+] as const
 export type ResearchToolName = typeof researchToolNames[number]
 
 export interface ResearchSource {
@@ -23,6 +26,14 @@ export interface ResearchSource {
     holeId?: number
     floorId?: number
     threadRead?: boolean
+    courseGroupId?: number
+    courseCode?: string
+    courseName?: string
+    courseTeachers?: string
+    courseTerm?: string
+    reviewId?: number
+    reviewRank?: string
+    reviewVote?: number
 }
 
 export interface CampusState {
@@ -116,8 +127,8 @@ function boundedString(value: unknown, max: number, min = 1): value is string {
 
 export function isResearchSource(value: unknown): value is ResearchSource {
     if (!isPlainObject(value)) return false
-    if (typeof value.id !== 'string' || !/^[WC][1-9][0-9]{0,5}$/.test(value.id)) return false
-    if (value.source !== 'web' && value.source !== 'campus') return false
+    if (typeof value.id !== 'string' || !/^[WCD][1-9][0-9]{0,5}$/.test(value.id)) return false
+    if (value.source !== 'web' && value.source !== 'campus' && value.source !== 'danke') return false
     if (!boundedString(value.title, 500) || !boundedString(value.snippet, 20000, 0)) return false
     if (value.publishedAt !== null && !boundedString(value.publishedAt, 64, 0)) return false
     if (typeof value.truncated !== 'boolean') return false
@@ -125,11 +136,16 @@ export function isResearchSource(value: unknown): value is ResearchSource {
     for (const key of ['pageRead', 'pageTruncated', 'redacted', 'threadRead'] as const) {
         if (value[key] !== undefined && typeof value[key] !== 'boolean') return false
     }
-    for (const key of ['holeId', 'floorId'] as const) {
+    for (const key of ['holeId', 'floorId', 'courseGroupId', 'reviewId'] as const) {
         if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || (value[key] as number) <= 0)) return false
+    }
+    if (value.reviewVote !== undefined && (!Number.isSafeInteger(value.reviewVote) || (value.reviewVote as number) < -1_000_000)) return false
+    for (const [key, max] of [['courseCode', 64], ['courseName', 200], ['courseTeachers', 300], ['courseTerm', 64], ['reviewRank', 200]] as const) {
+        if (value[key] !== undefined && !boundedString(value[key], max)) return false
     }
     if (value.source === 'campus' && (typeof value.holeId !== 'number' || typeof value.floorId !== 'number')) return false
     if (value.source === 'web' && typeof value.url !== 'string') return false
+    if (value.source === 'danke' && (typeof value.courseGroupId !== 'number' || typeof value.reviewId !== 'number')) return false
     return true
 }
 
@@ -144,7 +160,7 @@ export function readResearchSources(value: unknown): ResearchSource[] {
 }
 
 export function nextSourceId(sources: readonly ResearchSource[], kind: ResearchSourceKind): string {
-    const prefix = kind === 'web' ? 'W' : 'C'
+    const prefix = kind === 'web' ? 'W' : kind === 'campus' ? 'C' : 'D'
     let highest = 0
     for (const source of sources) {
         if (source.source !== kind) continue
@@ -155,18 +171,27 @@ export function nextSourceId(sources: readonly ResearchSource[], kind: ResearchS
 }
 
 export function citedSourceIds(text: string): Set<string> {
-    return new Set([...text.matchAll(/\[([WwCc][1-9][0-9]{0,5})\]/g)].map(match => match[1].toUpperCase()))
+    return new Set([...text.matchAll(/\[([WwCcDd][1-9][0-9]{0,5})\]/g)].map(match => match[1].toUpperCase()))
 }
 
 export function modelSourceView(source: ResearchSource) {
     const {floorId: _floorId, ...rest} = source
-    return source.source === 'campus'
-        ? {
+    if (source.source === 'campus') {
+        return {
             ...rest,
             title: `树洞 #${source.holeId} · 来源 ${source.id}`,
-            speakerAndPosition: '未提供楼层顺序或是否楼主；只用来源编号引用'
+            speakerAndPosition: '未提供楼层顺序或是否楼主；只用来源编号引用',
         }
-        : rest
+    }
+    if (source.source === 'danke') {
+        const course = [source.courseCode, source.courseName].filter(Boolean).join(' ') || `课程组 #${source.courseGroupId}`
+        return {
+            ...rest,
+            title: `课评 ${course} · 来源 ${source.id}`,
+            speakerAndPosition: '旦挞课评为匿名个人经历，不代表课程官方评价；只用来源编号引用',
+        }
+    }
+    return rest
 }
 
 function finiteNumber(value: unknown, min: number, max: number): value is number {

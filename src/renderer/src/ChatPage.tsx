@@ -25,13 +25,13 @@ const suggestions = ['本周通知摘要', '查询今天日程', '新增待办�
 
 function sourceDisplayId(id: string): string {
     const kind = id.charAt(0).toUpperCase()
-    return kind === 'W' ? `网页${id.slice(1)}` : kind === 'C' ? `树洞${id.slice(1)}` : id
+    return kind === 'W' ? `网页${id.slice(1)}` : kind === 'C' ? `树洞${id.slice(1)}` : kind === 'D' ? `课评${id.slice(1)}` : id
 }
 
 function linkCitations(text: string): string {
     return text.split(/(```[\s\S]*?```|`[^`\n]*`)/g).map((segment, index) => {
         if (index % 2 === 1) return segment
-        return segment.replace(/\[([WwCc][1-9][0-9]{0,5})\]/g, (_match, id: string) => `[#${sourceDisplayId(id)}](#citation-${id.toUpperCase()})`)
+        return segment.replace(/\[([WwCcDd][1-9][0-9]{0,5})\]/g, (_match, id: string) => `[#${sourceDisplayId(id)}](#citation-${id.toUpperCase()})`)
     }).join('')
 }
 
@@ -463,7 +463,7 @@ export function ChatPage({username, onOpenNotice, onSettings}: {
                                     <div className="chat-markdown"><Markdown remarkPlugins={[remarkGfm, remarkBreaks]}
                                                                              components={{
                                                                                  a: ({href, children}) => {
-                                                                                     const id = href?.match(/^#citation-([WC]\d+)$/)?.[1]
+                                                                                     const id = href?.match(/^#citation-([WCD]\d+)$/)?.[1]
                                                                                      if (id) {
                                                                                          const exists = sourcesFor(turn).some(source => source.id === id)
                                                                                          return exists
@@ -638,11 +638,16 @@ function SourcesPanel({sources, selected, onClose, onClearSelection}: {
                                             }}
                                             className={`chat-source${selected === source.id ? ' is-selected' : ''}`}>
                 <div className="chat-source-meta">
-                    <span>#{sourceDisplayId(source.id)}{source.source === 'web' ? ' · 公开网页' : ''}</span>
+                    <span>#{sourceDisplayId(source.id)}{source.source === 'web' ? ' · 公开网页' : source.source === 'danke' ? ' · 旦挞课评' : ''}</span>
                     <span className="chat-source-origin">{source.source === 'campus'
                         ? `洞号 #${source.holeId} 楼层号 #${source.floorId}`
-                        : source.publishedAt ?? '日期未知'}</span>
+                        : source.source === 'danke'
+                            ? [source.courseTeachers, source.courseTerm].filter(Boolean).join(' · ') || source.publishedAt || '日期未知'
+                            : source.publishedAt ?? '日期未知'}</span>
                 </div>
+                {source.source === 'danke' && <p className="chat-source-course">
+                    {[source.courseCode, source.courseName].filter(Boolean).join(' ') || `课程组 #${source.courseGroupId}`}
+                </p>}
                 {source.source === 'web' && source.url && <button type="button" className="chat-source-title"
                                                                   onClick={() => void window.chat?.openSource(source.url!)}>
                     {source.title}<Icon name="external"/>
@@ -651,7 +656,10 @@ function SourcesPanel({sources, selected, onClose, onClearSelection}: {
                 {source.source === 'web'
                     ?
                     <small>{source.pageRead ? '已读取正文' : '搜索摘要'}{(source.pageRead ? source.pageTruncated : source.truncated) ? ' · 内容已截断' : ''}</small>
-                    : source.truncated && <small>内容已截断</small>}
+                    : source.source === 'danke'
+                        ?
+                        <small>{[source.reviewRank, source.reviewVote ? `有帮助 ${source.reviewVote}` : '', source.truncated ? '内容已截断' : ''].filter(Boolean).join(' · ')}</small>
+                        : source.truncated && <small>内容已截断</small>}
             </article>)}
         </div>
     </section>
