@@ -731,7 +731,7 @@ html:has(.mail-connection-dialog[open]) {
 .mailbox-inline-error, .mailbox-partial-error {
     padding: var(--space-3) var(--space-4);
     font-size: var(--font-size-xs);
-    background: var(--color-bg-subtle);
+    background: var(--panel-bg);
     border-top: var(--border-width) solid var(--color-border-subtle);
     overflow-wrap: anywhere;
 }
@@ -905,7 +905,8 @@ html:has(.mail-connection-dialog[open]) {
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
-    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border-subtle);
+    background: var(--panel-bg);
     border-radius: var(--radius-md);
     margin-top: var(--space-2);
 }

@@ -83,7 +83,6 @@ export function ResearchPanel({active}: { active: boolean }) {
     return <div className="llm-settings">
         <div className="llm-panel">
             <h3 className="llm-section-heading">旦挞</h3>
-            <p className="section-description">同一账号用于树洞与旦挞课评的只读查询。</p>
             <div className="account-panel">
                 {settings?.campus.loggedIn && <div className="account-summary">
                     <div className="account-symbol"><Icon name="user"/></div>

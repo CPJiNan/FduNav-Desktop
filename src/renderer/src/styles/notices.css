@@ -345,9 +345,9 @@
 .notice-summary {
     margin: 0 0 var(--space-6);
     padding: var(--space-4);
-    border: 0;
+    border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-md);
-    background: var(--color-bg-subtle);
+    background: var(--panel-bg);
 }
 
 .notice-summary-head {
@@ -583,7 +583,8 @@
     display: block;
     min-width: 80px;
     min-height: 80px;
-    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border-subtle);
+    background: var(--panel-bg);
 }
 
 .notice-image-error {
@@ -591,7 +592,9 @@
     flex-wrap: wrap;
     align-items: center;
     padding: var(--space-2);
-    background: var(--color-bg-subtle);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--panel-bg);
     color: var(--color-text-muted);
     font-size: var(--font-size-sm);
 }
