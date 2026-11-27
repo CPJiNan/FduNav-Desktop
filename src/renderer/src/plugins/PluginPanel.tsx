@@ -215,11 +215,7 @@ export function PluginPanel({startupError}: {startupError?: string}) {
                     {!state.installed.length && !error && <div className="plugins-empty">
                         <Icon name="puzzle"/>
                         <h2>{api ? '尚未安装插件' : '插件服务不可用'}</h2>
-                        <p>{api ? '插件以独立网页运行，可替换界面或扩展服务。安装前请确认来源可信。' : '请在桌面应用中使用插件功能。'}</p>
-                        {api && <button type="button" className="primary-button" disabled={blocked}
-                                        onClick={() => void run(() => api!.install(), value => {
-                                            if (value) setState(value)
-                                        })}><Icon name="plus"/>安装插件</button>}
+                        {!api && <p>请在桌面应用中使用插件功能。</p>}
                     </div>}
                     {!!state.installed.length && !visible.length && <div className="plugins-empty">
                         <Icon name="search"/>
