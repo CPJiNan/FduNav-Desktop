@@ -1,7 +1,11 @@
 import type {AccountState, Result, Theme} from '../../../shared/accounts'
 import type {MessagePreferences} from '../../../shared/message-preferences'
 import {
-    type PluginManifest, type PluginServices, type PluginState, type PluginSurface, type PluginView
+    type PluginManifest,
+    type PluginServices,
+    type PluginState,
+    type PluginSurface,
+    type PluginView
 } from '../../../shared/plugins'
 import {PluginConnection} from '../../../plugin-sdk/connection'
 import {applyTheme} from '../theme'
@@ -24,7 +28,7 @@ interface Provider {
 type ServiceChange = {type: 'account'; value: AccountState} | {type: 'preferences'; value: MessagePreferences}
 type Method = (...args: unknown[]) => unknown
 
-export const emptyPluginState: PluginState = {installed: [], application: null, recovery: false}
+export const emptyPluginState: PluginState = {installed: [], application: null, safeMode: false}
 
 export class PluginRuntime {
     readonly views = new Map<PluginView, PluginFrameSpec>()
@@ -35,7 +39,7 @@ export class PluginRuntime {
     private readonly listeners = new Set<(change: ServiceChange) => void>()
 
     constructor(readonly state: PluginState, private readonly services = window.fdunavServices) {
-        if (state.recovery) return
+        if (state.safeMode) return
         for (const {manifest, enabled} of state.installed) {
             if (!enabled) continue
             for (const [id, entry] of Object.entries(manifest.views ?? {})) {

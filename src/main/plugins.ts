@@ -1,4 +1,4 @@
-import {app, BrowserWindow, dialog, ipcMain, net, protocol, session, type IpcMainInvokeEvent} from 'electron'
+import {app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, net, protocol, session} from 'electron'
 import {extname, join} from 'node:path'
 import {pathToFileURL} from 'node:url'
 import type {Result} from '../shared/accounts'
@@ -29,7 +29,7 @@ export function registerPluginScheme() {
 export async function registerPluginHandlers(trusted: (event: IpcMainInvokeEvent) => boolean) {
     const store = new PluginStore(join(app.getPath('userData'), 'plugins'))
     await store.load()
-    let recovery = app.commandLine.hasSwitch('disable-plugins')
+    let safeMode = app.commandLine.hasSwitch('safe-mode')
     const renderer = !app.isPackaged && process.env.ELECTRON_RENDERER_URL
     const hostOrigin = renderer ? new URL(renderer).origin : 'file:'
     const csp = `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; ` +
@@ -37,13 +37,13 @@ export async function registerPluginHandlers(trusted: (event: IpcMainInvokeEvent
         `worker-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors ${hostOrigin}`
 
     protocol.handle(pluginScheme, async request => {
-        if (recovery) return new Response(null, {status: 403})
+        if (safeMode) return new Response(null, {status: 403})
         if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, {status: 405})
         try {
             const url = new URL(request.url)
             const file = isPluginId(url.hostname) && !url.port && !url.username && !url.password
                 ? await store.asset(url.hostname, decodeURIComponent(url.pathname.slice(1))) : null
-            if (!file || recovery) return new Response(null, {status: 404})
+            if (!file || safeMode) return new Response(null, {status: 404})
             const range = request.headers.get('range')
             const resource = await net.fetch(pathToFileURL(file).href, {
                 method: request.method, headers: range ? {Range: range} : undefined
@@ -68,10 +68,10 @@ export async function registerPluginHandlers(trusted: (event: IpcMainInvokeEvent
         reply({cancel: isPluginUrl(details.initiatorOrigin) || isPluginUrl(details.frame?.url)})
     })
 
-    const snapshot = () => store.snapshot(recovery)
-    const recover = (window: BrowserWindow | null) => {
+    const snapshot = () => store.snapshot(safeMode)
+    const enterSafeMode = (window: BrowserWindow | null) => {
         if (!window || window.isDestroyed()) return
-        recovery = true
+        safeMode = true
         window.webContents.reload()
     }
 
@@ -111,11 +111,13 @@ export async function registerPluginHandlers(trusted: (event: IpcMainInvokeEvent
         await store.remove(id)
         return snapshot()
     })
-    handle('recover', (_input, event) => recover(BrowserWindow.fromWebContents(event.sender)))
-    handle('resume', () => { recovery = false })
+    handle('enter-safe-mode', (_input, event) => enterSafeMode(BrowserWindow.fromWebContents(event.sender)))
+    handle('exit-safe-mode', () => {
+        safeMode = false
+    })
 
     return {
-        recover,
+        enterSafeMode,
         attach(window: BrowserWindow) {
             window.webContents.on('will-frame-navigate', event => {
                 const previous = [event.frame?.url, event.initiator?.url].find(isPluginUrl)
@@ -128,7 +130,7 @@ export async function registerPluginHandlers(trusted: (event: IpcMainInvokeEvent
                 if (input.type === 'keyDown' && !input.isAutoRepeat && (input.control || input.meta) && input.shift &&
                     !input.alt && input.key.toLowerCase() === 'p') {
                     event.preventDefault()
-                    recover(window)
+                    enterSafeMode(window)
                 }
             })
         }

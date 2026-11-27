@@ -53,7 +53,9 @@ type IconName =
     | 'cup'
     | 'more'
     | 'menu'
+    | 'puzzle'
 const paths: Record<IconName, string> = {
+    puzzle: 'M4 7h3a1 1 0 0 0 1 -1v-1a2 2 0 0 1 4 0v1a1 1 0 0 0 1 1h3a1 1 0 0 1 1 1v3a1 1 0 0 0 1 1h1a2 2 0 0 1 0 4h-1a1 1 0 0 0 -1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-1a2 2 0 0 0 -4 0v1a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1h1a2 2 0 0 0 0 -4h-1a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1',
     'square-pen': 'M12 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3v-6M16.5 3.5a2.12 2.12 0 0 1 3 3L11 15l-4 1 1-4 8.5-8.5Z',
     'chat-plus': 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5A8.5 8.5 0 0 1 10.5 3h2a8.5 8.5 0 0 1 8.5 8.5ZM8 11.5h7M11.5 8v7',
     menu: 'M4 6h16M4 12h16M4 18h16',
@@ -110,10 +112,12 @@ const paths: Record<IconName, string> = {
     sparkles: 'M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4L12 3ZM5 15l.8 2.2L8 18l-2.2.8L5 21l-.8-2.2L2 18l2.2-.8L5 15ZM19 14l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6L19 14Z',
 }
 
+const strokeWidths: Partial<Record<IconName, number>> = {puzzle: 2}
+
 export function Icon({name, className = ''}: { name: IconName; className?: string }) {
     return <svg className={`icon ${className}`} width="20" height="20" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round"
-                aria-hidden="true">
+                stroke="currentColor" strokeWidth={strokeWidths[name] ?? 1.65}
+                strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d={paths[name]}/>
     </svg>
 }

@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto'
 import {constants} from 'node:fs'
-import {copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile} from 'node:fs/promises'
+import {copyFile, lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises'
 import {isAbsolute, join, relative, sep} from 'node:path'
 import type {InstalledPlugin, PluginState} from '../shared/plugins'
 import {isPluginAssetPath, parsePluginManifest, pluginEntries} from './plugin-manifest'
@@ -80,12 +80,12 @@ export class PluginStore {
         }
     }
 
-    snapshot(recovery: boolean): PluginState {
+    snapshot(safeMode: boolean): PluginState {
         if (this.readError) throw new Error('无法读取已安装插件的配置。', {cause: this.readError})
         return {
             installed: this.catalog.installed.map(({manifest, enabled}) => ({manifest, enabled})),
             application: this.catalog.application,
-            recovery
+            safeMode
         }
     }
 

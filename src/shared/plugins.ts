@@ -9,7 +9,7 @@ import type {LlmAPI} from './llm'
 import type {MailAPI, MailItem} from './mail'
 import type {MemoryAPI} from './memory'
 import type {MessagePreferencesAPI} from './message-preferences'
-import type {NoticesAPI, Notice} from './notices'
+import type {Notice, NoticesAPI} from './notices'
 import type {NotificationSettingsAPI} from './notification-settings'
 import type {ResearchAPI} from './research'
 import type {SourcesAPI} from './sources'
@@ -121,7 +121,7 @@ export interface InstalledPlugin {
 export interface PluginState {
     installed: InstalledPlugin[]
     application: string | null
-    recovery: boolean
+    safeMode: boolean
 }
 
 export interface PluginManagerAPI {
@@ -130,8 +130,10 @@ export interface PluginManagerAPI {
     setEnabled(id: string, enabled: boolean): Promise<Result<PluginState>>
     selectApplication(id: string | null): Promise<Result<PluginState>>
     remove(id: string): Promise<Result<PluginState>>
-    recover(): Promise<Result<void>>
-    resume(): Promise<Result<void>>
+
+    enterSafeMode(): Promise<Result<void>>
+
+    exitSafeMode(): Promise<Result<void>>
 }
 
 export interface WindowControlsAPI {

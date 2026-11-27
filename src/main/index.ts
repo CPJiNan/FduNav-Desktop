@@ -73,7 +73,7 @@ function ensureTray() {
             {label: '打开 FduNav', click: showMainWindow},
             {label: '管理插件', click: () => {
                 showMainWindow()
-                plugins?.recover(mainWindow)
+                    plugins?.enterSafeMode(mainWindow)
             }},
             {type: 'separator'},
             {label: '退出 FduNav', click: () => app.quit()},

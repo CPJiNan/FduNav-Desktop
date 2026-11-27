@@ -217,8 +217,8 @@ const plugins: PluginManagerAPI = {
     setEnabled: (id, enabled) => ipcRenderer.invoke('plugins:set-enabled', {id, enabled}),
     selectApplication: id => ipcRenderer.invoke('plugins:select-application', id),
     remove: id => ipcRenderer.invoke('plugins:remove', id),
-    recover: () => ipcRenderer.invoke('plugins:recover'),
-    resume: () => ipcRenderer.invoke('plugins:resume'),
+    enterSafeMode: () => ipcRenderer.invoke('plugins:enter-safe-mode'),
+    exitSafeMode: () => ipcRenderer.invoke('plugins:exit-safe-mode'),
 }
 contextBridge.exposeInMainWorld('plugins', plugins)
 

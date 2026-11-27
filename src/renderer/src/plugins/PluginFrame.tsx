@@ -1,7 +1,13 @@
 import {type ReactNode, useEffect, useRef, useState} from 'react'
 import {PluginConnection} from '../../../plugin-sdk/connection'
 import type {PluginHandshake} from '../../../plugin-sdk'
-import {pluginApiVersion, pluginOrigin, type PluginDragRegion, type PluginRoute, type PluginViewState} from '../../../shared/plugins'
+import {
+    pluginApiVersion,
+    type PluginDragRegion,
+    pluginOrigin,
+    type PluginRoute,
+    type PluginViewState
+} from '../../../shared/plugins'
 import type {PluginFrameSpec, PluginRuntime} from './runtime'
 import '../styles/plugins.css'
 
@@ -115,7 +121,7 @@ export function PluginFrame({runtime, spec, state, onNavigate, fallback, keepFal
                         case 'isMaximized': return controls.isMaximized()
                         case 'setDragRegions': return setRegions(dragRegions(input))
                         case 'openPluginManager': {
-                            const result = await window.plugins?.recover()
+                            const result = await window.plugins?.enterSafeMode()
                             if (result && !result.ok) throw new Error(result.error)
                             return
                         }

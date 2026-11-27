@@ -25,8 +25,14 @@ import type {CalendarView} from '../../shared/calendar'
 import type {AccountState} from '../../shared/accounts'
 import type {MailItem} from '../../shared/mail'
 import {type MessagePreferences, validateRequiredMessagePreferences} from '../../shared/message-preferences'
-import {pluginBuiltinPages, pluginBuiltinSettings, type BuiltinPage, type PluginRoute, type PluginView,
-    type PluginViewState} from '../../shared/plugins'
+import {
+    type BuiltinPage,
+    pluginBuiltinPages,
+    pluginBuiltinSettings,
+    type PluginRoute,
+    type PluginView,
+    type PluginViewState
+} from '../../shared/plugins'
 import './styles/app.css'
 
 const tabs = [
@@ -38,7 +44,7 @@ const tabs = [
     {id: 'llm', label: 'LLM', icon: 'processor'},
     {id: 'research', label: '旦挞', icon: 'cup'},
     {id: 'mail', label: '邮箱', icon: 'mail'},
-    {id: 'plugins', label: '插件', icon: 'processor'},
+    {id: 'plugins', label: '插件', icon: 'puzzle'},
     {id: 'about', label: '关于', icon: 'info'},
 ] as const
 type Tab = typeof tabs[number]['id']

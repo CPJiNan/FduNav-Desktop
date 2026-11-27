@@ -11,7 +11,7 @@ async function start() {
     const runtime = new PluginRuntime(result?.ok ? result.data : emptyPluginState)
     runtime.installServices()
     await initializeTheme()
-    const openPlugins = (result && !result.ok) || runtime.state.recovery || window.location.hash === '#plugins'
+    const openPlugins = (result && !result.ok) || runtime.state.safeMode || window.location.hash === '#plugins'
     if (window.location.hash === '#plugins') window.history.replaceState(null, '', window.location.href.split('#')[0])
 
     createRoot(document.getElementById('root')!).render(<StrictMode>
