@@ -17,6 +17,7 @@ import type {LibraryAPI} from '../shared/library'
 import type {WeatherAPI} from '../shared/weather'
 import type {MailAPI} from '../shared/mail'
 import type {ResearchAPI} from '../shared/research'
+import type {PluginManagerAPI, PluginServices, WindowControlsAPI} from '../shared/plugins'
 
 const mail: MailAPI = {
     accounts: () => ipcRenderer.invoke('mail:accounts'),
@@ -41,23 +42,19 @@ const mail: MailAPI = {
     send: input => ipcRenderer.invoke('mail:send', input),
     openLink: url => ipcRenderer.invoke('mail:open-link', url),
 }
-contextBridge.exposeInMainWorld('mail', mail)
 
 const library: LibraryAPI = {
     crowding: refresh => ipcRenderer.invoke('library:crowding', refresh),
 }
-contextBridge.exposeInMainWorld('library', library)
 
 const campusCard: CampusCardAPI = {
     balance: refresh => ipcRenderer.invoke('campus-card:balance', refresh),
     openRecords: () => ipcRenderer.invoke('campus-card:open-records'),
 }
-contextBridge.exposeInMainWorld('campusCard', campusCard)
 
 const weather: WeatherAPI = {
     forecast: refresh => ipcRenderer.invoke('weather:forecast', refresh),
 }
-contextBridge.exposeInMainWorld('weather', weather)
 
 const memory: MemoryAPI = {
     get: () => ipcRenderer.invoke('memory:get'),
@@ -67,7 +64,6 @@ const memory: MemoryAPI = {
     importJson: (json, username) => ipcRenderer.invoke('memory:import', {json, username}),
     exportJson: () => ipcRenderer.invoke('memory:export'),
 }
-contextBridge.exposeInMainWorld('memory', memory)
 
 const chat: ChatAPI = {
     get: () => ipcRenderer.invoke('chat:get'),
@@ -93,13 +89,11 @@ const chat: ChatAPI = {
         return () => ipcRenderer.removeListener('chat:changed', listener)
     },
 }
-contextBridge.exposeInMainWorld('chat', chat)
 
 const appInfo: AppInfoAPI = {
     get: () => ipcRenderer.invoke('app:info'),
     openRepository: () => ipcRenderer.invoke('app:open-repository'),
 }
-contextBridge.exposeInMainWorld('appInfo', appInfo)
 
 const notificationSettings: NotificationSettingsAPI = {
     get: () => ipcRenderer.invoke('settings:get-notifications'),
@@ -109,14 +103,12 @@ const notificationSettings: NotificationSettingsAPI = {
     setCalendarDefaultReminder: minutes => ipcRenderer.invoke('settings:set-calendar-default-reminder', minutes),
     setTodoDefaultReminder: minutes => ipcRenderer.invoke('settings:set-todo-default-reminder', minutes),
 }
-contextBridge.exposeInMainWorld('notificationSettings', notificationSettings)
 
 const generalSettings: GeneralSettingsAPI = {
     get: () => ipcRenderer.invoke('settings:get-general'),
     setLaunchAtLogin: enabled => ipcRenderer.invoke('settings:set-launch-at-login', enabled),
     setCloseAction: action => ipcRenderer.invoke('settings:set-close-action', action),
 }
-contextBridge.exposeInMainWorld('generalSettings', generalSettings)
 
 const todos: TodosAPI = {
     syncElearning: interactive => ipcRenderer.invoke('todos:sync-elearning', interactive),
@@ -125,7 +117,6 @@ const todos: TodosAPI = {
     save: input => ipcRenderer.invoke('todos:save', input),
     remove: id => ipcRenderer.invoke('todos:remove', id),
 }
-contextBridge.exposeInMainWorld('todos', todos)
 
 const calendar: CalendarAPI = {
     list: () => ipcRenderer.invoke('calendar:list'),
@@ -133,7 +124,6 @@ const calendar: CalendarAPI = {
     remove: id => ipcRenderer.invoke('calendar:remove', id),
     syncExams: () => ipcRenderer.invoke('calendar:sync-exams'),
 }
-contextBridge.exposeInMainWorld('calendar', calendar)
 
 const timetable: TimetableAPI = {
     cached: () => ipcRenderer.invoke('timetable:cached'),
@@ -142,7 +132,6 @@ const timetable: TimetableAPI = {
     openSyllabus: courseId => ipcRenderer.invoke('timetable:open-syllabus', courseId),
     openReplay: courseId => ipcRenderer.invoke('timetable:open-replay', courseId),
 }
-contextBridge.exposeInMainWorld('timetable', timetable)
 
 const llm: LlmAPI = {
     get: () => ipcRenderer.invoke('llm:get'),
@@ -151,7 +140,6 @@ const llm: LlmAPI = {
     test: input => ipcRenderer.invoke('llm:test', input),
     models: input => ipcRenderer.invoke('llm:models', input),
 }
-contextBridge.exposeInMainWorld('llm', llm)
 
 const research: ResearchAPI = {
     get: () => ipcRenderer.invoke('research:get'),
@@ -159,20 +147,17 @@ const research: ResearchAPI = {
     login: input => ipcRenderer.invoke('research:campus-login', input),
     logout: () => ipcRenderer.invoke('research:campus-logout'),
 }
-contextBridge.exposeInMainWorld('research', research)
 
 const sources: SourcesAPI = {
     list: () => ipcRenderer.invoke('sources:list'),
     setEnabled: (id, enabled) => ipcRenderer.invoke('sources:set-enabled', {id, enabled}),
     reorder: ids => ipcRenderer.invoke('sources:reorder', ids),
 }
-contextBridge.exposeInMainWorld('sources', sources)
 
 const messagePreferences: MessagePreferencesAPI = {
     get: () => ipcRenderer.invoke('preferences:get-messages'),
     save: input => ipcRenderer.invoke('preferences:set-messages', input),
 }
-contextBridge.exposeInMainWorld('messagePreferences', messagePreferences)
 
 const notices: NoticesAPI = {
     unreadState: () => ipcRenderer.invoke('notices:unread-state'),
@@ -210,7 +195,6 @@ const notices: NoticesAPI = {
     openSource: notice => ipcRenderer.invoke('notices:open-source', notice),
     openAttachment: notice => ipcRenderer.invoke('notices:open-attachment', notice),
 }
-contextBridge.exposeInMainWorld('notices', notices)
 
 const accounts: AccountAPI = {
     getState: () => ipcRenderer.invoke('account:state'),
@@ -220,9 +204,25 @@ const accounts: AccountAPI = {
     getTheme: () => ipcRenderer.invoke('preferences:get-theme'),
     setTheme: theme => ipcRenderer.invoke('preferences:set-theme', theme),
 }
-contextBridge.exposeInMainWorld('accounts', accounts)
 
-contextBridge.exposeInMainWorld('windowControls', {
+const services: PluginServices = {
+    accounts, appInfo, calendar, campusCard, chat, generalSettings, library, llm, mail, memory,
+    messagePreferences, notices, notificationSettings, research, sources, timetable, todos, weather
+}
+contextBridge.exposeInMainWorld('fdunavServices', services)
+
+const plugins: PluginManagerAPI = {
+    get: () => ipcRenderer.invoke('plugins:get'),
+    install: () => ipcRenderer.invoke('plugins:install'),
+    setEnabled: (id, enabled) => ipcRenderer.invoke('plugins:set-enabled', {id, enabled}),
+    selectApplication: id => ipcRenderer.invoke('plugins:select-application', id),
+    remove: id => ipcRenderer.invoke('plugins:remove', id),
+    recover: () => ipcRenderer.invoke('plugins:recover'),
+    resume: () => ipcRenderer.invoke('plugins:resume'),
+}
+contextBridge.exposeInMainWorld('plugins', plugins)
+
+const windowControls: WindowControlsAPI = {
     minimize: () => ipcRenderer.send('window:minimize'),
     toggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
     close: () => ipcRenderer.send('window:close'),
@@ -232,4 +232,5 @@ contextBridge.exposeInMainWorld('windowControls', {
         ipcRenderer.on('window:maximized-changed', listener)
         return () => ipcRenderer.removeListener('window:maximized-changed', listener)
     },
-})
+}
+contextBridge.exposeInMainWorld('windowControls', windowControls)

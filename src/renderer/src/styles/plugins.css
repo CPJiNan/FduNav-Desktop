@@ -1,0 +1,113 @@
+.plugins-panel, .plugins-list, .plugin-card {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+}
+
+.plugins-heading, .plugin-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.plugins-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.plugin-card {
+    color-scheme: light;
+    padding: var(--space-4);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    background: var(--palette-white);
+    color: var(--color-text-primary);
+    overflow-wrap: anywhere;
+}
+
+.plugin-card-name, .plugins-actions, .plugins-heading button {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.plugin-card button {
+    background: var(--palette-white);
+    border-color: var(--color-border-default);
+}
+
+.plugin-card button:enabled:hover {
+    background: var(--palette-white);
+    border-color: var(--color-border-control);
+}
+
+.plugin-error, .plugin-card .plugin-remove {
+    color: var(--color-danger);
+}
+
+.plugin-host {
+    position: relative;
+    overflow: hidden;
+}
+
+.plugin-host-app {
+    position: fixed;
+    inset: 0;
+}
+
+.plugin-host-titlebar {
+    height: var(--size-titlebar);
+}
+
+.plugin-host-view {
+    height: 100%;
+    min-height: 12rem;
+}
+
+.plugin-settings-content:has(> .plugin-host-view) {
+    height: 100%;
+}
+
+.plugin-host-operations {
+    display: none;
+}
+
+.plugin-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.plugin-drag-region {
+    position: absolute;
+    -webkit-app-region: drag;
+}
+
+.plugin-loading {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--panel-bg);
+}
+
+.plugin-page-links {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-height: 0;
+    overflow: auto;
+    scrollbar-width: thin;
+}
+
+@media (max-width: 680px) {
+    .plugin-page-links {
+        flex-direction: row;
+        min-width: 0;
+    }
+}

@@ -1,4 +1,4 @@
-import {type KeyboardEvent, useEffect, useRef, useState} from 'react'
+import {type KeyboardEvent, type ReactNode, useEffect, useRef, useState} from 'react'
 import {Icon} from './Icon'
 import {WindowTitlebar} from './WindowTitlebar'
 import {AccountPanel} from './AccountPanel'
@@ -17,11 +17,16 @@ import {SummaryQueuePanel} from './SummaryQueuePanel'
 import {AboutPanel} from './AboutPanel'
 import {DashboardPage} from './DashboardPage'
 import {ChatPage} from './ChatPage'
+import {PluginFrame} from './plugins/PluginFrame'
+import {PluginPanel} from './plugins/PluginPanel'
+import type {PluginRuntime} from './plugins/runtime'
 import type {Notice} from '../../shared/notices'
 import type {CalendarView} from '../../shared/calendar'
 import type {AccountState} from '../../shared/accounts'
 import type {MailItem} from '../../shared/mail'
 import {type MessagePreferences, validateRequiredMessagePreferences} from '../../shared/message-preferences'
+import {pluginBuiltinPages, pluginBuiltinSettings, type BuiltinPage, type PluginRoute, type PluginView,
+    type PluginViewState} from '../../shared/plugins'
 import './styles/app.css'
 
 const tabs = [
@@ -33,19 +38,22 @@ const tabs = [
     {id: 'llm', label: 'LLM', icon: 'processor'},
     {id: 'research', label: '旦挞', icon: 'cup'},
     {id: 'mail', label: '邮箱', icon: 'mail'},
+    {id: 'plugins', label: '插件', icon: 'processor'},
     {id: 'about', label: '关于', icon: 'info'},
 ] as const
 type Tab = typeof tabs[number]['id']
 const noticesNavigation = {label: '通知', icon: 'notices'} as const
 const calendarNavigation = {label: '日历', icon: 'calendar'} as const
 
-export default function App() {
-    const [settings, setSettings] = useState(false)
-    const [page, setPage] = useState<'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'mail'>('dashboard')
+export default function App({runtime, openPlugins = false, pluginStartupError}: {
+    runtime: PluginRuntime; openPlugins?: boolean; pluginStartupError?: string
+}) {
+    const [settings, setSettings] = useState(openPlugins)
+    const [page, setPage] = useState<BuiltinPage | `plugin.${string}`>('dashboard')
     const [noticeToOpen, setNoticeToOpen] = useState<Notice | null>(null)
     const [mailToOpen, setMailToOpen] = useState<MailItem | null>(null)
     const [calendarInitialView, setCalendarInitialView] = useState<CalendarView>('week')
-    const [tab, setTab] = useState<Tab>('general')
+    const [tab, setTab] = useState<Tab>(openPlugins ? 'plugins' : 'general')
     const [account, setAccount] = useState<AccountState | null>(null)
     const [unreadState, setUnreadState] = useState<{ username: string | null; unread: boolean }>({
         username: null,
@@ -57,7 +65,10 @@ export default function App() {
     const needsLogin = !!window.accounts && accountLoaded && account?.status !== 'signed-in'
     const needsPreferences = account?.status === 'signed-in' && !validateRequiredMessagePreferences(preferences).ok
     const needsSetup = needsLogin || needsPreferences
-    const showSettings = settings || needsSetup
+    const pluginPage = runtime.pages.get(page)
+    const showSettings = settings || (needsSetup && !pluginPage)
+    const canShowPage = accountLoaded && (!window.accounts || account?.status === 'signed-in')
+    const setup: PluginViewState['setup'] = needsLogin ? 'login' : needsPreferences ? 'preferences' : undefined
     const showNoticesPage = !showSettings && page === 'notices'
     const showCalendarPage = !showSettings && page === 'calendar'
     const showTodosPage = !showSettings && page === 'todos'
@@ -74,7 +85,7 @@ export default function App() {
         }).catch(() => {
             if (active) {
                 setSettings(true);
-                setTab('account')
+                setTab(current => current === 'plugins' ? current : 'account')
             }
         }).finally(() => {
             if (active) setAccountLoaded(true)
@@ -85,9 +96,19 @@ export default function App() {
     }, [])
 
     useEffect(() => {
-        if (needsLogin) setTab('account')
-        else if (needsPreferences) setTab('messages')
+        if (needsLogin) setTab(current => current === 'plugins' ? current : 'account')
+        else if (needsPreferences) setTab(current => current === 'plugins' ? current : 'messages')
     }, [needsLogin, needsPreferences, account?.username])
+
+    useEffect(() => runtime.onServiceChange(change => {
+        if (change.type === 'account') {
+            if (account?.username !== change.value.username || account?.status !== change.value.status) setPreferences(null)
+            setAccount(change.value)
+        } else {
+            setPreferences(change.value)
+            if (needsPreferences && validateRequiredMessagePreferences(change.value).ok) setSettings(false)
+        }
+    }), [runtime, account?.username, account?.status, needsPreferences])
 
     useEffect(() => {
         const api = window.notices
@@ -117,34 +138,66 @@ export default function App() {
     useEffect(() => {
         function onKey(event: globalThis.KeyboardEvent) {
             if (event.defaultPrevented || document.querySelector('dialog:modal')) return
-            if (event.key === 'Escape' && !needsSetup) setSettings(false)
+            if (event.key === 'Escape' && (!needsSetup || pluginPage)) setSettings(false)
         }
 
         window.addEventListener('keydown', onKey)
         return () => window.removeEventListener('keydown', onKey)
-    }, [needsSetup])
+    }, [needsSetup, pluginPage])
 
-    function openPage(next: 'dashboard' | 'notices' | 'chat' | 'calendar' | 'todos' | 'mail', calendarView: CalendarView = 'week') {
+    function openPage(next: BuiltinPage | `plugin.${string}`, calendarView: CalendarView = 'week') {
         if (next === 'calendar') setCalendarInitialView(calendarView)
         setPage(next)
-        if (needsLogin) {
+        if (runtime.pages.has(next)) setSettings(false)
+        else if (needsLogin) {
             setTab('account')
             setSettings(true)
         } else if (needsPreferences) setTab('messages')
         else setSettings(false)
     }
 
-    function tabKey(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-        if (needsSetup) return
-        const offsets: Record<string, number> = {ArrowDown: 1, ArrowUp: -1, Home: -index, End: tabs.length - 1 - index}
+    function tabAllowed(id: Tab) {
+        if (id === 'plugins' || id === 'about' || id === 'account') return true
+        return !needsLogin && (!needsPreferences || id === 'messages')
+    }
+
+    function navigatePlugin(route: PluginRoute, pluginId: string) {
+        if (route.startsWith('page.')) {
+            const id = route.slice(5) as BuiltinPage
+            if (pluginBuiltinPages.includes(id)) return openPage(id)
+        } else if (route.startsWith('settings.')) {
+            const id = route.slice(9) as Tab
+            if ((id === 'plugins' || pluginBuiltinSettings.includes(id)) && tabAllowed(id)) {
+                setTab(id)
+                setSettings(true)
+                return
+            }
+        } else if (route.startsWith('plugin.')) {
+            const next = `plugin.${pluginId}/${route.slice(7)}` as const
+            if (runtime.pages.has(next)) return openPage(next)
+        }
+        throw new Error('当前无法打开该页面。')
+    }
+
+    function view(id: PluginView, content: ReactNode, state: PluginViewState = {}, active = true) {
+        const spec = runtime.views.get(id)
+        if (!spec || !active) return content
+        return <PluginFrame key={id} runtime={runtime} spec={spec} state={{setup, ...state}}
+                            onNavigate={navigatePlugin} fallback={content} keepFallback={id === 'settings.messages'}/>
+    }
+
+    function tabKey(event: KeyboardEvent<HTMLButtonElement>, id: Tab) {
+        const available = tabs.filter(item => tabAllowed(item.id))
+        const index = available.findIndex(item => item.id === id)
+        const offsets: Record<string, number> = {ArrowDown: 1, ArrowUp: -1, Home: -index, End: available.length - 1 - index}
         if (!(event.key in offsets)) return
         event.preventDefault()
-        const next = tabs[(index + offsets[event.key] + tabs.length) % tabs.length].id
+        const next = available[(index + offsets[event.key] + available.length) % available.length].id
         setTab(next);
         document.getElementById(`settings-tab-${next}`)?.focus()
     }
 
-    return <><WindowTitlebar/>
+    return <>{view('titlebar', <WindowTitlebar/>)}
         <div className="app-shell">
             <nav className="app-rail" aria-label="应用导航">
                 <button type="button" className={`icon-button rail-button ${showDashboardPage ? 'is-active' : ''}`}
@@ -173,6 +226,12 @@ export default function App() {
                 <button type="button" className={`icon-button rail-button ${showTodosPage ? 'is-active' : ''}`}
                         aria-label="待办" title="待办" aria-current={showTodosPage ? 'page' : undefined}
                         onClick={() => openPage('todos')}><Icon name="todo"/></button>
+                {runtime.pages.size > 0 && <div className="plugin-page-links">
+                    {[...runtime.pages].map(([id, item]) => <button type="button" key={id}
+                        className={`icon-button rail-button ${!showSettings && page === id ? 'is-active' : ''}`}
+                        title={item.title} aria-label={item.title} aria-current={!showSettings && page === id ? 'page' : undefined}
+                        onClick={() => openPage(id as `plugin.${string}`)}><Icon name="panel"/></button>)}
+                </div>}
                 <div className="rail-bottom">
                     <SummaryQueuePanel username={account?.username} onOpenNotice={async ref => {
                         const result = await window.notices?.getNotice(ref)
@@ -196,14 +255,13 @@ export default function App() {
                             <div className="settings-layout">
                                 <div className="settings-tabs" role="tablist" aria-label="设置分类"
                                      aria-orientation="vertical">
-                                    {tabs.map((item, index) => <button type="button" key={item.id}
+                                    {tabs.map(item => <button type="button" key={item.id}
                                                                        id={`settings-tab-${item.id}`}
                                                                        role="tab" aria-selected={tab === item.id}
                                                                        aria-controls={`settings-panel-${item.id}`}
                                                                        tabIndex={tab === item.id ? 0 : -1}
-                                                                       disabled={needsLogin ? item.id !== 'account' && item.id !== 'about'
-                                                                           : needsPreferences && item.id !== 'messages' && item.id !== 'account' && item.id !== 'about'}
-                                                                       onKeyDown={event => tabKey(event, index)}
+                                                                        disabled={!tabAllowed(item.id)}
+                                                                        onKeyDown={event => tabKey(event, item.id)}
                                                                        onClick={() => setTab(item.id)}
                                                                        className={`settings-tab ${tab === item.id ? 'is-active' : ''}`}>
                                         <Icon name={item.icon}/>
@@ -211,29 +269,30 @@ export default function App() {
                                 </div>
                                 <section className="settings-panel" role="tabpanel" id={`settings-panel-${tab}`}
                                          aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
-                                    {tab === 'general' && showSettings && <GeneralPanel/>}
-                                    {tab === 'notifications' && showSettings && <NotificationSettingsPanel/>}
-                                    {tab === 'account' && <AccountPanel account={account} onChange={setAccount}/>}
-                                    {tab === 'about' && <AboutPanel/>}
-                                    <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
-                                               campusUsername={account?.username ?? undefined}/>
-                                    <div hidden={tab !== 'messages'}><MessagePreferencesPanel
+                                    {tab === 'general' && showSettings && view('settings.general', <GeneralPanel/>)}
+                                    {tab === 'notifications' && showSettings && view('settings.notifications', <NotificationSettingsPanel/>)}
+                                    {tab === 'account' && view('settings.account', <AccountPanel account={account} onChange={setAccount}/>, {}, showSettings)}
+                                    {tab === 'about' && view('settings.about', <AboutPanel/>, {}, showSettings)}
+                                    {tab === 'plugins' && showSettings && <PluginPanel startupError={pluginStartupError}/>}
+                                    {view('settings.mail', <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
+                                               campusUsername={account?.username ?? undefined}/>, {}, showSettings && tab === 'mail')}
+                                    <div className="plugin-settings-content" hidden={tab !== 'messages'}>{view('settings.messages', <MessagePreferencesPanel
                                         key={account?.status === 'signed-in' ? account.username : 'signed-out'}
                                         requiredProfile={account?.status === 'signed-in'}
                                         onChange={setPreferences} onSaved={value => {
                                         if (needsPreferences && validateRequiredMessagePreferences(value).ok) setSettings(false)
-                                    }}/></div>
-                                    <div hidden={tab !== 'sources'}><SourcesPanel
-                                        active={showSettings && tab === 'sources'}/></div>
-                                    <div hidden={tab !== 'llm'}><LlmPanel key={account?.username}
-                                                                          active={settings && tab === 'llm'}/></div>
-                                    <div hidden={tab !== 'research'}><ResearchPanel
+                                    }}/>, {}, showSettings && tab === 'messages')}</div>
+                                    <div className="plugin-settings-content" hidden={tab !== 'sources'}>{view('settings.sources', <SourcesPanel
+                                        active={showSettings && tab === 'sources'}/>, {}, showSettings && tab === 'sources')}</div>
+                                    <div className="plugin-settings-content" hidden={tab !== 'llm'}>{view('settings.llm', <LlmPanel key={account?.username}
+                                                                          active={settings && tab === 'llm'}/>, {}, showSettings && tab === 'llm')}</div>
+                                    <div className="plugin-settings-content" hidden={tab !== 'research'}>{view('settings.research', <ResearchPanel
                                         key={account?.username ?? 'signed-out'}
-                                        active={showSettings && tab === 'research'}/></div>
+                                        active={showSettings && tab === 'research'}/>, {}, showSettings && tab === 'research')}</div>
                                 </section>
                             </div>
                         </div>
-                        {showDashboardPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                        {showDashboardPage && canShowPage && view('page.dashboard',
                             <DashboardPage key={`${account?.username}-${preferences?.educationLevel}`}
                                            onNavigate={openPage}
                                            onOpenNotice={notice => {
@@ -243,15 +302,15 @@ export default function App() {
                                            onOpenMail={item => {
                                                setMailToOpen(item);
                                                openPage('mail')
-                                           }}/>}
-                        {showNoticesPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                                           }}/>)}
+                        {showNoticesPage && canShowPage && view('page.notices',
                             <NoticesPage key={account?.username} noticeToOpen={noticeToOpen}
                                          onNoticeOpened={() => setNoticeToOpen(null)}
                                          onLogin={() => {
                                              setTab('account');
                                              setSettings(true)
-                                         }}/>}
-                        {showChatPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                                         }}/>, {notice: noticeToOpen})}
+                        {showChatPage && canShowPage && view('page.chat',
                             <ChatPage key={account?.username} username={account?.username ?? ''}
                                       onOpenNotice={notice => {
                                           setNoticeToOpen(notice);
@@ -260,19 +319,20 @@ export default function App() {
                                       onSettings={() => {
                                           setTab('llm');
                                           setSettings(true)
-                                      }}/>}
-                        {showCalendarPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                                      }}/>)}
+                        {showCalendarPage && canShowPage && view('page.calendar',
                             <CalendarPage key={`${account?.username}-${preferences?.educationLevel}`}
-                                          initialView={calendarInitialView}/>}
-                        {showTodosPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
-                            <TodosPage key={account?.username}/>}
-                        {showMailPage && accountLoaded && (!window.accounts || account?.status === 'signed-in') &&
+                                          initialView={calendarInitialView}/>, {calendarView: calendarInitialView})}
+                        {showTodosPage && canShowPage && view('page.todos', <TodosPage key={account?.username}/>)}
+                        {showMailPage && canShowPage && view('page.mail',
                             <MailboxPage key={account?.username} initialMail={mailToOpen}
                                          onInitialMailOpened={() => setMailToOpen(null)}
                                          onSettings={() => {
                                              setTab('mail');
                                              setSettings(true)
-                                         }}/>}
+                                         }}/>, {mail: mailToOpen})}
+                        {!showSettings && pluginPage && <PluginFrame key={page} runtime={runtime} spec={pluginPage}
+                                                                     onNavigate={navigatePlugin} state={{setup}}/>}
                     </main>
                 </div>
             </div>
