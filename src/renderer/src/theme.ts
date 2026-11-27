@@ -22,11 +22,11 @@ export async function initializeTheme() {
 }
 
 export function applyTheme(theme: Theme) {
+    currentTheme = theme
     document.documentElement.dataset.theme = theme
 }
 
 export async function saveTheme(theme: Theme): Promise<boolean> {
-    currentTheme = theme
     applyTheme(theme)
     if (!window.accounts) return false
     try {
