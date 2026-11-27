@@ -110,7 +110,7 @@ export interface PluginManifest {
     permissions: (keyof PluginServices)[]
     views?: Partial<Record<PluginView, string>>
     pages?: PluginPage[]
-    operations?: {entry: string; overrides?: PluginOverride[]; commands?: string[]}
+    operations?: { entry: string; overrides?: PluginOverride[]; commands?: string[] }
 }
 
 export interface InstalledPlugin {
@@ -126,9 +126,13 @@ export interface PluginState {
 
 export interface PluginManagerAPI {
     get(): Promise<Result<PluginState>>
+
     install(): Promise<Result<PluginState | null>>
+
     setEnabled(id: string, enabled: boolean): Promise<Result<PluginState>>
+
     selectApplication(id: string | null): Promise<Result<PluginState>>
+
     remove(id: string): Promise<Result<PluginState>>
 
     enterSafeMode(): Promise<Result<void>>
@@ -138,9 +142,13 @@ export interface PluginManagerAPI {
 
 export interface WindowControlsAPI {
     minimize(): void
+
     toggleMaximize(): void
+
     close(): void
+
     isMaximized(): Promise<boolean>
+
     onMaximizedChanged(callback: (maximized: boolean) => void): () => void
 }
 

@@ -1,7 +1,12 @@
 import {extname} from 'node:path'
 import {
-    pluginApiVersion, pluginOverrides, pluginPermissions, pluginViews,
-    type PluginManifest, type PluginServices, type PluginView
+    pluginApiVersion,
+    type PluginManifest,
+    pluginOverrides,
+    pluginPermissions,
+    type PluginServices,
+    type PluginView,
+    pluginViews
 } from '../shared/plugins'
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -73,7 +78,17 @@ export function parsePluginManifest(value: unknown): PluginManifest {
         operations = {entry: entry(declared.entry), overrides, commands}
     }
     if (!Object.keys(views).length && !pages.length && !operations) throw new Error('插件需提供界面、页面或操作。')
-    return {apiVersion: pluginApiVersion, id, name: name.trim(), version: version.trim(), description, permissions, views, pages, operations}
+    return {
+        apiVersion: pluginApiVersion,
+        id,
+        name: name.trim(),
+        version: version.trim(),
+        description,
+        permissions,
+        views,
+        pages,
+        operations
+    }
 }
 
 export function pluginEntries(manifest: PluginManifest): string[] {

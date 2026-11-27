@@ -73,8 +73,11 @@ export class PluginStore {
                 }
                 return {...item, manifest: parsePluginManifest(item.manifest)}
             })
-            this.catalog = {installed, application: installed.some(item => item.enabled && item.manifest.id === stored.application &&
-                item.manifest.views?.app) ? stored.application : null}
+            this.catalog = {
+                installed,
+                application: installed.some(item => item.enabled && item.manifest.id === stored.application &&
+                    item.manifest.views?.app) ? stored.application : null
+            }
         } catch (error) {
             if (!missing(error)) this.readError = error
         }
@@ -87,27 +90,6 @@ export class PluginStore {
             application: this.catalog.application,
             safeMode
         }
-    }
-
-    private async save(catalog: Catalog) {
-        const temporary = `${this.catalogPath}.${randomUUID()}.tmp`
-        try {
-            await mkdir(this.packagesPath, {recursive: true})
-            await writeFile(temporary, JSON.stringify(catalog), {flag: 'wx'})
-            await rename(temporary, this.catalogPath)
-            this.catalog = catalog
-        } finally {
-            await rm(temporary, {force: true}).catch(() => undefined)
-        }
-    }
-
-    private change<T>(action: () => Promise<T>): Promise<T> {
-        const result = this.queue.then(() => {
-            this.snapshot(false)
-            return action()
-        })
-        this.queue = result.catch(() => undefined)
-        return result
     }
 
     install(source: string) {
@@ -132,7 +114,10 @@ export class PluginStore {
                 for (const entry of new Set(pluginEntries(manifest))) {
                     if (!(await lstat(join(target, entry)).catch(() => null))?.isFile()) throw new Error(`插件入口 ${entry} 不存在。`)
                 }
-                await this.save({...this.catalog, installed: [...this.catalog.installed, {manifest, directory, enabled: false}]})
+                await this.save({
+                    ...this.catalog,
+                    installed: [...this.catalog.installed, {manifest, directory, enabled: false}]
+                })
             } catch (error) {
                 await this.deletePackage(directory)
                 throw error
@@ -181,18 +166,6 @@ export class PluginStore {
         })
     }
 
-    private async deletePackage(directory: string) {
-        const target = join(this.packagesPath, directory)
-        if (!inside(this.packagesPath, target)) return
-        try {
-            const stat = await lstat(target)
-            if (stat.isSymbolicLink()) await rm(target)
-            else if (inside(await realpath(this.packagesPath), await realpath(target))) await rm(target, {recursive: true, force: true})
-        } catch (error) {
-            if (!missing(error)) console.error('无法删除插件文件', error)
-        }
-    }
-
     async asset(id: string, path: string) {
         const item = this.catalog.installed.find(plugin => plugin.manifest.id === id && plugin.enabled)
         if (!item || !isPluginAssetPath(path)) return null
@@ -202,5 +175,41 @@ export class PluginStore {
         const file = await realpath(join(root, path))
         if (!inside(resolvedRoot, file) || !(await lstat(file)).isFile()) return null
         return file
+    }
+
+    private async save(catalog: Catalog) {
+        const temporary = `${this.catalogPath}.${randomUUID()}.tmp`
+        try {
+            await mkdir(this.packagesPath, {recursive: true})
+            await writeFile(temporary, JSON.stringify(catalog), {flag: 'wx'})
+            await rename(temporary, this.catalogPath)
+            this.catalog = catalog
+        } finally {
+            await rm(temporary, {force: true}).catch(() => undefined)
+        }
+    }
+
+    private change<T>(action: () => Promise<T>): Promise<T> {
+        const result = this.queue.then(() => {
+            this.snapshot(false)
+            return action()
+        })
+        this.queue = result.catch(() => undefined)
+        return result
+    }
+
+    private async deletePackage(directory: string) {
+        const target = join(this.packagesPath, directory)
+        if (!inside(this.packagesPath, target)) return
+        try {
+            const stat = await lstat(target)
+            if (stat.isSymbolicLink()) await rm(target)
+            else if (inside(await realpath(this.packagesPath), await realpath(target))) await rm(target, {
+                recursive: true,
+                force: true
+            })
+        } catch (error) {
+            if (!missing(error)) console.error('无法删除插件文件', error)
+        }
     }
 }

@@ -22,7 +22,8 @@ const isPluginUrl = (url?: string) => url?.startsWith(`${pluginScheme}://`) === 
 
 export function registerPluginScheme() {
     protocol.registerSchemesAsPrivileged([{
-        scheme: pluginScheme, privileges: {standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true}
+        scheme: pluginScheme,
+        privileges: {standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true}
     }])
 }
 
@@ -96,7 +97,7 @@ export async function registerPluginHandlers(trusted: (event: IpcMainInvokeEvent
         return snapshot()
     })
     handle('set-enabled', async input => {
-        const value = input as {id?: unknown; enabled?: unknown} | null
+        const value = input as { id?: unknown; enabled?: unknown } | null
         if (!isPluginId(value?.id) || typeof value.enabled !== 'boolean') throw new Error('插件状态无效。')
         await store.setEnabled(value.id, value.enabled)
         return snapshot()

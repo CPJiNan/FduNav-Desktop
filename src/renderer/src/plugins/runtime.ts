@@ -20,12 +20,13 @@ export interface PluginFrameSpec {
 interface Provider {
     frame: PluginFrameSpec
     connected: Promise<void>
-    settle(): void
     connection?: PluginConnection
     error?: string
+
+    settle(): void
 }
 
-type ServiceChange = {type: 'account'; value: AccountState} | {type: 'preferences'; value: MessagePreferences}
+type ServiceChange = { type: 'account'; value: AccountState } | { type: 'preferences'; value: MessagePreferences }
 type Method = (...args: unknown[]) => unknown
 
 export const emptyPluginState: PluginState = {installed: [], application: null, safeMode: false}
@@ -53,10 +54,14 @@ export class PluginRuntime {
             })
             if (manifest.operations) {
                 let settle!: () => void
-                const connected = new Promise<void>(resolve => { settle = resolve })
-                const provider: Provider = {connected, settle, frame: {
-                    manifest, surface: 'operations', entry: manifest.operations.entry, title: manifest.name
-                }}
+                const connected = new Promise<void>(resolve => {
+                    settle = resolve
+                })
+                const provider: Provider = {
+                    connected, settle, frame: {
+                        manifest, surface: 'operations', entry: manifest.operations.entry, title: manifest.name
+                    }
+                }
                 this.providers.set(manifest.id, provider)
                 for (const method of manifest.operations.overrides ?? []) this.overrides.set(method, provider)
             }
@@ -72,19 +77,6 @@ export class PluginRuntime {
                 return [method, provider ? (...args: unknown[]) => this.invokeOverride(provider, operation, original as Method, args) : original]
             }))
             Object.assign(window, {[service]: Object.freeze(facade)})
-        }
-    }
-
-    private async invokeOverride(provider: Provider, operation: string, original: Method, args: unknown[]) {
-        await provider.connected
-        if (!provider.connection) return original(...args)
-        try {
-            const result = await provider.connection.request('override', [operation, args], 60_000) as Result<unknown> | null
-            if (result && typeof result === 'object' && (result.ok === true && Object.hasOwn(result, 'data') ||
-                result.ok === false && typeof result.error === 'string')) return result
-            throw new Error('插件返回了无效的操作结果。')
-        } catch (error) {
-            return {ok: false, error: `${provider.frame.title}：${error instanceof Error ? error.message : '操作失败。'}`}
         }
     }
 
@@ -108,7 +100,42 @@ export class PluginRuntime {
 
     onServiceChange(listener: (change: ServiceChange) => void) {
         this.listeners.add(listener)
-        return () => { this.listeners.delete(listener) }
+        return () => {
+            this.listeners.delete(listener)
+        }
+    }
+
+    async call(manifest: PluginManifest, name: unknown, args: unknown) {
+        if (!Array.isArray(args)) throw new Error('插件服务参数无效。')
+        const result = await this.serviceMember(manifest, name, false)(...args) as Result<unknown>
+        if (result?.ok) {
+            if (name === 'accounts.login' || name === 'accounts.verify' || name === 'accounts.logout') {
+                for (const listener of this.listeners) listener({type: 'account', value: result.data as AccountState})
+            } else if (name === 'messagePreferences.save') {
+                for (const listener of this.listeners) listener({
+                    type: 'preferences',
+                    value: result.data as MessagePreferences
+                })
+            } else if (name === 'accounts.setTheme') applyTheme(result.data as Theme)
+        }
+        return result
+    }
+
+    subscribe(manifest: PluginManifest, name: unknown, callback: (...args: unknown[]) => void) {
+        return this.serviceMember(manifest, name, true)(callback) as () => void
+    }
+
+    private async invokeOverride(provider: Provider, operation: string, original: Method, args: unknown[]) {
+        await provider.connected
+        if (!provider.connection) return original(...args)
+        try {
+            const result = await provider.connection.request('override', [operation, args], 60_000) as Result<unknown> | null
+            if (result && typeof result === 'object' && (result.ok === true && Object.hasOwn(result, 'data') ||
+                result.ok === false && typeof result.error === 'string')) return result
+            throw new Error('插件返回了无效的操作结果。')
+        } catch (error) {
+            return {ok: false, error: `${provider.frame.title}：${error instanceof Error ? error.message : '操作失败。'}`}
+        }
     }
 
     private serviceMember(manifest: PluginManifest, name: unknown, subscription: boolean): Method {
@@ -119,22 +146,5 @@ export class PluginRuntime {
         if (extra !== undefined || !allowed || !api || !method || method.startsWith('on') !== subscription ||
             !Object.hasOwn(api, method) || typeof api[method] !== 'function') throw new Error('插件缺少对应服务权限。')
         return api[method] as Method
-    }
-
-    async call(manifest: PluginManifest, name: unknown, args: unknown) {
-        if (!Array.isArray(args)) throw new Error('插件服务参数无效。')
-        const result = await this.serviceMember(manifest, name, false)(...args) as Result<unknown>
-        if (result?.ok) {
-            if (name === 'accounts.login' || name === 'accounts.verify' || name === 'accounts.logout') {
-                for (const listener of this.listeners) listener({type: 'account', value: result.data as AccountState})
-            } else if (name === 'messagePreferences.save') {
-                for (const listener of this.listeners) listener({type: 'preferences', value: result.data as MessagePreferences})
-            } else if (name === 'accounts.setTheme') applyTheme(result.data as Theme)
-        }
-        return result
-    }
-
-    subscribe(manifest: PluginManifest, name: unknown, callback: (...args: unknown[]) => void) {
-        return this.serviceMember(manifest, name, true)(callback) as () => void
     }
 }

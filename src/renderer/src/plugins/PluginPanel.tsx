@@ -6,7 +6,7 @@ import {Icon} from '../Icon'
 import {emptyPluginState} from './runtime'
 import '../styles/plugins.css'
 
-type Confirmation = {action: 'enable' | 'remove'; plugin: InstalledPlugin}
+type Confirmation = { action: 'enable' | 'remove'; plugin: InstalledPlugin }
 type Filter = 'all' | 'enabled' | 'disabled'
 
 const filters: { id: Filter; label: string }[] = [
@@ -43,7 +43,7 @@ function pluginTags(plugin: InstalledPlugin) {
     return tags
 }
 
-export function PluginPanel({startupError}: {startupError?: string}) {
+export function PluginPanel({startupError}: { startupError?: string }) {
     const api = window.plugins
     const [state, setState] = useState(emptyPluginState)
     const [loading, setLoading] = useState(!!api)
@@ -146,7 +146,8 @@ export function PluginPanel({startupError}: {startupError?: string}) {
             <p>正在使用 <strong>{state.installed.find(plugin => plugin.manifest.id === state.application)?.manifest.name}</strong> 的整窗界面。
             </p>
             <button type="button" className="secondary-button" disabled={blocked}
-                    onClick={() => update(() => api!.selectApplication(null))}>恢复默认界面</button>
+                    onClick={() => update(() => api!.selectApplication(null))}>恢复默认界面
+            </button>
         </div>}
         {!api && <p className="account-notice">请在桌面应用中管理插件。</p>}
         <div className="plugins-layout">

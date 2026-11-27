@@ -15,9 +15,11 @@ async function start() {
     if (window.location.hash === '#plugins') window.history.replaceState(null, '', window.location.href.split('#')[0])
 
     createRoot(document.getElementById('root')!).render(<StrictMode>
-        {[...runtime.providers].map(([id, provider]) => <PluginFrame key={id} runtime={runtime} spec={provider.frame}/>)}
+        {[...runtime.providers].map(([id, provider]) => <PluginFrame key={id} runtime={runtime}
+                                                                     spec={provider.frame}/>)}
         {runtime.application ? <PluginFrame runtime={runtime} spec={runtime.application}
-            fallback={error => <App runtime={runtime} openPlugins pluginStartupError={error}/>}/> :
+                                            fallback={error => <App runtime={runtime} openPlugins
+                                                                    pluginStartupError={error}/>}/> :
             <App runtime={runtime} openPlugins={openPlugins}/>}
     </StrictMode>)
 }

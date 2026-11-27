@@ -2,9 +2,11 @@ type Handler = (method: string, args: unknown[]) => unknown
 type SignalHandler = (name: string, value: unknown) => void
 
 interface PendingRequest {
-    resolve(value: unknown): void
-    reject(reason: Error): void
     timer: ReturnType<typeof setTimeout>
+
+    resolve(value: unknown): void
+
+    reject(reason: Error): void
 }
 
 export class PluginConnection {
@@ -79,8 +81,10 @@ export class PluginConnection {
             const result = await this.handle(message.method, message.args)
             if (!this.closed) this.port.postMessage({type: 'result', id, ok: true, value: result})
         } catch (error) {
-            if (!this.closed) this.port.postMessage({type: 'result', id, ok: false,
-                value: error instanceof Error ? error.message : '插件请求失败。'})
+            if (!this.closed) this.port.postMessage({
+                type: 'result', id, ok: false,
+                value: error instanceof Error ? error.message : '插件请求失败。'
+            })
         } finally {
             this.receiving--
         }

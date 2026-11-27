@@ -1,6 +1,16 @@
 import {
-    pluginApiVersion, pluginScheme, type PluginArguments, type PluginDragRegion, type PluginEvent, type PluginManifest,
-    type PluginOperation, type PluginOverride, type PluginReturn, type PluginRoute, type PluginSurface, type PluginViewState
+    pluginApiVersion,
+    type PluginArguments,
+    type PluginDragRegion,
+    type PluginEvent,
+    type PluginManifest,
+    type PluginOperation,
+    type PluginOverride,
+    type PluginReturn,
+    type PluginRoute,
+    pluginScheme,
+    type PluginSurface,
+    type PluginViewState
 } from '../shared/plugins'
 import {PluginConnection} from './connection'
 
@@ -24,12 +34,6 @@ export interface PluginClient {
     readonly pluginId: string
     readonly surface: PluginSurface
     readonly state: PluginViewState
-    ready(): void
-    call<T extends PluginOperation>(operation: T, ...args: PluginArguments<T>): PluginReturn<T>
-    on<T extends PluginEvent>(event: T, callback: EventCallback<T>): Promise<() => void>
-    onState(callback: (state: PluginViewState) => void): () => void
-    navigate(route: PluginRoute): Promise<void>
-    runCommand<T = unknown>(name: string, ...args: unknown[]): Promise<T>
     window: {
         minimize(): Promise<void>
         toggleMaximize(): Promise<void>
@@ -39,6 +43,18 @@ export interface PluginClient {
         setDragRegions(regions: PluginDragRegion[]): Promise<void>
         openPluginManager(): Promise<void>
     }
+
+    ready(): void
+
+    call<T extends PluginOperation>(operation: T, ...args: PluginArguments<T>): PluginReturn<T>
+
+    on<T extends PluginEvent>(event: T, callback: EventCallback<T>): Promise<() => void>
+
+    onState(callback: (state: PluginViewState) => void): () => void
+
+    navigate(route: PluginRoute): Promise<void>
+
+    runCommand<T = unknown>(name: string, ...args: unknown[]): Promise<T>
 }
 
 export function connectPlugin(options: {
@@ -69,7 +85,7 @@ export function connectPlugin(options: {
                     state = value as PluginViewState
                     for (const listener of stateListeners) listener(state)
                 } else if (name === 'subscription') {
-                    const {id, args} = value as {id: number; args: never[]}
+                    const {id, args} = value as { id: number; args: never[] }
                     subscribers.get(id)?.(...args)
                 }
             })
@@ -88,11 +104,13 @@ export function connectPlugin(options: {
                 }
             }
 
-            const windowAction = <T,>(action: string, ...args: unknown[]) => connection.request('window', [action, ...args]) as Promise<T>
+            const windowAction = <T, >(action: string, ...args: unknown[]) => connection.request('window', [action, ...args]) as Promise<T>
             const client: PluginClient = {
                 pluginId: handshake.pluginId,
                 surface: handshake.surface,
-                get state() { return state },
+                get state() {
+                    return state
+                },
                 ready: () => connection.signal('ready'),
                 call: <T extends PluginOperation>(operation: T, ...args: PluginArguments<T>) =>
                     connection.request('call', [operation, args]) as PluginReturn<T>,
@@ -102,7 +120,7 @@ export function connectPlugin(options: {
                     return () => stateListeners.delete(callback)
                 },
                 navigate: route => connection.request('navigate', [route]) as Promise<void>,
-                runCommand: <T,>(name: string, ...args: unknown[]) => connection.request('command', [name, args]) as Promise<T>,
+                runCommand: <T, >(name: string, ...args: unknown[]) => connection.request('command', [name, args]) as Promise<T>,
                 window: {
                     minimize: () => windowAction('minimize'),
                     toggleMaximize: () => windowAction('toggleMaximize'),

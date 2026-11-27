@@ -195,7 +195,12 @@ export default function App({runtime, openPlugins = false, pluginStartupError}: 
     function tabKey(event: KeyboardEvent<HTMLButtonElement>, id: Tab) {
         const available = tabs.filter(item => tabAllowed(item.id))
         const index = available.findIndex(item => item.id === id)
-        const offsets: Record<string, number> = {ArrowDown: 1, ArrowUp: -1, Home: -index, End: available.length - 1 - index}
+        const offsets: Record<string, number> = {
+            ArrowDown: 1,
+            ArrowUp: -1,
+            Home: -index,
+            End: available.length - 1 - index
+        }
         if (!(event.key in offsets)) return
         event.preventDefault()
         const next = available[(index + offsets[event.key] + available.length) % available.length].id
@@ -234,9 +239,11 @@ export default function App({runtime, openPlugins = false, pluginStartupError}: 
                         onClick={() => openPage('todos')}><Icon name="todo"/></button>
                 {runtime.pages.size > 0 && <div className="plugin-page-links">
                     {[...runtime.pages].map(([id, item]) => <button type="button" key={id}
-                        className={`icon-button rail-button ${!showSettings && page === id ? 'is-active' : ''}`}
-                        title={item.title} aria-label={item.title} aria-current={!showSettings && page === id ? 'page' : undefined}
-                        onClick={() => openPage(id as `plugin.${string}`)}><Icon name="panel"/></button>)}
+                                                                    className={`icon-button rail-button ${!showSettings && page === id ? 'is-active' : ''}`}
+                                                                    title={item.title} aria-label={item.title}
+                                                                    aria-current={!showSettings && page === id ? 'page' : undefined}
+                                                                    onClick={() => openPage(id as `plugin.${string}`)}>
+                        <Icon name="panel"/></button>)}
                 </div>}
                 <div className="rail-bottom">
                     <SummaryQueuePanel username={account?.username} onOpenNotice={async ref => {
@@ -262,37 +269,45 @@ export default function App({runtime, openPlugins = false, pluginStartupError}: 
                                 <div className="settings-tabs" role="tablist" aria-label="设置分类"
                                      aria-orientation="vertical">
                                     {tabs.map(item => <button type="button" key={item.id}
-                                                                       id={`settings-tab-${item.id}`}
-                                                                       role="tab" aria-selected={tab === item.id}
-                                                                       aria-controls={`settings-panel-${item.id}`}
-                                                                       tabIndex={tab === item.id ? 0 : -1}
-                                                                        disabled={!tabAllowed(item.id)}
-                                                                        onKeyDown={event => tabKey(event, item.id)}
-                                                                       onClick={() => setTab(item.id)}
-                                                                       className={`settings-tab ${tab === item.id ? 'is-active' : ''}`}>
+                                                              id={`settings-tab-${item.id}`}
+                                                              role="tab" aria-selected={tab === item.id}
+                                                              aria-controls={`settings-panel-${item.id}`}
+                                                              tabIndex={tab === item.id ? 0 : -1}
+                                                              disabled={!tabAllowed(item.id)}
+                                                              onKeyDown={event => tabKey(event, item.id)}
+                                                              onClick={() => setTab(item.id)}
+                                                              className={`settings-tab ${tab === item.id ? 'is-active' : ''}`}>
                                         <Icon name={item.icon}/>
                                         <span>{item.label}</span></button>)}
                                 </div>
                                 <section className="settings-panel" role="tabpanel" id={`settings-panel-${tab}`}
                                          aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
                                     {tab === 'general' && showSettings && view('settings.general', <GeneralPanel/>)}
-                                    {tab === 'notifications' && showSettings && view('settings.notifications', <NotificationSettingsPanel/>)}
-                                    {tab === 'account' && view('settings.account', <AccountPanel account={account} onChange={setAccount}/>, {}, showSettings)}
+                                    {tab === 'notifications' && showSettings && view('settings.notifications',
+                                        <NotificationSettingsPanel/>)}
+                                    {tab === 'account' && view('settings.account', <AccountPanel account={account}
+                                                                                                 onChange={setAccount}/>, {}, showSettings)}
                                     {tab === 'about' && view('settings.about', <AboutPanel/>, {}, showSettings)}
-                                    {tab === 'plugins' && showSettings && <PluginPanel startupError={pluginStartupError}/>}
-                                    {view('settings.mail', <MailPanel key={account?.username} active={showSettings && tab === 'mail'}
-                                               campusUsername={account?.username ?? undefined}/>, {}, showSettings && tab === 'mail')}
-                                    <div className="plugin-settings-content" hidden={tab !== 'messages'}>{view('settings.messages', <MessagePreferencesPanel
+                                    {tab === 'plugins' && showSettings &&
+                                        <PluginPanel startupError={pluginStartupError}/>}
+                                    {view('settings.mail', <MailPanel key={account?.username}
+                                                                      active={showSettings && tab === 'mail'}
+                                                                      campusUsername={account?.username ?? undefined}/>, {}, showSettings && tab === 'mail')}
+                                    <div className="plugin-settings-content"
+                                         hidden={tab !== 'messages'}>{view('settings.messages', <MessagePreferencesPanel
                                         key={account?.status === 'signed-in' ? account.username : 'signed-out'}
                                         requiredProfile={account?.status === 'signed-in'}
                                         onChange={setPreferences} onSaved={value => {
                                         if (needsPreferences && validateRequiredMessagePreferences(value).ok) setSettings(false)
                                     }}/>, {}, showSettings && tab === 'messages')}</div>
-                                    <div className="plugin-settings-content" hidden={tab !== 'sources'}>{view('settings.sources', <SourcesPanel
+                                    <div className="plugin-settings-content"
+                                         hidden={tab !== 'sources'}>{view('settings.sources', <SourcesPanel
                                         active={showSettings && tab === 'sources'}/>, {}, showSettings && tab === 'sources')}</div>
-                                    <div className="plugin-settings-content" hidden={tab !== 'llm'}>{view('settings.llm', <LlmPanel key={account?.username}
-                                                                          active={settings && tab === 'llm'}/>, {}, showSettings && tab === 'llm')}</div>
-                                    <div className="plugin-settings-content" hidden={tab !== 'research'}>{view('settings.research', <ResearchPanel
+                                    <div className="plugin-settings-content"
+                                         hidden={tab !== 'llm'}>{view('settings.llm', <LlmPanel key={account?.username}
+                                                                                                active={settings && tab === 'llm'}/>, {}, showSettings && tab === 'llm')}</div>
+                                    <div className="plugin-settings-content"
+                                         hidden={tab !== 'research'}>{view('settings.research', <ResearchPanel
                                         key={account?.username ?? 'signed-out'}
                                         active={showSettings && tab === 'research'}/>, {}, showSettings && tab === 'research')}</div>
                                 </section>
