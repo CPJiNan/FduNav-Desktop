@@ -172,6 +172,7 @@ export function PluginPanel({startupError}: { startupError?: string }) {
                             const {manifest, enabled} = plugin
                             const current = state.application === manifest.id
                             const tags = pluginTags(plugin)
+                            const capabilities = tags.map(tag => tag.value ? `${tag.label} ${tag.value}` : tag.label).join('、')
                             const permissions = manifest.permissions.map(permission => pluginPermissions[permission])
                             return <li className={`plugin-card ${enabled ? 'is-enabled' : ''}`} key={manifest.id}>
                                 <div className="plugin-card-head">
@@ -186,17 +187,12 @@ export function PluginPanel({startupError}: { startupError?: string }) {
                                     </span>
                                 </div>
                                 <p className="plugin-card-description">{manifest.description ?? '该插件未提供说明。'}</p>
-                                <ul className="plugin-card-tags">
-                                    {tags.map(tag => <li className="plugin-card-tag"
-                                                         key={`${tag.label}${tag.value ?? ''}`}>
-                                        <span
-                                            className="plugin-card-tag-label">{tag.label}</span>{tag.value ? ` ${tag.value}` : ''}
-                                    </li>)}
-                                    <li className="plugin-card-tag">
-                                        <span
-                                            className="plugin-card-tag-label">权限</span>{` ${permissions.length ? permissions.join('、') : '无'}`}
-                                    </li>
-                                </ul>
+                                {capabilities && <p className="plugin-card-detail">
+                                    <span>能力</span>{capabilities}
+                                </p>}
+                                <p className="plugin-card-detail">
+                                    <span>权限</span>{permissions.length ? permissions.join('、') : '无'}
+                                </p>
                                 <div className="plugin-card-actions">
                                     {enabled && manifest.views?.app && !current &&
                                         <button type="button" className="secondary-button" disabled={blocked}
