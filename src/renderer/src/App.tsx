@@ -1,4 +1,4 @@
-import {type KeyboardEvent, type ReactNode, useEffect, useRef, useState} from 'react'
+import {type ComponentProps, type KeyboardEvent, type ReactNode, useEffect, useRef, useState} from 'react'
 import {Icon} from './Icon'
 import {WindowTitlebar} from './WindowTitlebar'
 import {AccountPanel} from './AccountPanel'
@@ -33,6 +33,8 @@ import {
     type PluginView,
     type PluginViewState
 } from '../../shared/plugins'
+import type {SidebarItemId} from '../../shared/general-settings'
+import {loadSidebarItems, onSidebarItemsChange, readSidebarItems} from './sidebar'
 import './styles/app.css'
 
 const tabs = [
@@ -48,14 +50,24 @@ const tabs = [
     {id: 'about', label: '关于', icon: 'info'},
 ] as const
 type Tab = typeof tabs[number]['id']
-const noticesNavigation = {label: '通知', icon: 'notices'} as const
-const calendarNavigation = {label: '日历', icon: 'calendar'} as const
+
+type RailItem = { label: string; icon: ComponentProps<typeof Icon>['name'] }
+
+const railItems: Record<SidebarItemId, RailItem> = {
+    dashboard: {label: '仪表盘', icon: 'dashboard'},
+    notices: {label: '通知', icon: 'notices'},
+    chat: {label: '聊天', icon: 'chat'},
+    mail: {label: '邮箱', icon: 'mail'},
+    calendar: {label: '日历', icon: 'calendar'},
+    todos: {label: '待办', icon: 'todo'},
+}
 
 export default function App({runtime, openPlugins = false, pluginStartupError}: {
     runtime: PluginRuntime; openPlugins?: boolean; pluginStartupError?: string
 }) {
     const [settings, setSettings] = useState(openPlugins)
     const [page, setPage] = useState<BuiltinPage | `plugin.${string}`>('dashboard')
+    const [sidebarItems, setSidebarItems] = useState(readSidebarItems)
     const [noticeToOpen, setNoticeToOpen] = useState<Notice | null>(null)
     const [mailToOpen, setMailToOpen] = useState<MailItem | null>(null)
     const [calendarInitialView, setCalendarInitialView] = useState<CalendarView>('week')
@@ -142,6 +154,16 @@ export default function App({runtime, openPlugins = false, pluginStartupError}: 
     }, [showSettings, tab])
 
     useEffect(() => {
+        void loadSidebarItems()
+        return onSidebarItemsChange(setSidebarItems)
+    }, [])
+
+    const hiddenPage = !page.startsWith('plugin.') && !sidebarItems.some(item => item.id === page && item.enabled)
+    useEffect(() => {
+        if (hiddenPage) setPage('dashboard')
+    }, [hiddenPage])
+
+    useEffect(() => {
         function onKey(event: globalThis.KeyboardEvent) {
             if (event.defaultPrevented || document.querySelector('dialog:modal')) return
             if (event.key === 'Escape' && (!needsSetup || pluginPage)) setSettings(false)
@@ -211,32 +233,22 @@ export default function App({runtime, openPlugins = false, pluginStartupError}: 
     return <>{view('titlebar', <WindowTitlebar/>)}
         <div className="app-shell">
             <nav className="app-rail" aria-label="应用导航">
-                <button type="button" className={`icon-button rail-button ${showDashboardPage ? 'is-active' : ''}`}
-                        aria-label="仪表盘" title="仪表盘" aria-current={showDashboardPage ? 'page' : undefined}
-                        onClick={() => openPage('dashboard')}><Icon name="dashboard"/></button>
-                <button type="button" className={`icon-button rail-button ${showNoticesPage ? 'is-active' : ''}`}
-                        aria-label={hasUnread ? '通知，有未读消息' : noticesNavigation.label}
-                        title={hasUnread ? '通知（有未读消息）' : noticesNavigation.label}
-                        aria-current={showNoticesPage ? 'page' : undefined}
-                        onClick={() => openPage('notices')}>
-                    <span className="rail-notice-icon"><Icon name={noticesNavigation.icon}/>
-                        {hasUnread && <span className="rail-unread-dot" aria-hidden="true"/>}
-                    </span>
-                </button>
-                <button type="button" className={`icon-button rail-button ${showChatPage ? 'is-active' : ''}`}
-                        aria-label="聊天" title="聊天" aria-current={showChatPage ? 'page' : undefined}
-                        onClick={() => openPage('chat')}><Icon name="chat"/></button>
-                <button type="button" className={`icon-button rail-button ${showMailPage ? 'is-active' : ''}`}
-                        aria-label="邮箱" title="邮箱"
-                        aria-current={showMailPage ? 'page' : undefined} onClick={() => openPage('mail')}><Icon
-                    name="mail"/></button>
-                <button type="button" className={`icon-button rail-button ${showCalendarPage ? 'is-active' : ''}`}
-                        aria-label={calendarNavigation.label}
-                        title={calendarNavigation.label} aria-current={showCalendarPage ? 'page' : undefined}
-                        onClick={() => openPage('calendar')}><Icon name={calendarNavigation.icon}/></button>
-                <button type="button" className={`icon-button rail-button ${showTodosPage ? 'is-active' : ''}`}
-                        aria-label="待办" title="待办" aria-current={showTodosPage ? 'page' : undefined}
-                        onClick={() => openPage('todos')}><Icon name="todo"/></button>
+                {sidebarItems.filter(item => item.enabled).map(item => {
+                    const config = railItems[item.id]
+                    const active = !showSettings && page === item.id
+                    const unread = item.id === 'notices' && hasUnread
+                    return <button type="button" key={item.id}
+                                   className={`icon-button rail-button ${active ? 'is-active' : ''}`}
+                                   aria-label={unread ? `${config.label}，有未读消息` : config.label}
+                                   title={unread ? `${config.label}（有未读消息）` : config.label}
+                                   aria-current={active ? 'page' : undefined}
+                                   onClick={() => openPage(item.id)}>
+                        {unread
+                            ? <span className="rail-notice-icon"><Icon name={config.icon}/>
+                                <span className="rail-unread-dot" aria-hidden="true"/></span>
+                            : <Icon name={config.icon}/>}
+                    </button>
+                })}
                 {runtime.pages.size > 0 && <div className="plugin-page-links">
                     {[...runtime.pages].map(([id, item]) => <button type="button" key={id}
                                                                     className={`icon-button rail-button ${!showSettings && page === id ? 'is-active' : ''}`}

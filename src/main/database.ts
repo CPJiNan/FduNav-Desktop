@@ -7,7 +7,7 @@ import {createHash, randomUUID} from 'node:crypto'
 import type {Compaction} from './chat-context'
 import {type AdditionalLlmPrompts, readAdditionalLlmPrompts} from '../shared/llm-prompts'
 import type {Theme} from '../shared/accounts'
-import {type CloseAction, isCloseAction} from '../shared/general-settings'
+import {type CloseAction, isCloseAction, normalizeSidebarItems, type SidebarItem} from '../shared/general-settings'
 import {
     isNoticeRefreshInterval,
     isNoticeReminderMode,
@@ -831,6 +831,15 @@ export class AppDatabase {
         return isCloseAction(value) ? value : 'tray'
     }
 
+    getSidebarItems(): SidebarItem[] {
+        const value = this.db.prepare("SELECT value FROM preferences WHERE key = 'sidebar_items'").get()?.value
+        try {
+            return normalizeSidebarItems(value ? JSON.parse(String(value)) : undefined)
+        } catch {
+            return normalizeSidebarItems(undefined)
+        }
+    }
+
     getNoticeRefreshInterval(): NoticeRefreshInterval {
         const value = Number(this.db.prepare("SELECT value FROM preferences WHERE key = 'notice_refresh_interval'").get()?.value)
         return isNoticeRefreshInterval(value) ? value : 0
@@ -885,6 +894,11 @@ export class AppDatabase {
     setCloseAction(action: CloseAction) {
         this.db.prepare("INSERT INTO preferences (key, value) VALUES ('close_action', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
             .run(action)
+    }
+
+    setSidebarItems(items: SidebarItem[]) {
+        this.db.prepare("INSERT INTO preferences (key, value) VALUES ('sidebar_items', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+            .run(JSON.stringify(items))
     }
 
     getChatConversation(username: string): string | null {

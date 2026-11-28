@@ -1,7 +1,7 @@
 import {app, ipcMain, type IpcMainInvokeEvent} from 'electron'
 import type {AppDatabase} from './database'
 import type {Result} from '../shared/accounts'
-import {type GeneralSettings, isCloseAction} from '../shared/general-settings'
+import {type GeneralSettings, isCloseAction, normalizeSidebarItems} from '../shared/general-settings'
 
 export function registerGeneralSettingsHandlers(db: AppDatabase, trusted: (event: IpcMainInvokeEvent) => boolean) {
     const launchAtLoginAvailable = app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin')
@@ -13,6 +13,7 @@ export function registerGeneralSettingsHandlers(db: AppDatabase, trusted: (event
             launchAtLogin: !!login?.openAtLogin && (process.platform !== 'win32' || login.executableWillLaunchAtLogin),
             launchAtLoginAvailable,
             closeAction: db.getCloseAction(),
+            sidebar: db.getSidebarItems(),
         }
     }
 
@@ -39,6 +40,11 @@ export function registerGeneralSettingsHandlers(db: AppDatabase, trusted: (event
     handle('settings:set-close-action', input => {
         if (!isCloseAction(input)) throw new Error('关闭方式无效。')
         db.setCloseAction(input)
+        return get()
+    })
+    handle('settings:set-sidebar', input => {
+        if (!Array.isArray(input)) throw new Error('侧边栏图标设置无效。')
+        db.setSidebarItems(normalizeSidebarItems(input))
         return get()
     })
 }

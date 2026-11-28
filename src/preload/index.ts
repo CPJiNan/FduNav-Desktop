@@ -108,6 +108,7 @@ const generalSettings: GeneralSettingsAPI = {
     get: () => ipcRenderer.invoke('settings:get-general'),
     setLaunchAtLogin: enabled => ipcRenderer.invoke('settings:set-launch-at-login', enabled),
     setCloseAction: action => ipcRenderer.invoke('settings:set-close-action', action),
+    setSidebar: items => ipcRenderer.invoke('settings:set-sidebar', items),
 }
 
 const todos: TodosAPI = {
